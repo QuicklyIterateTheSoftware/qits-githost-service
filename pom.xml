@@ -59,7 +59,7 @@
              exists: none of the three is on Maven Central or built in this reactor. -->
         <qits.eventstream.version>2026.906.25410</qits.eventstream.version>
         <!-- Shared OIDC and forwarded-header authentication. -->
-        <qits.integrations-quarkus.version>2026.905.91442</qits.integrations-quarkus.version>
+        <qits.integrations-quarkus.version>2026.906.171046</qits.integrations-quarkus.version>
         <!-- The platform's datasource resilience, released together out of
              libs/qits-integrations-quarkus, which is why the two versions are the same string:
              qits-db-core carries PatientPgDriver (the pool's connections are opened through it and
@@ -69,8 +69,8 @@
              qits-arch-rules carries the assertion that this service configured the first one. They
              move together — the rule names the driver as a string, so a driver that moved without
              the rule would pass a build it should fail. -->
-        <qits.db-core.version>2026.905.91442</qits.db-core.version>
-        <qits.arch-rules.version>2026.905.91442</qits.arch-rules.version>
+        <qits.db-core.version>2026.906.171046</qits.db-core.version>
+        <qits.arch-rules.version>2026.906.171046</qits.arch-rules.version>
         <!-- The user-story framework (test scope): TokenValidationBootstrapIT is a userflow, so a
              `mvn verify` also regenerates service/target/userstories/ — the stories' documentation,
              network diagram included. The diagram is OBSERVED rather than narrated: this version
@@ -86,7 +86,7 @@
              bearers, and a plain MockService plays qits-projects' name resolver — which is what
              makes the PUBLIC clone url (/git/:projectId/:repoName) serve at all, and what puts the
              qits-githost -> qits-projects lookup in every git story's diagram. -->
-        <qits.service-mock.version>2026.905.91442</qits.service-mock.version>
+        <qits.service-mock.version>2026.906.171046</qits.service-mock.version>
         <qits.maven.repository.url>http://registry.dev.localhost:8080/artifacts/maven/maven</qits.maven.repository.url>
 
         <maven.compiler.release>25</maven.compiler.release>
