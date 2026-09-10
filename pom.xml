@@ -52,7 +52,7 @@
              The store now builds inside the qits-registries reactor and carries that reactor's
              version. The coordinate is unchanged; its packages are eu.wohlben.qits.blobstore.*
              since this release, and the config keys stay qits.artifacts.*. -->
-        <qits.blobstore.version>2026.906.33616</qits.blobstore.version>
+        <qits.blobstore.version>2026.910.100801</qits.blobstore.version>
         <!-- The event bus: the outbox, the idempotent PUT, the durable listener. Published by
              libs/qits-eventstream into the platform Maven repository — the same place the blob
              store above and qits-db-core below come from, and why the <repositories> block below
