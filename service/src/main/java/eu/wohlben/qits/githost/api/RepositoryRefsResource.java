@@ -91,6 +91,9 @@ import org.jboss.logging.Logger;
  * primitives an orchestrator composes, and a half-composed release run from a browser tab is not a
  * thing anyone should be able to do by accident.
  *
+ * <p>The one read, {@code GET …/branches/{name}}, also takes {@link #AGENT_ROLE}. Its method-level
+ * annotation replaces the class-level one, so it names both roles.
+ *
  * <h2>Native image</h2>
  *
  * <p>Every record below carries {@code @RegisterForReflection}, requests included. The responses
@@ -111,6 +114,12 @@ public class RepositoryRefsResource {
    * and is refused here.
    */
   static final String MACHINE_ROLE = "qits:system";
+
+  /**
+   * A commissioned agent's role. It may read where a branch stands ({@link #branch}), because the
+   * same agent can fetch that ref over Git. It may not use any of the write primitives.
+   */
+  static final String AGENT_ROLE = "qits:agent";
 
   /** The id rule the rest of this API applies; an id outside it is served by no route on this host. */
   private static final String REPO_ID_PATTERN = "[A-Za-z0-9][A-Za-z0-9-]{0,63}";
@@ -694,6 +703,7 @@ public class RepositoryRefsResource {
    */
   @GET
   @Path("/branches/{name:.+}")
+  @RolesAllowed({MACHINE_ROLE, AGENT_ROLE})
   public Response branch(@PathParam("repoId") String repoId, @PathParam("name") String name) {
     if (!isValidRepoId(repoId)) {
       return badRequest("repoId must match " + REPO_ID_PATTERN);
