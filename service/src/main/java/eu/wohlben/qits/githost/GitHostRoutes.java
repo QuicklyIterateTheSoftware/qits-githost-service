@@ -44,7 +44,6 @@ import org.eclipse.jgit.transport.ReceivePack;
 import org.eclipse.jgit.transport.RefAdvertiser.PacketLineOutRefAdvertiser;
 import org.eclipse.jgit.transport.UploadPack;
 import org.eclipse.jgit.treewalk.TreeWalk;
-import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -58,18 +57,27 @@ import org.jboss.logging.Logger;
  * and it has stayed out since. Raw routes are also what keeps the wire protocol the whole of what
  * this class does.
  *
- * <p>Every Git route requires either {@code qits:admin} from an authenticated browser session,
- * {@code qits:system} from a machine token, or {@code qits:git:external} from a workstation token.
- * An external token may push only {@code refs/heads/external/*}; repository ids remain identifiers,
- * not capabilities.
+ * <p>Every Git route requires {@code qits:admin} from an authenticated browser session, {@code
+ * qits:system} from a machine token, {@code qits:git:external} from a workstation token, or {@code
+ * qits:agent} / {@code qits:ci-run} from a commissioned agent or CI run. The role only opens the
+ * door; what a push may touch is {@link RefScopeHook}'s. Repository ids remain identifiers, not
+ * capabilities.
  * JGit here speaks the wire protocol and nothing else, and receive-pack is the
  * only writer this host has — a repository has no directory anyone could run git in.
  *
- * <p>One thing a push is checked against: {@link ProtectedRefHook}, the default branch's seatbelt.
- * It is not authentication and is not an authorization system — it guards exactly one ref per repo
- * (the bare's {@code HEAD}) against a reflex {@code git push … main}, and it ships inert. See that
- * class for the mechanism, the two push-option bypasses and why they are options rather than
- * headers.
+ * <p>Two things a push is checked against, in this order:
+ *
+ * <ul>
+ *   <li>{@link RefScopeHook}: which refs this credential may push. A credential with a {@code
+ *       git_refs} list pushes only those refs; a workstation token and a person push only {@code
+ *       refs/heads/external/*}; a client token without a scope pushes nothing unless it holds
+ *       {@code qits:system}, and then it is not restricted. Roles do not widen a scope. The scope
+ *       is captured on the event loop ({@link #snapshotPushScope}).
+ *   <li>{@link ProtectedRefHook}, the default branch's seatbelt. It is not an authorization system
+ *       — it guards exactly one ref per repo (the bare's {@code HEAD}) against a reflex {@code git
+ *       push … main}, and it ships inert. See that class for the mechanism, the two push-option
+ *       bypasses and why they are options rather than headers.
+ * </ul>
  *
  * <p>Two addressing schemes, and they are not two ways of saying the same thing:
  *
@@ -180,10 +188,8 @@ public class GitHostRoutes {
   private static final String UPLOAD = "git-upload-pack";
   private static final String RECEIVE = "git-receive-pack";
 
-  private static final String ADMIN_ROLE = "qits:admin";
-  private static final String SYSTEM_ROLE = "qits:system";
-  private static final String EXTERNAL_GIT_ROLE = "qits:git:external";
-  private static final String PUSH_ACCESS_KEY = GitHostRoutes.class.getName() + ".pushAccess";
+  /** Where {@link #snapshotPushScope} leaves the push's {@link RefScopeHook.Scope} for the worker. */
+  private static final String PUSH_SCOPE_KEY = GitHostRoutes.class.getName() + ".pushScope";
 
   /**
    * The namespace qits-idp mints a client's SELF-ROLE into: every bearer it issues carries {@code
@@ -378,26 +384,6 @@ public class GitHostRoutes {
   private record OpenedRepo(String repoId, String projectId, String repoName, Repository repo) {}
 
   /**
-   * A snapshot of the verified HTTP identity made before Vert.x moves receive-pack work to a worker
-   * thread. External is deliberately a restriction, not a grant: an identity that also holds an
-   * ordinary admin or system role keeps that privileged role's established behaviour.
-   */
-  record PushAccess(boolean externalOnly, String externalRefPattern) {
-    static PushAccess from(SecurityIdentity identity) {
-      boolean privileged =
-          identity != null && (identity.hasRole(ADMIN_ROLE) || identity.hasRole(SYSTEM_ROLE));
-      if (privileged || identity == null || !identity.hasRole(EXTERNAL_GIT_ROLE)) {
-        return new PushAccess(false, null);
-      }
-      String pattern =
-          identity.getPrincipal() instanceof JsonWebToken jwt
-              ? jwt.claim("git_ref_pattern").map(String::valueOf).orElse(null)
-              : null;
-      return new PushAccess(true, pattern);
-    }
-  }
-
-  /**
    * Register the routes on the main Vert.x router (root path — NOT under {@code
    * quarkus.rest.path}). Blocking: JGit's UploadPack/ReceivePack do synchronous stream I/O against
    * whatever storage backs the repository, so they run on a worker thread. The POST bodies
@@ -448,7 +434,7 @@ public class GitHostRoutes {
         .post(BASE + "/:repoId/git-receive-pack")
         .handler(packBodyHandler())
         .handler(this::requireStorageClient)
-        .handler(this::snapshotPushAccess)
+        .handler(this::snapshotPushScope)
         .blockingHandler(rc -> service(rc, RECEIVE, open(rc, "repoId")));
 
     router
@@ -500,7 +486,7 @@ public class GitHostRoutes {
     router
         .post(BASE + "/:projectId/:repoName/git-receive-pack")
         .handler(packBodyHandler())
-        .handler(this::snapshotPushAccess)
+        .handler(this::snapshotPushScope)
         .blockingHandler(rc -> byName(rc, opened -> service(rc, RECEIVE, opened)));
 
     // No normal deployment enables these routes.  The short-lived bootstrap ingress rewrites only
@@ -520,7 +506,7 @@ public class GitHostRoutes {
       router.post(BOOTSTRAP_BASE + "/:repoId/git-receive-pack")
           .handler(packBodyHandler())
           .handler(rc -> bootstrapPermit(rc, credential))
-          .handler(rc -> snapshotBootstrapPushAccess(rc, credential))
+          .handler(rc -> snapshotBootstrapPushScope(rc, credential))
           .blockingHandler(rc -> service(rc, RECEIVE, open(rc, "repoId")));
     }
   }
@@ -632,8 +618,12 @@ public class GitHostRoutes {
     rc.next();
   }
 
-  private void snapshotBootstrapPushAccess(RoutingContext rc, BootstrapIngressCredential credential) {
-    rc.put(PUSH_ACCESS_KEY, new PushAccess(true, credential.refPattern()));
+  /**
+   * The bootstrap capability is not an identity, so it gets rule 2's check with the pattern it was
+   * configured with — exactly as before C3.
+   */
+  private void snapshotBootstrapPushScope(RoutingContext rc, BootstrapIngressCredential credential) {
+    rc.put(PUSH_SCOPE_KEY, RefScopeHook.external(credential.refPattern()));
     rc.next();
   }
 
@@ -730,7 +720,7 @@ public class GitHostRoutes {
         // (or this repository's own protection row) says otherwise — see ProtectedRefHook. Bound to
         // the repo id rather than handed the ReceivePack alone, because the override is a row keyed
         // on that id and a DFS repository has no directory to derive it from.
-        rp.setPreReceiveHook(preReceiveHook(opened.repoId(), pushAccess(rc)));
+        rp.setPreReceiveHook(preReceiveHook(opened.repoId(), pushScope(rc)));
         // The post-receive announcement: fires after the ref updates land, still inside receive(),
         // so the repository is readable and the pack's objects are there to be measured. The
         // announcer must not block the push and must not throw — see ScmAnnouncer.
@@ -755,35 +745,46 @@ public class GitHostRoutes {
     }
   }
 
-  /** Capture the authenticated role decision while the request still runs on the event loop. */
-  private void snapshotPushAccess(RoutingContext rc) {
+  /**
+   * Decide the push's scope while the request still runs on the event loop and still carries its
+   * verified identity. The worker reads only the result.
+   */
+  private void snapshotPushScope(RoutingContext rc) {
     SecurityIdentity identity =
         rc.user() instanceof QuarkusHttpUser user ? user.getSecurityIdentity() : null;
-    rc.put(PUSH_ACCESS_KEY, PushAccess.from(identity));
+    rc.put(PUSH_SCOPE_KEY, RefScopeHook.scopeOf(identity));
     rc.next();
   }
 
   /**
-   * The external namespace check runs before the default-branch hook. It rejects every command in
-   * a mixed push, so protected-ref policy cannot accidentally leave a permitted command behind.
+   * The scope check runs before the default-branch hook. It rejects every command of a push that
+   * touches one ref outside the scope, so the protected-ref check never sees a partly allowed push.
+   * The scope also decides whether the protected-ref hook accepts {@code -o qits.token=}.
    */
-  private PreReceiveHook preReceiveHook(String repoId, PushAccess access) {
-    PreReceiveHook protectedHook = protectedRefs.forRepository(repoId);
-    if (!access.externalOnly()) {
+  private PreReceiveHook preReceiveHook(String repoId, RefScopeHook.Scope scope) {
+    PreReceiveHook protectedHook =
+        protectedRefs.forRepository(repoId, scope.tokenBypassAllowed());
+    if (scope.unrestricted()) {
       return protectedHook;
     }
     return (pack, commands) -> {
-      if (!ExternalRefHook.rejectOutsideExternalBranches(commands, access.externalRefPattern())) {
-        protectedHook.onPreReceive(pack, commands);
+      if (RefScopeHook.rejectOutsideScope(commands, scope)) {
+        LOG.infof(
+            "refused push to %s (%s): %s",
+            repoId,
+            scope.rule(),
+            commands.isEmpty() ? "" : commands.iterator().next().getMessage());
+        return;
       }
+      protectedHook.onPreReceive(pack, commands);
     };
   }
 
-  private static PushAccess pushAccess(RoutingContext rc) {
-    PushAccess access = rc.get(PUSH_ACCESS_KEY);
-    // A protected route always runs snapshotPushAccess first. Failing closed for a route wiring
-    // regression is safer than treating an external caller as privileged on a worker thread.
-    return access == null ? new PushAccess(true, "") : access;
+  private static RefScopeHook.Scope pushScope(RoutingContext rc) {
+    RefScopeHook.Scope scope = rc.get(PUSH_SCOPE_KEY);
+    // Every receive-pack route captures a scope first. If a wiring mistake ever skips that, refuse
+    // the push rather than treat the caller as unrestricted on a worker thread.
+    return scope == null ? RefScopeHook.nothing() : scope;
   }
 
   /**

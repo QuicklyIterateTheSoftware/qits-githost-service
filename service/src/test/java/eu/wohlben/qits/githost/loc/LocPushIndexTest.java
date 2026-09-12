@@ -1,5 +1,7 @@
 package eu.wohlben.qits.githost.loc;
 
+import eu.wohlben.qits.githost.TestTokenMechanism;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -69,6 +71,7 @@ public class LocPushIndexTest {
     command[0] = "git";
     System.arraycopy(args, 0, command, 1, args.length);
     ProcessBuilder pb = new ProcessBuilder(command);
+    TestTokenMechanism.presentServiceClient(pb);
     pb.directory(cwd.toFile());
     pb.redirectErrorStream(true);
     Process p = pb.start();

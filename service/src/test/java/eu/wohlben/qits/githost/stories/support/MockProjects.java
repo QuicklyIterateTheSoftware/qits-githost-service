@@ -80,6 +80,8 @@ public final class MockProjects {
     table.put("release-notes", "story-push");
     table.put("shared-notes", "story-pull");
     table.put("pipeline-config", "story-read");
+    table.put("person-notes", "story-scope-person");
+    table.put("ticket-work", "story-scope-agent");
     return Map.copyOf(table);
   }
 

@@ -12,6 +12,7 @@ import eu.wohlben.qits.githost.persistence.RepositoryProtectionStore;
 import jakarta.inject.Inject;
 import java.net.URL;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -129,6 +130,64 @@ public class GitHostPushTokenTest {
     GitHostFixture.git(clone, "git", "push", "origin", "main");
 
     assertEquals(pushed, refSha(repoId, "refs/heads/main"));
+  }
+
+  /** A credential whose git_refs list names the default branch, with the owner's qits:system. */
+  static final List<String> AGENT_ON_MAIN =
+      TestTokenMechanism.token(
+          "{\"sub\":\"dyn-workspace-main\",\"groups\":[\"qits:system\"],"
+              + "\"git_refs\":[\"refs/heads/main\"]}");
+
+  static final List<String> CLI_PERSON =
+      TestTokenMechanism.token(
+          "{\"sub\":\"alice\",\"groups\":[\"qits:admin\"],\"credential_type\":\"cli\"}");
+
+  @Test
+  public void theTokenIsRefusedToACredentialWithAScope() throws Exception {
+    // The scope allows main, and the value matches: still refused, because only a client token
+    // without a scope may use the token (C3).
+    String repoId = seedOrigin();
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    String before = refSha(repoId, "refs/heads/main");
+
+    GitHostFixture.rewriteTip(clone, "rewritten by a scoped agent");
+    String refusal =
+        GitHostFixture.gitExpectingFailureAs(
+            AGENT_ON_MAIN, clone, "git", "push", "--force", "-o", "qits.token=" + TOKEN,
+            "origin", "main");
+
+    assertTrue(refusal.contains("accepted only from a platform service client"), refusal);
+    assertTrue(!refusal.contains(TOKEN), refusal);
+    assertEquals(before, refSha(repoId, "refs/heads/main"));
+  }
+
+  @Test
+  public void theTokenDoesNotTakeAPersonOutsideTheirScope() throws Exception {
+    String repoId = seedOrigin();
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    String before = refSha(repoId, "refs/heads/main");
+
+    GitHostFixture.commitFile(clone, "person.txt", "a person's change\n", "person");
+    String refusal =
+        GitHostFixture.gitExpectingFailureAs(
+            CLI_PERSON, clone, "git", "push", "-o", "qits.token=" + TOKEN, "origin", "main");
+
+    assertTrue(refusal.contains("refs/heads/main is outside the push scope"), refusal);
+    assertEquals(before, refSha(repoId, "refs/heads/main"));
+  }
+
+  @Test
+  public void aScopedCredentialStillReleasesThroughTheReleaseOption() throws Exception {
+    // C3 takes the token away from scoped credentials, not the release door.
+    String repoId = seedOrigin();
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+
+    GitHostFixture.commitFile(clone, "release.txt", "2026.912.120000\n", "release");
+    String released = GitHostFixture.head(clone);
+    GitHostFixture.gitAs(
+        AGENT_ON_MAIN, clone, "git", "push", "-o", "qits.release", "origin", "main");
+
+    assertEquals(released, refSha(repoId, "refs/heads/main"));
   }
 
   @Test

@@ -57,6 +57,10 @@ import org.jboss.logging.Logger;
  *       matches</b>, and a configured-empty value likewise matches nothing (never "empty allows
  *       empty"). With protection on and no token configured, direct pushes to the default branch
  *       are simply impossible, and a deployment that wants the dev-loop escape configures one.
+ *       <b>Only a platform service client may use it</b> — a client token with {@code qits:system}
+ *       and no push scope (rule 4 of {@link RefScopeHook}). A person, a workstation and a credential
+ *       with {@code git_refs} are refused even with the right value, so knowing the value is not
+ *       enough.
  *   <li>{@code -o qits.no-ci} — <b>not</b> a bypass of this hook, and this class never reads it: it
  *       rides through to {@code SCMPublishCommit.suppressCi}, where each consumer decides what it
  *       means ({@code GitHostRoutes.service}'s post-receive lambda, {@code ScmEventAnnouncer}). It
@@ -138,11 +142,20 @@ public class ProtectedRefHook {
    * recovered from the repository on every backend — a bare has a directory whose parent is the id,
    * a DFS repository has no directory at all. So the id is bound here, where it is still known.
    */
-  public PreReceiveHook forRepository(String repoId) {
-    return (rp, commands) -> onPreReceive(repoId, rp, commands);
+  public PreReceiveHook forRepository(String repoId, boolean tokenBypassAllowed) {
+    return (rp, commands) -> onPreReceive(repoId, rp, commands, tokenBypassAllowed);
   }
 
-  void onPreReceive(String repoId, ReceivePack rp, Collection<ReceiveCommand> commands) {
+  /**
+   * {@code tokenBypassAllowed} says whether this push may use {@code -o qits.token=}. Only a platform
+   * service client may ({@link RefScopeHook.Scope#tokenBypassAllowed()}). For any other credential
+   * the option is refused, and the refusal says why.
+   */
+  void onPreReceive(
+      String repoId,
+      ReceivePack rp,
+      Collection<ReceiveCommand> commands,
+      boolean tokenBypassAllowed) {
     Repository repo = rp.getRepository();
     if (!isProtectionEnabled(repoId)) {
       return;
@@ -155,7 +168,7 @@ public class ProtectedRefHook {
     List<String> options = rp.getPushOptions() == null ? List.of() : rp.getPushOptions();
     boolean release = options.contains(RELEASE_OPTION);
     boolean tokenPresented = options.stream().anyMatch(o -> o.startsWith(TOKEN_OPTION_PREFIX));
-    boolean tokenAccepted = tokenPresented && tokenMatches(options);
+    boolean tokenAccepted = tokenBypassAllowed && tokenPresented && tokenMatches(options);
 
     for (ReceiveCommand cmd : commands) {
       if (!protectedRef.equals(cmd.getRefName()) || cmd.getType() == ReceiveCommand.Type.CREATE) {
@@ -180,7 +193,7 @@ public class ProtectedRefHook {
             cmd.getNewId().name());
         continue;
       }
-      String reason = refusal(protectedRef, cmd, release, tokenPresented);
+      String reason = refusal(protectedRef, cmd, release, tokenPresented, tokenBypassAllowed);
       LOG.infof("refused %s of protected ref %s in %s: %s", cmd.getType(), protectedRef, repoId,
           reason);
       cmd.setResult(Result.REJECTED_OTHER_REASON, reason);
@@ -234,9 +247,21 @@ public class ProtectedRefHook {
    * which is the part the pusher cannot otherwise know and can act on.
    */
   private String refusal(
-      String ref, ReceiveCommand cmd, boolean release, boolean tokenPresented) {
+      String ref,
+      ReceiveCommand cmd,
+      boolean release,
+      boolean tokenPresented,
+      boolean tokenBypassAllowed) {
     boolean delete = cmd.getType() == ReceiveCommand.Type.DELETE;
     String prefix = "protected ref " + ref + ": ";
+    if (tokenPresented && !tokenBypassAllowed) {
+      return prefix
+          + "-o "
+          + TOKEN_OPTION_PREFIX
+          + "… is accepted only from a platform service client, and this credential has a push"
+          + " scope; release through "
+          + INTEGRATE_ENDPOINT;
+    }
     if (tokenPresented) {
       return prefix
           + (hasConfiguredToken()

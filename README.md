@@ -102,6 +102,38 @@ a refused connection, a non-200, an unreadable body — is a **503**. A git clie
 "this repository is gone", so an outage answered that way would tell the platform every repository
 had been deleted (the `fe26a6c` lesson).
 
+### Who may push what
+
+The path policy opens `/git/**` to five roles: `qits:admin` (a browser session), `qits:system` (a
+platform service), `qits:git:external` (a workstation token), and `qits:agent` / `qits:ci-run` (a
+commissioned agent or CI run). A role only opens the door. **Which refs a push may touch comes from
+the credential's scope, never from its roles** — `RefScopeHook`, contract C3 of
+`principal-bound-git-refs-plan.md` in the superproject. The first row that fits decides:
+
+| # | The credential | May push |
+|---|---|---|
+| 1 | carries `git_refs` (a JSON array) | only refs that match an entry: the exact ref, or anything under an entry that ends in `/*`. An empty list pushes nothing. |
+| 2 | carries `git_ref_pattern` (the workstation token), or holds `qits:git:external` | only `refs/heads/external/*`. Any other pattern, or the role without the claim, pushes nothing. |
+| 3 | is a person: a JWT with `credential_type` (the `qits` CLI token), or a browser session from the forwarded `X-Qits-*` headers | only `refs/heads/external/*` |
+| 4 | is a client token with none of those claims that holds `qits:system` — a platform service, or a commission that still inherits its owner's roles | anything. The default branch's seatbelt still applies. |
+| 4 | is a client token with none of those claims, without `qits:system` — a `qits:agent` or `qits:ci-run` commission with no list | nothing |
+
+`qits:admin` and `qits:system` widen none of rows 1 to 3. A push with no verified identity pushes
+nothing. The bootstrap ingress keeps row 2's check with the pattern it is configured with.
+
+- **A push is refused whole.** If one ref is outside the scope, every ref in the push is refused and
+  nothing lands. Git prints the reason per ref — the ref and what the credential may push:
+  `refs/heads/main is outside the push scope: a person's credential may push only refs/heads/external/*`.
+- **Only a platform service client may use `-o qits.token=`** (row 4 with `qits:system`). Any other
+  credential is refused, even with the right value.
+- **The scope is decided at the HTTP boundary**, on the event loop, and handed to the JGit worker as
+  a value. The worker never reads a header or a thread-local. A push whose scope was never captured
+  is refused.
+- **Two audiences are accepted**: this service's own (`QITS_AUTH_MACHINE_AUDIENCE`) and
+  `qits-platform`, which a person's CLI token carries. The audience decides nothing about a push.
+- **The git primitives are not part of this.** `/githost/api/repositories/{repoId}/merges`, `/tags`,
+  `/commits` and the branch delete stay `qits:system` only.
+
 ### The API
 
 | Route | What it does |
@@ -308,7 +340,7 @@ lineage, the retry budget). What this service owns is in
 | `QITS_PROJECTS_NAME_RESOLVER_URL` | Where qits-projects resolves a repository name. No default; unset means the name-addressed scheme 404s — which is every public clone url, so a real deployment sets it. |
 | `QITS_GITHOST_STORAGE_CLIENT` | The client id whose self-role (`clients/<value>`) opens the id-addressed scheme. Set it to qits-projects' service client and nothing else opens those routes — not `qits:admin`, not `qits:system`. Unset (shipped) leaves the scheme exactly as it was. |
 | `QITS_REPOSITORIES_GIT_PROTECT_DEFAULT_BRANCH` | The default branch's seatbelt. Ships `false`. |
-| `QITS_REPOSITORIES_GIT_PUSH_TOKEN` | What `-o qits.token=<value>` must match. No default: unset means no token matches. |
+| `QITS_REPOSITORIES_GIT_PUSH_TOKEN` | What `-o qits.token=<value>` must match. No default: unset means no token matches. Only a platform service client may present it (see "Who may push what"). |
 | `QITS_REPOSITORIES_GIT_MAX_PACK_SIZE` | The largest push this host accepts. Ships `64M`. |
 | `QITS_GIT_AUTHOR_NAME` / `QITS_GIT_AUTHOR_EMAIL` | Who a commit the git primitives manufacture belongs to. The platform's key pair — qits-workspaces reads the same one — defaulting to `qits <qits@local>`. |
 
@@ -319,7 +351,8 @@ Push options, all read inside the pack protocol rather than as headers (qits-gat
 whole `X-Qits-` prefix, so a header would behave differently through the front door):
 
 - `-o qits.release` — an integrate-produced release. Fast-forward only.
-- `-o qits.token=<value>` — push the protected branch anyway, if the value matches.
+- `-o qits.token=<value>` — push the protected branch anyway, if the value matches and the pusher is
+  a platform service client.
 - `-o qits.no-ci` — not a bypass. It rides through to `SCMPublishCommit.suppressCi`.
 
 ## Deployment
@@ -361,7 +394,7 @@ of `ci-event-release-request.yml` publishes as the `@userflows/qits-githost` doc
 release-request fold. The proof and the documentation are the same
 artifact, so neither can go stale without the build going red.
 
-**Three categories, seven stories.**
+**Three categories, nine stories.**
 
 | category | story | what it proves |
 | --- | --- | --- |
@@ -371,6 +404,8 @@ artifact, so neither can go stale without the build going red.
 | `git` | A push lands new history | receive-pack moved the ref, and the origin now advertises AND serves what the push carried |
 | `git` | A pull fetches what a teammate pushed | two working copies, two initiators, one repository |
 | `git` | A pipeline reads a file without cloning | the content routes answer a directory and a file in two plain GETs |
+| `git` | A person's CLI token pushes only external branches | a token for the `qits-platform` audience gets in, and a person pushes `refs/heads/external/*` and not `main`, whatever their roles |
+| `git` | An agent pushes only the branches it was given | a real `git_refs` claim lets the agent push its branch, and refuses an epic branch and `main` although it holds `qits:system` |
 | `browse` | A reader opens a file in the code browser | the SPA's four reads, and that this plane asks qits-projects nothing |
 
 `api/TokenValidationBootstrapIT` owns the first category; the rest live under

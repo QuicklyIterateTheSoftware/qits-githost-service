@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -24,6 +25,10 @@ import java.util.UUID;
  * <p>The git CLI rather than JGit's porcelain, for the same reason {@code GitHostTest} always shelled
  * it: what is under test is whether the real client can talk to this host, including the parts of
  * the protocol — push options among them — that only a real client negotiates.
+ *
+ * <p><b>Every git command presents {@link TestTokenMechanism#SERVICE_CLIENT}</b>, a client token
+ * without a push scope, so the suite's pushes are restricted exactly as much as before C3. A test
+ * about another credential names it with {@link #gitAs} or {@link #gitExpectingFailureAs}.
  */
 final class GitHostFixture {
 
@@ -205,7 +210,8 @@ final class GitHostFixture {
    * tag together.
    */
   static String gitTracingHttp(Path cwd, String... command) throws Exception {
-    Result result = run(cwd, Map.of("GIT_CURL_VERBOSE", "1"), command);
+    Result result =
+        run(cwd, TestTokenMechanism.SERVICE_CLIENT, Map.of("GIT_CURL_VERBOSE", "1"), command);
     if (result.exit() != 0) {
       throw new RuntimeException("git " + String.join(" ", command) + " failed:\n" + result.out());
     }
@@ -219,7 +225,15 @@ final class GitHostFixture {
 
   /** Runs git, failing the test with the captured output if it exits non-zero. */
   static String git(Path cwd, String... command) throws Exception {
-    Result result = run(cwd, command);
+    return gitAs(TestTokenMechanism.SERVICE_CLIENT, cwd, command);
+  }
+
+  /**
+   * {@link #git}, with the client sending {@code headers} instead of the suite's service client. An
+   * empty list sends none: the request then carries the {@code %test} synthetic user, a person.
+   */
+  static String gitAs(List<String> headers, Path cwd, String... command) throws Exception {
+    Result result = run(cwd, headers, Map.of(), command);
     if (result.exit() != 0) {
       throw new RuntimeException("git " + String.join(" ", command) + " failed:\n" + result.out());
     }
@@ -232,7 +246,13 @@ final class GitHostFixture {
    * reads is exactly what is being asserted.
    */
   static String gitExpectingFailure(Path cwd, String... command) throws Exception {
-    Result result = run(cwd, command);
+    return gitExpectingFailureAs(TestTokenMechanism.SERVICE_CLIENT, cwd, command);
+  }
+
+  /** {@link #gitExpectingFailure}, sending {@code headers}; see {@link #gitAs}. */
+  static String gitExpectingFailureAs(List<String> headers, Path cwd, String... command)
+      throws Exception {
+    Result result = run(cwd, headers, Map.of(), command);
     if (result.exit() == 0) {
       fail("git " + String.join(" ", command) + " unexpectedly succeeded:\n" + result.out());
     }
@@ -241,16 +261,14 @@ final class GitHostFixture {
 
   private record Result(int exit, String out) {}
 
-  private static Result run(Path cwd, String... command) throws Exception {
-    return run(cwd, Map.of(), command);
-  }
-
-  private static Result run(Path cwd, Map<String, String> environment, String... command)
+  private static Result run(
+      Path cwd, List<String> headers, Map<String, String> environment, String... command)
       throws Exception {
     ProcessBuilder pb = new ProcessBuilder(command);
     if (cwd != null) {
       pb.directory(cwd.toFile());
     }
+    pb.environment().putAll(TestTokenMechanism.gitEnvironment(headers));
     pb.environment().putAll(environment);
     pb.redirectErrorStream(true);
     Process p = pb.start();
