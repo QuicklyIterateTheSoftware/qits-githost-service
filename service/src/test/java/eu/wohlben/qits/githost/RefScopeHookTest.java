@@ -63,8 +63,7 @@ class RefScopeHookTest {
         List.of(),
         List.of("qits:admin"),
         List.of("qits:agent"),
-        List.of("qits:ci-run"),
-        List.of("qits-platform:system"));
+        List.of("qits:ci-run"));
   }
 
   // --- rule 1: git_refs -------------------------------------------------------------------------

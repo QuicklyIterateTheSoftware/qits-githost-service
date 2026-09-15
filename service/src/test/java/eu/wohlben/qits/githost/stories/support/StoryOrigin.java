@@ -40,11 +40,12 @@ import java.util.Map;
 public final class StoryOrigin {
 
   /**
-   * The audience the packaged process enforces. Spelled here rather than imported from the IT's
-   * profile so this class stays usable from any story class; the two are asserted to agree by the
-   * simple fact that a wrong one makes every story 401.
+   * The audience the packaged process enforces — the one every token on the platform carries.
+   * Spelled here rather than imported from the IT's profile so this class stays usable from any
+   * story class; the two are asserted to agree by the simple fact that a wrong one makes every
+   * story 401.
    */
-  public static final String AUDIENCE = "dev-qits-githost";
+  public static final String AUDIENCE = "qits-platform";
 
   /** The default branch every story's origin carries — pinned, never left to {@code init.defaultBranch}. */
   public static final String BRANCH = "main";
@@ -61,7 +62,7 @@ public final class StoryOrigin {
   // --- credentials --------------------------------------------------------------------------------
 
   /**
-   * A bearer the git wire accepts: minted by the mock idp, for this service's audience, carrying
+   * A bearer the git wire accepts: minted by the mock idp, for the platform audience, carrying
    * {@code qits:system} in {@code groups} — the shape a platform service's token has, and what the
    * {@code git} path policy is configured to admit. Validation is real: the packaged process
    * fetched this idp's JWKS at startup and checks the signature and the audience against it.

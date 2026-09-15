@@ -73,9 +73,11 @@ public class TokenValidationBootstrapIT {
 
   /**
    * Hands the launched artifact its config the way a deployment does — the generic resource
-   * triples and the audience as the <b>variable names the shipped expressions read</b>, so the
-   * expressions themselves stay under test (the idp IT's pattern: the overrides reach the launched
-   * process as system properties, and expression expansion reads the whole config).
+   * triples as the <b>variable names the shipped expressions read</b>, so the expressions
+   * themselves stay under test (the idp IT's pattern: the overrides reach the launched process as
+   * system properties, and expression expansion reads the whole config). The audience is not among
+   * them: the shipped {@code quarkus.oidc.token.audience} is the platform audience and every token
+   * a story mints carries it, so the packaged process enforces exactly what a deployment does.
    *
    * <p>The databases are the same embedded postgres the surefire suite spawns, under IT-own names
    * so nothing is shared with the {@code @QuarkusTest} databases. The two mocks start here — before
@@ -101,7 +103,8 @@ public class TokenValidationBootstrapIT {
    */
   public static class PackagedWithMockIdp implements QuarkusTestProfile {
 
-    static final String AUDIENCE = "dev-qits-githost";
+    /** The one audience every token on the platform carries, and the only one the door admits. */
+    static final String AUDIENCE = "qits-platform";
 
     @Override
     public Map<String, String> getConfigOverrides() {
@@ -113,7 +116,6 @@ public class TokenValidationBootstrapIT {
       overrides.put("QITS_RESOURCE_EVENTSTREAM_URL", EmbeddedPg.url("eventstream_packaged_it"));
       overrides.put("QITS_RESOURCE_EVENTSTREAM_USERNAME", EmbeddedPg.USER);
       overrides.put("QITS_RESOURCE_EVENTSTREAM_PASSWORD", EmbeddedPg.PASSWORD);
-      overrides.put("QITS_AUTH_MACHINE_AUDIENCE", AUDIENCE);
       // the one seam this test moves: where the idp is. Runtime key, so the packaged artifact
       // is otherwise exactly what ships.
       overrides.put("quarkus.oidc.auth-server-url", idp.baseUrl());
@@ -191,7 +193,8 @@ public class TokenValidationBootstrapIT {
         .as("jwks-fetched");
 
     // End (b), the githost side: those keys are what token validation now runs on. A platform
-    // service's bearer (aud = this service, roles in `groups`) opens the guarded git surface.
+    // service's bearer (aud = the platform audience, roles in `groups`) opens the guarded git
+    // surface.
     //
     // The actor is set BEFORE the call: the tap sees a request, never a narrative role, and this
     // is what makes the observed edge read `a platform service -> qits-githost`.
@@ -209,7 +212,7 @@ public class TokenValidationBootstrapIT {
         .statusCode(200)
         .body("repositories", notNullValue());
     story
-        .note("a platform service's bearer (aud=dev-qits-githost, groups=[qits:system]) is accepted")
+        .note("a platform service's bearer (aud=qits-platform, groups=[qits:system]) is accepted")
         .as("git-served");
   }
 
@@ -219,8 +222,8 @@ public class TokenValidationBootstrapIT {
   @UserStoryDescription(
       """
       The flip side of trusting the platform's keys: a token signed by a key the published JWKS
-      never carried, or minted for another service's audience, is refused at the door — however
-      well-formed it looks.
+      never carried, or minted for an audience that is not the platform's, is refused at the door —
+      however well-formed it looks.
       """)
   @Order(2)
   void aStrangersTokenIsRefused(Interactions story) {
@@ -244,14 +247,14 @@ public class TokenValidationBootstrapIT {
         .as("unknown-key-refused");
 
     String wrongAudienceToken =
-        idp.token().audience("some-other-service").groups("qits:system").mint();
+        idp.token().audience("some-other-audience").groups("qits:system").mint();
     given()
         .header("Authorization", "Bearer " + wrongAudienceToken)
         .get("/git")
         .then()
         .statusCode(401);
     story
-        .note("a token minted for another service's audience is refused just the same")
+        .note("a token minted for an audience that is not the platform's is refused just the same")
         .as("wrong-audience-refused");
   }
 

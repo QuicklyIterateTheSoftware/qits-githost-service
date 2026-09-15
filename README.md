@@ -129,8 +129,8 @@ nothing. The bootstrap ingress keeps row 2's check with the pattern it is config
 - **The scope is decided at the HTTP boundary**, on the event loop, and handed to the JGit worker as
   a value. The worker never reads a header or a thread-local. A push whose scope was never captured
   is refused.
-- **Two audiences are accepted**: this service's own (`QITS_AUTH_MACHINE_AUDIENCE`) and
-  `qits-platform`, which a person's CLI token carries. The audience decides nothing about a push.
+- **One audience is accepted**: `qits-platform`, which every token on the platform carries — a
+  machine's and a person's CLI token alike. The audience decides nothing about a push.
 - **The git primitives are not part of this.** `/githost/api/repositories/{repoId}/merges`, `/tags`,
   `/commits` and the branch delete stay `qits:system` only.
 

@@ -15,9 +15,8 @@ import org.junit.jupiter.api.Test;
  * plan (contract C4). Before this default, a deployment that dropped that extras entry stopped the
  * service from booting at all: the expression had no fallback.
  *
- * <p>The suite never sets {@code QITS_AUTH_MACHINE_AUDIENCE} (only the packaged {@code
- * TokenValidationBootstrapIT} does, for its own profile), so this test runs against the real
- * shipped default. A {@code @QuarkusTest} is what makes that true: it reads the merged
+ * <p>Nothing in the build sets {@code QITS_AUTH_MACHINE_AUDIENCE}, so this test runs against the
+ * real shipped default. A {@code @QuarkusTest} is what makes that true: it reads the merged
  * configuration the application actually boots with, not a value reconstructed by hand.
  */
 @QuarkusTest
@@ -37,15 +36,12 @@ public class MachineAuthAudienceDefaultTest {
   }
 
   @Test
-  public void thePlatformAudienceIsAlwaysAcceptedOnTopOfTheDefault() {
-    // quarkus.oidc.token.audience = ${qits.auth.machine.audience},qits-platform — with no
-    // QITS_AUTH_MACHINE_AUDIENCE set, both entries resolve to the same value, so a token addressed
-    // only to qits-platform is still accepted (quarkus-oidc matches if the token's aud contains any
-    // configured entry).
+  public void thePlatformAudienceIsTheOnlyOneTheDoorAccepts() {
+    // quarkus.oidc.token.audience = qits-platform, a list of one: every token on the platform
+    // carries that audience, so nothing else has to be admitted for a caller to reach this
+    // service. The door is the audience check; the roles are what decide anything after it.
     String rawValue = ConfigProvider.getConfig().getValue("quarkus.oidc.token.audience", String.class);
     List<String> tokenAudience = List.of(rawValue.split(","));
-    assertTrue(
-        tokenAudience.contains("qits-platform"),
-        "quarkus.oidc.token.audience must always include qits-platform: " + tokenAudience);
+    assertEquals(List.of("qits-platform"), tokenAudience);
   }
 }

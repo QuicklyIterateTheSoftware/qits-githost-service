@@ -43,7 +43,7 @@ public class TestTokenMechanism implements HttpAuthenticationMechanism {
   /** A platform service client with no scope, holding the {@code %test} synthetic user's roles. */
   public static final String SERVICE_CLIENT_CLAIMS =
       "{\"sub\":\"qits-githost-suite\","
-          + "\"groups\":[\"qits:admin\",\"qits:system\",\"qits-platform:system\"]}";
+          + "\"groups\":[\"qits:admin\",\"qits:system\"]}";
 
   /** The headers the suite's git client sends unless a test says otherwise. */
   public static final List<String> SERVICE_CLIENT = token(SERVICE_CLIENT_CLAIMS);

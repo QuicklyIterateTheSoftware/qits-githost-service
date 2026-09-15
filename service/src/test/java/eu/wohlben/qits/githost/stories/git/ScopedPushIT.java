@@ -30,9 +30,8 @@ import org.junit.jupiter.api.condition.EnabledIf;
  * What a credential may push, against the packaged process with the OIDC tenant on (contract C3).
  *
  * <p>The {@code @QuarkusTest} suite proves the rules with a test mechanism in place of OIDC. Only
- * here do the tokens pass real validation, so only here is it proved that a person's CLI token
- * (audience {@code qits-platform}) gets in at all, and that a {@code git_refs} JSON array is read
- * the way quarkus-oidc hands it over.
+ * here do the tokens pass real validation, so only here is it proved that a person's CLI token gets
+ * in at all, and that a {@code git_refs} JSON array is read the way quarkus-oidc hands it over.
  */
 @QuarkusIntegrationTest
 @TestProfile(TokenValidationBootstrapIT.PackagedWithMockIdp.class)
@@ -67,12 +66,12 @@ public class ScopedPushIT {
   @UserStory(value = "A person's CLI token pushes only external branches", category = "git")
   @UserStoryDescription(
       """
-      A person pushes with the token the `qits` CLI holds. That token is minted for the platform
-      audience, `qits-platform`, not for the git host's own, and the git host accepts it. It says
-      `credential_type=cli`, so the git host treats it as a person: whatever roles the person has —
-      here `qits:admin` — a person pushes only `refs/heads/external/*`. The push to `main` is
-      refused with a message that names the ref and the scope, and `main` does not move; the push
-      to an external branch lands.
+      A person pushes with the token the `qits` CLI holds. It carries the platform audience,
+      `qits-platform`, like every token the git host admits, so its audience sets it apart from a
+      machine's in no way at all. It says `credential_type=cli`, and that is what makes the git host
+      treat it as a person: whatever roles the person has — here `qits:admin` — a person pushes only
+      `refs/heads/external/*`. The push to `main` is refused with a message that names the ref and
+      the scope, and `main` does not move; the push to an external branch lands.
       """)
   void aPersonsCliTokenPushesOnlyExternalBranches(Interactions story, Commands commands) {
     StoryTarget target = new StoryTarget(root);
@@ -81,7 +80,7 @@ public class ScopedPushIT {
         MockIdp.attach()
             .token()
             .subject("alice")
-            .audience("qits-platform")
+            .audience(StoryOrigin.AUDIENCE)
             .groups("qits:admin")
             .claim("credential_type", "cli")
             .mint();
