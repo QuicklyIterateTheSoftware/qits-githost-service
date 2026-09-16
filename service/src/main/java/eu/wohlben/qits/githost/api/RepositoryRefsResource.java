@@ -13,16 +13,20 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.ServerErrorException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
@@ -47,6 +51,9 @@ import org.eclipse.jgit.merge.MergeStrategy;
 import org.eclipse.jgit.merge.ResolveMerger;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.treewalk.EmptyTreeIterator;
+import org.eclipse.jgit.treewalk.TreeWalk;
+import org.eclipse.jgit.treewalk.filter.PathFilterGroup;
 import org.jboss.logging.Logger;
 
 /**
@@ -162,14 +169,45 @@ public class RepositoryRefsResource {
   public record Author(String name, String email) {}
 
   /**
+   * A directive: decide the conflict at {@code path} as the gitlink {@code gitlink}.
+   *
+   * <p><b>This is not a general "write a tree entry" door wearing a merge's clothes</b>, and the
+   * whole of its safety is one rule enforced in {@link #fold}: a directive is only ever honoured for
+   * a path <em>git itself refused to decide</em>, and only ever as a mode-160000 entry. A path the
+   * merge decided on its own, or decided against as a text conflict, is a 400 rather than a quiet
+   * overwrite — a caller that could name any path here would be able to rewrite a file through an
+   * endpoint whose contract says it only merges.
+   *
+   * <p>{@code gitlink} is a commit of the <em>submodule's</em> repository, so — exactly as in {@link
+   * CommitRequest} — only its shape is checked; there is nothing here to resolve it against.
+   */
+  @RegisterForReflection
+  public record Resolution(String path, String gitlink) {}
+
+  /**
    * Fold {@code sources} into {@code target}.
    *
    * <p>{@code target} is a full {@code refs/heads/…} name; {@code sources} are refs, tags or shas,
    * in the order they should become parents. {@code message} and {@code author} are optional.
+   *
+   * <p>{@code resolutions} is optional and opt-in, and absent it changes nothing: a fold without it
+   * is byte for byte the fold this endpoint has always performed. It exists because the one conflict
+   * a caller can decide without a worktree — two heads pinning a submodule at different commits — is
+   * also the one this host is asked to fold most often, and the alternative is an orchestrator that
+   * has to clone a superproject just to write a single 20-byte tree entry.
    */
   @RegisterForReflection
   public record MergeRequest(
-      String target, List<String> sources, String message, Author author) {}
+      String target,
+      List<String> sources,
+      String message,
+      Author author,
+      List<Resolution> resolutions) {
+    /** The form before directed resolutions existed: sources alone decide the tree. */
+    public MergeRequest(String target, List<String> sources, String message, Author author) {
+      this(target, sources, message, author, List.of());
+    }
+  }
 
   /**
    * What the target ref now is.
@@ -180,18 +218,50 @@ public class RepositoryRefsResource {
    * move). {@code parents} are the parents of the commit {@code sha} names, so a caller can see the
    * octopus it asked for; {@code skipped} names the sources that contributed nothing because
    * another head already contained them.
+   *
+   * <p>{@code resolved} names the paths this fold decided from a {@link Resolution} rather than from
+   * the sources, sorted, and empty when the merge stood on its own. It is reported because a caller
+   * that stores what it folded should be able to tell a tree git computed from a tree a directive
+   * steered, without re-deriving it from the request.
    */
   @RegisterForReflection
   public record MergeResponse(
-      String target, String sha, String outcome, List<String> parents, List<String> skipped) {}
+      String target,
+      String sha,
+      String outcome,
+      List<String> parents,
+      List<String> skipped,
+      List<String> resolved) {}
 
   /**
    * A conflict, reported rather than resolved. {@code head} is the source <b>as the caller spelled
    * it</b> — the head being folded in when the conflict appeared, which is git's own answer to
    * "who broke it" and the one the caller can act on.
+   *
+   * <p>The first four components are frozen: qits-projects has folds' conflict JSON in its database
+   * and a frontend reading exactly these names, so {@code reason} keeps meaning {@code content} for
+   * an unmerged path and the lowercased merge-failure reason for a failing one, and nothing added
+   * below may change what they hold.
+   *
+   * <p>{@code kind} is {@code gitlink} when the entry is mode 160000 on <b>any</b> of the three
+   * sides and {@code file} otherwise — a submodule that was added on one side and is a directory on
+   * another is still a gitlink conflict, and a caller deciding whether it can resolve this itself
+   * needs the answer git would give. {@code base}, {@code ours} and {@code theirs} are the entry's
+   * object id on each side of the three-way, or {@code null} where the path is absent there; for a
+   * gitlink they are commits of the <em>submodule's</em> repository and are forwarded as values,
+   * never resolved here. An unrelated-histories merge has no base at all and every {@code base} is
+   * then null, which is the truth and not an error.
    */
   @RegisterForReflection
-  public record ConflictedPath(String path, String head, String headSha, String reason) {}
+  public record ConflictedPath(
+      String path,
+      String head,
+      String headSha,
+      String reason,
+      String kind,
+      String base,
+      String ours,
+      String theirs) {}
 
   /** The body of the 409 a conflicted merge answers. {@code error} is always {@code merge-conflict}. */
   @RegisterForReflection
@@ -216,6 +286,15 @@ public class RepositoryRefsResource {
   /** Where a branch stands right now: the full ref name and the commit it points at. */
   @RegisterForReflection
   public record BranchResponse(String ref, String sha) {}
+
+  /**
+   * Whether one commit is an ancestor of another — the question echoed back with its answer, so a
+   * caller reading a log can see what was asked as well as what came out. {@code commit} and {@code
+   * in} are the resolved shas, not the spellings, because a caller asking about a branch name wants
+   * to know which commit it was told about.
+   */
+  @RegisterForReflection
+  public record ContainsResponse(String repoId, String commit, String in, boolean contains) {}
 
   /**
    * The refusal a tag that already exists gets, and the whole point of the endpoint: {@code error}
@@ -305,9 +384,13 @@ public class RepositoryRefsResource {
    * same thing for a criss-cross base). They are never referenced by any ref; on a conflict the
    * inserter is discarded without a flush and not one byte of any of it lands.
    *
-   * <p><b>On a conflict no ref moves</b> and the answer is a 409 naming the paths and the head that
-   * introduced each. Resolution is not this host's business — it has no worktree to resolve in and
-   * no opinion about who should win.
+   * <p><b>On a conflict no ref moves</b> and the answer is a 409 naming the paths, what each of the
+   * three sides holds there, and the head that introduced it. Deciding a conflict is still not this
+   * host's business — it has no worktree to resolve in and no opinion about who should win — with
+   * one narrow exception the caller must ask for by name: a {@link Resolution} directs a
+   * <em>gitlink</em> conflict at a path git refused to decide, because a submodule pin is a value
+   * the orchestrator owns and not a text the merger could ever have merged. See {@link
+   * MergeRequest#resolutions()} for why it cannot become a general write door.
    *
    * <p><b>Nothing here protects the target.</b> Merging into a repository's default branch is
    * allowed and is a designed use of this endpoint (a release reaches {@code main} only after it
@@ -339,19 +422,48 @@ public class RepositoryRefsResource {
         return badRequest("source must match " + REV_PATTERN + ": " + source);
       }
     }
+    List<Resolution> resolutions =
+        request.resolutions() == null ? List.of() : request.resolutions();
+    if (resolutions.size() > MAX_FILES) {
+      return badRequest("at most " + MAX_FILES + " resolutions in one merge");
+    }
+    // Shape first, and by the same rules the commit endpoint applies to its gitlinks map: a path is
+    // repository-relative and a pin is a full object name whose repository is somewhere else.
+    Map<String, String> directed = new LinkedHashMap<>();
+    for (Resolution resolution : resolutions) {
+      if (resolution == null || !isValidPath(resolution.path())) {
+        return badRequest(
+            "not a repository-relative file path: "
+                + (resolution == null ? null : resolution.path()));
+      }
+      String sha = resolution.gitlink();
+      if (sha == null || !GITLINK_SHA.matcher(sha).matches()) {
+        return badRequest(
+            "a resolution pins a full 40-hex commit sha; " + resolution.path() + " does not");
+      }
+      if (directed.putIfAbsent(resolution.path(), sha) != null) {
+        return badRequest("two resolutions for " + resolution.path());
+      }
+    }
 
     try (Repository repo = repositories.open(repoId)) {
       if (repo == null) {
         return notFound("no-such-repository", repoId);
       }
-      return fold(repo, request, sources);
+      return fold(repo, request, sources, directed);
     } catch (Exception e) {
       throw unavailable("could not merge into " + request.target() + " of repository " + repoId, e);
     }
   }
 
-  /** The merge itself, on an open repository. Everything it inserts rides one {@link ObjectInserter}. */
-  private Response fold(Repository repo, MergeRequest request, List<String> sources)
+  /**
+   * The merge itself, on an open repository. Everything it inserts rides one {@link ObjectInserter}.
+   *
+   * <p>{@code directed} is the validated {@link Resolution} list, path → pin, already checked for
+   * shape. Empty is the overwhelming case and takes exactly the path this method has always taken.
+   */
+  private Response fold(
+      Repository repo, MergeRequest request, List<String> sources, Map<String, String> directed)
       throws IOException {
     String target = request.target();
     try (ObjectInserter inserter = repo.newObjectInserter();
@@ -403,6 +515,12 @@ public class RepositoryRefsResource {
       }
 
       if (effective.size() == 1) {
+        // Nothing was merged, so nothing could have been decided: a directive here named a path no
+        // conflict ever touched, and that is the 400 below rather than a silent no-op.
+        Response unused = unusedResolutions(directed, Set.of());
+        if (unused != null) {
+          return unused;
+        }
         Head only = effective.get(0);
         if (only.commit().equals(targetOld)) {
           return Response.ok(
@@ -411,7 +529,8 @@ public class RepositoryRefsResource {
                       only.commit().name(),
                       "unchanged",
                       parentNames(only.commit()),
-                      skipped))
+                      skipped,
+                      List.of()))
               .build();
         }
         // The target is absent, or an ancestor of the one surviving head: move the ref onto it
@@ -425,13 +544,15 @@ public class RepositoryRefsResource {
                         only.commit().name(),
                         "fast-forward",
                         parentNames(only.commit()),
-                        skipped))
+                        skipped,
+                        List.of()))
                 .build();
       }
 
       PersonIdent person = authorOf(request.author());
       RevCommit accumulator = effective.get(0).commit();
       ObjectId resultTree = null;
+      Set<String> decided = new TreeSet<>();
       for (int i = 1; i < effective.size(); i++) {
         Head next = effective.get(i);
         ResolveMerger merger = (ResolveMerger) MergeStrategy.RECURSIVE.newMerger(repo, true);
@@ -439,10 +560,68 @@ public class RepositoryRefsResource {
         // flushed until the whole octopus succeeded. It closes the merger's own inserter for us.
         merger.setObjectInserter(inserter);
         merger.setCommitNames(new String[] {"BASE", target, next.spelling()});
-        if (!merger.merge(false, accumulator, next.commit())) {
-          return conflict(target, merger, next);
+        RevCommit theirs = next.commit();
+        ObjectId folded;
+        if (merger.merge(false, accumulator, theirs)) {
+          folded = merger.getResultTreeId();
+        } else if (directed.isEmpty()) {
+          return conflict(target, conflictsOf(merger, walk, accumulator, theirs, next, null));
+        } else {
+          // A directed step. The result tree of a FAILED merge says nothing — there is no patching
+          // getResultTreeId() — so the conflict is removed from the question instead: BOTH sides are
+          // rewritten to hold what the caller decided, and the same pairwise merge is run again
+          // against those rewritings, where the path is now identical on both sides and the
+          // recursive merger takes it without an argument.
+          //
+          // Both sides, not just the head being folded in, and that is not belt-and-braces: a
+          // directive names a pin of its own, which is very often neither side's. Rewrite only
+          // "theirs" and a pin equal to the merge base leaves "ours" as the one-sided change and the
+          // merger silently keeps OURS instead of what was asked for, while a third pin conflicts
+          // all over again. Identical on both sides is the only rewriting whose result is the
+          // caller's answer whatever the three sides held.
+          Set<String> disputed = disputedPaths(merger);
+          Map<String, Sides> sides = sidesOf(walk, merger.getBaseCommitId(), accumulator, theirs, disputed);
+          Map<String, String> applies = new TreeMap<>();
+          for (String path : disputed) {
+            String pin = directed.get(path);
+            if (pin == null) {
+              continue;
+            }
+            if (!merger.getUnmergedPaths().contains(path)
+                || !"gitlink".equals(sides.getOrDefault(path, UNKNOWN_SIDES).kind())) {
+              // The rule that keeps this from being a write door: a directive decides a submodule
+              // pin git could not decide, and nothing else. A text conflict is still the caller's to
+              // fix in its own repository, and refusing loudly is what stops "resolve" from quietly
+              // meaning "overwrite".
+              return badRequest(
+                  path + " is not an unmerged gitlink conflict; a resolution decides only those");
+            }
+            applies.put(path, pin);
+          }
+          Set<String> residue = new TreeSet<>(disputed);
+          residue.removeAll(applies.keySet());
+          if (!residue.isEmpty()) {
+            // Partly directed is not directed. Answering 409 with what is left over beats folding
+            // half a conflict and leaving the caller to discover the rest from the tree.
+            return conflict(target, conflictsOf(merger, walk, accumulator, theirs, next, residue));
+          }
+          RevCommit directedOurs =
+              directedHead(inserter, reader, walk, person, accumulator, applies, target);
+          RevCommit directedTheirs =
+              directedHead(inserter, reader, walk, person, theirs, applies, next.spelling());
+          ResolveMerger retry = (ResolveMerger) MergeStrategy.RECURSIVE.newMerger(repo, true);
+          retry.setObjectInserter(inserter);
+          retry.setCommitNames(new String[] {"BASE", target, next.spelling()});
+          if (!retry.merge(false, directedOurs, directedTheirs)) {
+            // One attempt, never a loop: a merge that still conflicts after the caller's directive
+            // was applied is a conflict the caller did not describe, and guessing again would only
+            // move the surprise further from the request that caused it.
+            return conflict(
+                target, conflictsOf(retry, walk, directedOurs, directedTheirs, next, null));
+          }
+          decided.addAll(applies.keySet());
+          folded = retry.getResultTreeId();
         }
-        ObjectId folded = merger.getResultTreeId();
         if (i == effective.size() - 1) {
           resultTree = folded;
         } else {
@@ -459,6 +638,15 @@ public class RepositoryRefsResource {
         }
       }
 
+      Response unused = unusedResolutions(directed, decided);
+      if (unused != null) {
+        return unused;
+      }
+
+      // The REAL heads, always. A merge commit's tree is independent of the parents it declares, so
+      // a directed fold records the sources it actually folded and a tree a person resolving the
+      // same conflict by hand would have committed. A throwaway rewriting in the parent list would
+      // be a forgery, and would name a commit the discarded inserter never flushed.
       List<ObjectId> parents = effective.stream().map(head -> (ObjectId) head.commit()).toList();
       ObjectId merged =
           insertCommit(inserter, resultTree, parents, person, mergeMessage(request, effective));
@@ -474,7 +662,8 @@ public class RepositoryRefsResource {
                   merged.name(),
                   "merged",
                   parents.stream().map(ObjectId::name).toList(),
-                  skipped))
+                  skipped,
+                  List.copyOf(decided)))
           .build();
     }
   }
@@ -726,6 +915,93 @@ public class RepositoryRefsResource {
     }
   }
 
+  /**
+   * Whether {@code commit} is reachable from {@code in} — the ancestry question, asked of the host
+   * that owns the objects.
+   *
+   * <p>It exists because the alternative is a caller cloning a repository to answer one boolean. The
+   * fold already computes this internally ({@link #containedInAnother}) to drop a head another head
+   * contains; this is the same {@link RevWalk#isMergedInto} read, offered to the orchestrator that
+   * wants to know whether a source it is about to fold is already in the target.
+   *
+   * <p><b>{@code false} is an answer, not a failure.</b> Only a parameter this host cannot make
+   * sense of (missing, mis-shaped, naming something that is not a commit) is a 400, and only an
+   * object or a repository that is not here is a 404 — which of the two is named in {@code detail},
+   * because "no-such-commit" without the spelling sends the caller looking at the wrong one.
+   *
+   * <p>Guarded by the class-level machine role like the write primitives beside it, and deliberately
+   * not opened to {@code qits:agent}: an agent that may read a ref may fetch it and answer this
+   * itself, and every door here is one a machine was asked for by name.
+   */
+  @GET
+  @Path("/contains")
+  public Response contains(
+      @PathParam("repoId") String repoId,
+      @QueryParam("commit") String commit,
+      @QueryParam("in") String in) {
+    if (!isValidRepoId(repoId)) {
+      return badRequest("repoId must match " + REPO_ID_PATTERN);
+    }
+    if (!isValidRev(commit)) {
+      return badRequest("commit must match " + REV_PATTERN);
+    }
+    if (!isValidRev(in)) {
+      return badRequest("in must match " + REV_PATTERN);
+    }
+    try (Repository repo = repositories.open(repoId)) {
+      if (repo == null) {
+        return notFound("no-such-repository", repoId);
+      }
+      try (ObjectReader reader = repo.newObjectReader();
+          RevWalk walk = new RevWalk(reader)) {
+        ObjectId contained;
+        ObjectId container;
+        try {
+          contained = repo.resolve(commit);
+          container = repo.resolve(in);
+        } catch (RevisionSyntaxException e) {
+          return badRequest("not a ref, tag or sha: " + commit + " / " + in);
+        }
+        if (contained == null) {
+          return notFound("no-such-commit", commit);
+        }
+        if (container == null) {
+          return notFound("no-such-commit", in);
+        }
+        // A full sha resolves to itself without a lookup, so the object is only really known to be
+        // here once it is parsed — and an id this host does not hold is the same absence as a name
+        // it could not resolve, answered the same way and naming the same side.
+        RevCommit contains;
+        RevCommit within;
+        try {
+          contains = walk.parseCommit(contained);
+        } catch (MissingObjectException e) {
+          return notFound("no-such-commit", commit);
+        } catch (IncorrectObjectTypeException e) {
+          return badRequest("commit does not name a commit: " + commit);
+        }
+        try {
+          within = walk.parseCommit(container);
+        } catch (MissingObjectException e) {
+          return notFound("no-such-commit", in);
+        } catch (IncorrectObjectTypeException e) {
+          return badRequest("in does not name a commit: " + in);
+        }
+        return Response.ok(
+                new ContainsResponse(
+                    repoId,
+                    contains.name(),
+                    within.name(),
+                    walk.isMergedInto(contains, within)))
+            .build();
+      }
+    } catch (Exception e) {
+      throw unavailable(
+          "could not read whether " + commit + " is contained in " + in + " of repository " + repoId,
+          e);
+    }
+  }
+
   @DELETE
   @Path("/branches/{name:.+}")
   public Response deleteBranch(
@@ -847,6 +1123,62 @@ public class RepositoryRefsResource {
     return message.endsWith("\n") ? message : message + "\n";
   }
 
+  /**
+   * One side of a directed step, rewritten to hold what the caller decided: {@code head}'s tree with
+   * the resolved paths set to their pins, committed over {@code head}'s <b>own parents</b>.
+   *
+   * <p>The parents matter more than the commit does. The retry's merge base has to be the base the
+   * real merge computed — anything else would be a different merge wearing the same name — and
+   * carrying the head's parents is what keeps it so. The commit itself is unreferenced by
+   * construction and is discarded with the inserter if the fold fails; it is never a parent of
+   * anything published, which is the difference between resolving a merge and forging one.
+   *
+   * <p>A side that already holds every pin is returned unchanged rather than re-committed, so the
+   * ordinary case where the caller directed the path to what one head already said inserts nothing.
+   */
+  private static RevCommit directedHead(
+      ObjectInserter inserter,
+      ObjectReader reader,
+      RevWalk walk,
+      PersonIdent person,
+      RevCommit head,
+      Map<String, String> pins,
+      String spelling)
+      throws IOException {
+    ObjectId tree = editedTree(inserter, reader, head, Map.of(), List.of(), pins);
+    if (tree.equals(head.getTree())) {
+      return head;
+    }
+    return walk.parseCommit(
+        insertCommit(
+            inserter,
+            tree,
+            Arrays.stream(head.getParents()).map(parent -> (ObjectId) parent).toList(),
+            person,
+            "directed resolution of " + spelling));
+  }
+
+  /**
+   * The refusal for a directive that decided nothing, or {@code null} when every one of them was
+   * used.
+   *
+   * <p>Checked <b>after</b> the fold rather than before it, because a directive legitimately applies
+   * to any step of an octopus and there is no way to know which until that step conflicts. Checked
+   * at all — rather than ignoring the leftovers — because a resolution that silently does nothing is
+   * how a caller ships a typo'd path and believes it resolved something: the whole point of this
+   * field is that it can only ever overwrite what git refused to decide, and a caller must learn
+   * immediately when it named something else.
+   */
+  private static Response unusedResolutions(Map<String, String> directed, Set<String> decided) {
+    for (String path : directed.keySet()) {
+      if (!decided.contains(path)) {
+        return badRequest(
+            path + " did not conflict; a resolution decides only a path this merge could not");
+      }
+    }
+    return null;
+  }
+
   /** Whether some other head already contains this one, which is what makes it nothing to merge. */
   private static boolean containedInAnother(RevWalk walk, Head head, List<Head> heads)
       throws IOException {
@@ -861,30 +1193,140 @@ public class RepositoryRefsResource {
     return false;
   }
 
+  /** The 409 itself, once the paths are described. */
+  private static Response conflict(String target, List<ConflictedPath> conflicts) {
+    return Response.status(Response.Status.CONFLICT)
+        .entity(new MergeConflictResponse("merge-conflict", target, conflicts))
+        .build();
+  }
+
   /**
    * The conflict report: every unmerged path, plus anything the merger could not even attempt,
-   * attributed to the head being folded in when it happened.
+   * attributed to the head being folded in when it happened and described on all three sides.
+   *
+   * <p>{@code only} narrows the report to a subset — the residue of a partly directed fold — and is
+   * {@code null} for the whole of it. The {@link TreeSet} ordering, unmerged paths first and failing
+   * ones after, is the order this endpoint has always answered in and is kept deliberately: a caller
+   * diffing two conflict reports should see a change of content, not a change of order.
+   *
+   * <p>{@code head} names the <b>real</b> source in every case, including a retry against a rewritten
+   * head: what the caller can act on is the branch it named, and a throwaway commit's sha resolves
+   * nowhere once the inserter it lives in is discarded.
    */
-  private static Response conflict(String target, ResolveMerger merger, Head head) {
+  private static List<ConflictedPath> conflictsOf(
+      ResolveMerger merger, RevWalk walk, RevCommit ours, RevCommit theirs, Head head, Set<String> only)
+      throws IOException {
     Set<String> paths = new TreeSet<>(merger.getUnmergedPaths());
     Map<String, ResolveMerger.MergeFailureReason> failing = merger.getFailingPaths();
+    Set<String> reported = new TreeSet<>(disputedPaths(merger));
+    if (only != null) {
+      reported.retainAll(only);
+    }
+    Map<String, Sides> sides = sidesOf(walk, merger.getBaseCommitId(), ours, theirs, reported);
     List<ConflictedPath> conflicts = new ArrayList<>();
     for (String path : paths) {
-      conflicts.add(new ConflictedPath(path, head.spelling(), head.commit().name(), "content"));
+      if (reported.contains(path)) {
+        conflicts.add(conflicted(path, head, "content", sides.get(path)));
+      }
     }
     if (failing != null) {
       failing.forEach(
           (path, reason) -> {
-            if (!paths.contains(path)) {
+            if (!paths.contains(path) && reported.contains(path)) {
               conflicts.add(
-                  new ConflictedPath(
-                      path, head.spelling(), head.commit().name(), reason.name().toLowerCase()));
+                  conflicted(path, head, reason.name().toLowerCase(), sides.get(path)));
             }
           });
     }
-    return Response.status(Response.Status.CONFLICT)
-        .entity(new MergeConflictResponse("merge-conflict", target, conflicts))
-        .build();
+    return conflicts;
+  }
+
+  private static ConflictedPath conflicted(String path, Head head, String reason, Sides sides) {
+    Sides described = sides == null ? UNKNOWN_SIDES : sides;
+    return new ConflictedPath(
+        path,
+        head.spelling(),
+        head.commit().name(),
+        reason,
+        described.kind(),
+        described.base(),
+        described.ours(),
+        described.theirs());
+  }
+
+  /** Everything one pairwise step could not decide: unmerged and outright failing alike. */
+  private static Set<String> disputedPaths(ResolveMerger merger) {
+    Set<String> disputed = new TreeSet<>(merger.getUnmergedPaths());
+    Map<String, ResolveMerger.MergeFailureReason> failing = merger.getFailingPaths();
+    if (failing != null) {
+      disputed.addAll(failing.keySet());
+    }
+    return disputed;
+  }
+
+  /**
+   * What the three sides of the merge hold at one path: the tree entry's kind, and its object id on
+   * each side or {@code null} where the path is not there.
+   */
+  private record Sides(String kind, String base, String ours, String theirs) {}
+
+  /**
+   * What a path looks like when the walk below could not describe it — a D/F conflict, where the
+   * recursive merger names a directory the recursive walk only ever emits children of. A file with
+   * nothing known beats a null the caller has to null-check, and the four frozen components of the
+   * report still say everything they used to.
+   */
+  private static final Sides UNKNOWN_SIDES = new Sides("file", null, null, null);
+
+  /**
+   * One {@link TreeWalk} over base, ours and theirs, filtered to the disputed paths.
+   *
+   * <p>A missing base is an unrelated-histories merge, and an {@link EmptyTreeIterator} is the honest
+   * spelling of it: every {@code base} comes back null because there genuinely is no common ancestor
+   * to hold anything, which is what the caller needs to know rather than an error.
+   *
+   * <p>The gitlink test asks all three sides because a submodule added on one side and absent on
+   * another is still a submodule conflict — the caller deciding whether it may direct this needs
+   * git's reading of the entry, not the reading of whichever side happens to have it.
+   */
+  private static Map<String, Sides> sidesOf(
+      RevWalk walk, ObjectId baseCommit, RevCommit ours, RevCommit theirs, Set<String> paths)
+      throws IOException {
+    Map<String, Sides> sides = new LinkedHashMap<>();
+    if (paths.isEmpty()) {
+      return sides;
+    }
+    ObjectReader reader = walk.getObjectReader();
+    try (TreeWalk tree = new TreeWalk(reader)) {
+      if (baseCommit == null) {
+        tree.addTree(new EmptyTreeIterator());
+      } else {
+        tree.addTree(walk.parseCommit(baseCommit).getTree());
+      }
+      tree.addTree(ours.getTree());
+      tree.addTree(theirs.getTree());
+      tree.setFilter(PathFilterGroup.createFromStrings(paths));
+      tree.setRecursive(true);
+      while (tree.next()) {
+        String path = tree.getPathString();
+        if (!paths.contains(path)) {
+          continue;
+        }
+        String kind =
+            FileMode.GITLINK.equals(tree.getRawMode(0))
+                    || FileMode.GITLINK.equals(tree.getRawMode(1))
+                    || FileMode.GITLINK.equals(tree.getRawMode(2))
+                ? "gitlink"
+                : "file";
+        sides.put(path, new Sides(kind, entryId(tree, 0), entryId(tree, 1), entryId(tree, 2)));
+      }
+    }
+    return sides;
+  }
+
+  /** The entry's object id on one side of the walk, or {@code null} where the path is not there. */
+  private static String entryId(TreeWalk tree, int side) {
+    return FileMode.MISSING.equals(tree.getRawMode(side)) ? null : tree.getObjectId(side).name();
   }
 
   /**

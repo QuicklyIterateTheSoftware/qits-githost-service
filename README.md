@@ -166,18 +166,21 @@ refs, shas and paths and know nothing about what they are being used for.
 | `POST /githost/api/repositories/{repoId}/tags` | Creates an annotated tag at a sha. **Refuses an existing tag.** |
 | `POST /githost/api/repositories/{repoId}/commits` | Writes a map of path → content as one commit on a branch ref. |
 | `DELETE /githost/api/repositories/{repoId}/branches/{name}` | Deletes a branch ref. Never the default branch. |
+| `GET /githost/api/repositories/{repoId}/contains?commit=&in=` | Whether one commit is an ancestor of another. |
 
 ```
 POST /githost/api/repositories/<repoId>/merges
 {"target": "refs/heads/release/17",
  "sources": ["refs/heads/main", "feature/x", "refs/tags/2026.901.1", "<sha>"],
  "message": "…",                                  // optional
- "author": {"name": "…", "email": "…"}}           // optional
+ "author": {"name": "…", "email": "…"},           // optional
+ "resolutions": [{"path": "components/x", "gitlink": "<sha>"}]}   // optional, see below
 
 200 {"target": "refs/heads/release/17", "sha": "<commit>", "outcome": "merged",
-     "parents": ["…", "…"], "skipped": ["refs/heads/main"]}
+     "parents": ["…", "…"], "skipped": ["refs/heads/main"], "resolved": ["components/x"]}
 409 {"error": "merge-conflict", "target": "…",
-     "conflicts": [{"path": "pom.xml", "head": "feature/x", "headSha": "…", "reason": "content"}]}
+     "conflicts": [{"path": "pom.xml", "head": "feature/x", "headSha": "…", "reason": "content",
+                    "kind": "file", "base": "<blob>", "ours": "<blob>", "theirs": "<blob>"}]}
 ```
 
 **The target's own tip is the first head**, which is what makes this git's octopus rather than an
@@ -193,7 +196,30 @@ the two properties that matter fall out of that one rule:
 
 `outcome` is therefore one of `merged`, `fast-forward` and `unchanged`. **A conflict moves no ref**
 and is reported, never resolved: the paths, and for each the head that was being folded in when it
-broke, spelled as the caller spelled it.
+broke, spelled as the caller spelled it. Each conflict also says what **kind** of entry it is
+(`gitlink` when it is mode 160000 on any of the three sides, `file` otherwise) and what `base`,
+`ours` and `theirs` hold there — `null` where the path is absent on that side. A gitlink's three ids
+are commits of the *submodule's* repository and are forwarded as values; nothing here resolves them.
+
+**`resolutions` is the one thing this host will decide for a caller**, and it is opt-in: a directive
+names a path whose conflict is an **unmerged gitlink** and the pin it should carry. Anything else is
+a 400 — a path the merge decided on its own, a text conflict, a directive that matched nothing — so
+the field can only ever overwrite what git itself refused to decide, and only ever as a mode-160000
+entry. A conflict the directives do not cover in full is still a 409 rather than a half-fold. The
+published commit's **parents are the real sources**: a merge commit's tree is independent of its
+parents, and the rewritings the resolution needs are throwaway commits nothing ever points at.
+`resolved` names the paths a fold decided this way, and is empty otherwise.
+
+```
+GET /githost/api/repositories/<repoId>/contains?commit=<sha-or-rev>&in=<sha-or-rev>
+
+200 {"repoId": "…", "commit": "<sha>", "in": "<sha>", "contains": true}
+404 {"error": "no-such-commit", "detail": "feature/gone"}
+```
+
+The ancestry read, so a caller composing a fold does not have to clone a repository to answer one
+boolean. `false` is an ordinary 200; only a parameter this host cannot make sense of is a 400, and
+only a repository or an object that is not here is a 404.
 
 ```
 POST /githost/api/repositories/<repoId>/tags

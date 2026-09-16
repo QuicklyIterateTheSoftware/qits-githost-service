@@ -9,6 +9,7 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
 
 import eu.wohlben.qits.githost.GitRepositoryProvider;
 import io.quarkus.test.common.http.TestHTTPResource;
@@ -216,6 +217,250 @@ public class RepositoryMergeResourceTest {
   }
 
   @Test
+  public void aGitlinkConflictSaysSoAndNamesWhatAllThreeSidesPin() throws Exception {
+    // The conflict a caller CAN decide without a worktree, and the reason the report grew: four flat
+    // strings could not tell a submodule pin from a text file, so qits-projects had to guess.
+    String repo = seedGitlinkConflict();
+    JsonPath conflict =
+        merge(repo, request("refs/heads/release/g1", "feature/left", "feature/right"))
+            .then()
+            .statusCode(409)
+            .extract()
+            .jsonPath();
+    assertThat(conflict.getList("conflicts.path", String.class), contains("sub"));
+    assertThat(conflict.getList("conflicts.kind", String.class), contains("gitlink"));
+    assertThat(conflict.getList("conflicts.reason", String.class), contains("content"));
+    // Commits of the SUBMODULE's repository, forwarded as values — nothing here resolves them.
+    assertThat(conflict.getList("conflicts.base", String.class), contains(PIN_BASE));
+    assertThat(conflict.getList("conflicts.ours", String.class), contains(PIN_LEFT));
+    assertThat(conflict.getList("conflicts.theirs", String.class), contains(PIN_RIGHT));
+    assertThat(remoteSha(repo, "refs/heads/release/g1"), is(nullSha()));
+  }
+
+  @Test
+  public void aTextConflictIsAFileAndKeepsTheFourOldFields() throws Exception {
+    // The compatibility half of the same change: qits-projects has conflict JSON in its database and
+    // a frontend reading exactly these four names, so they say what they have always said.
+    String repo = seedTextConflict();
+    JsonPath conflict =
+        merge(repo, request("refs/heads/release/g2", "feature/left", "feature/right"))
+            .then()
+            .statusCode(409)
+            .extract()
+            .jsonPath();
+    assertThat(conflict.getList("conflicts.path", String.class), contains("shared.txt"));
+    assertThat(conflict.getList("conflicts.head", String.class), contains("feature/right"));
+    assertThat(
+        conflict.getList("conflicts.headSha", String.class),
+        contains(remoteSha(repo, "refs/heads/feature/right")));
+    assertThat(conflict.getList("conflicts.reason", String.class), contains("content"));
+    assertThat(conflict.getList("conflicts.kind", String.class), contains("file"));
+    // A blob id on each side, and nothing that looks like a pin.
+    assertThat(conflict.getString("conflicts[0].ours"), is(not(conflict.getString("conflicts[0].theirs"))));
+  }
+
+  @Test
+  public void aDirectedGitlinkConflictFoldsAndKeepsTheRealHeadsAsParents() throws Exception {
+    String repo = seedGitlinkConflict();
+    JsonPath merged =
+        merge(repo, directed(request("refs/heads/release/g3", "feature/left", "feature/right"), "sub", PIN_DIRECTED))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getString("outcome"), is("merged"));
+    assertThat(merged.getList("resolved", String.class), contains("sub"));
+
+    // The property most worth pinning down: the commit that was published names the SOURCES as its
+    // parents. The rewritings the resolution needed are throwaways and must not appear here — one of
+    // them would be a forged history, and on a later octopus step it would be a sha that resolves
+    // nowhere at all.
+    String left = remoteSha(repo, "refs/heads/feature/left");
+    String right = remoteSha(repo, "refs/heads/feature/right");
+    assertThat(merged.getList("parents", String.class), contains(left, right));
+    Path clone = clone(repo);
+    assertThat(parentsOf(clone, merged.getString("sha")), contains(left, right));
+    // And the tree holds what was directed, as a gitlink and not as a file.
+    assertThat(
+        treeEntry(clone, merged.getString("sha"), "sub"),
+        startsWith("160000 commit " + PIN_DIRECTED));
+  }
+
+  @Test
+  public void aDirectiveOnAPathThatDidNotConflictIsRefused() throws Exception {
+    // A resolution that decided nothing is a caller's typo, and answering 200 to it would let a
+    // release request believe it resolved something it did not.
+    String repo = seedThreeBranches();
+    merge(repo, directed(request("refs/heads/release/g4", "feature/a", "feature/b"), "sub", PIN_DIRECTED))
+        .then()
+        .statusCode(400)
+        .body("error", is("bad-request"));
+    assertThat(remoteSha(repo, "refs/heads/release/g4"), is(nullSha()));
+    // Same for a fold that never merged anything at all.
+    merge(repo, directed(request("refs/heads/release/g4b", "refs/heads/main"), "sub", PIN_DIRECTED))
+        .then()
+        .statusCode(400);
+    assertThat(remoteSha(repo, "refs/heads/release/g4b"), is(nullSha()));
+  }
+
+  @Test
+  public void aDirectiveOnAConflictThatIsNotAGitlinkIsRefused() throws Exception {
+    // The security property of the whole field: it decides a submodule pin git could not decide, and
+    // never becomes a door for writing a file the merge happened to argue about.
+    String repo = seedTextConflict();
+    merge(
+            repo,
+            directed(
+                request("refs/heads/release/g5", "feature/left", "feature/right"),
+                "shared.txt",
+                PIN_DIRECTED))
+        .then()
+        .statusCode(400)
+        .body("error", is("bad-request"));
+    assertThat(remoteSha(repo, "refs/heads/release/g5"), is(nullSha()));
+    // And the shape rules of the pin itself, which are the commit endpoint's rules.
+    merge(
+            repo,
+            directed(
+                request("refs/heads/release/g5", "feature/left", "feature/right"), "sub", "nope"))
+        .then()
+        .statusCode(400);
+    merge(
+            repo,
+            directed(
+                request("refs/heads/release/g5", "feature/left", "feature/right"),
+                "../escape",
+                PIN_DIRECTED))
+        .then()
+        .statusCode(400);
+  }
+
+  @Test
+  public void aPartlyDirectedFoldIsAConflictRatherThanHalfAMerge() throws Exception {
+    String repo = seedGitlinkAndTextConflict();
+    JsonPath conflict =
+        merge(
+                repo,
+                directed(
+                    request("refs/heads/release/g6", "feature/left", "feature/right"),
+                    "sub",
+                    PIN_DIRECTED))
+            .then()
+            .statusCode(409)
+            .extract()
+            .jsonPath();
+    // The residue — what is LEFT to argue about — rather than the path the caller already decided.
+    assertThat(conflict.getList("conflicts.path", String.class), contains("shared.txt"));
+    assertThat(conflict.getList("conflicts.kind", String.class), contains("file"));
+    assertThat(remoteSha(repo, "refs/heads/release/g6"), is(nullSha()));
+  }
+
+  @Test
+  public void anEmptyResolutionsListIsTheOldFoldExactly() throws Exception {
+    String clean = seedThreeBranches();
+    Map<String, Object> body = request("refs/heads/release/g7", "feature/a", "feature/b");
+    body.put("resolutions", List.of());
+    JsonPath merged = merge(clean, body).then().statusCode(200).extract().jsonPath();
+    assertThat(merged.getString("outcome"), is("merged"));
+    assertThat(merged.getList("resolved", String.class), hasSize(0));
+
+    String conflicting = seedGitlinkConflict();
+    Map<String, Object> conflicted =
+        request("refs/heads/release/g7", "feature/left", "feature/right");
+    conflicted.put("resolutions", List.of());
+    merge(conflicting, conflicted)
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("sub"))
+        .body("conflicts.kind", contains("gitlink"));
+  }
+
+  @Test
+  public void aConflictOnALaterOctopusStepNeverNamesAnAccumulator() throws Exception {
+    // From the third head on, the accumulator is a throwaway commit living in an unflushed inserter:
+    // on a conflict that inserter is discarded and its sha resolves nowhere, so nothing derived from
+    // it may reach the wire. Per-path tree entries are plain values and do not have that problem.
+    String repo = seedLaterStepGitlinkConflict();
+    JsonPath conflict =
+        merge(repo, request("refs/heads/release/g8", "feature/a", "feature/left", "feature/right"))
+            .then()
+            .statusCode(409)
+            .extract()
+            .jsonPath();
+    assertThat(conflict.getList("conflicts.path", String.class), contains("sub"));
+    assertThat(conflict.getList("conflicts.kind", String.class), contains("gitlink"));
+    // The head that broke it is the real source, not the accumulator it was folded onto.
+    assertThat(
+        conflict.getList("conflicts.headSha", String.class),
+        contains(remoteSha(repo, "refs/heads/feature/right")));
+    assertThat(conflict.getList("conflicts.head", String.class), contains("feature/right"));
+    // What "ours" holds is the pin the accumulated tree carries — a submodule's commit — and every
+    // side is one of the three pins this fixture wrote.
+    assertThat(conflict.getList("conflicts.base", String.class), contains(PIN_BASE));
+    assertThat(conflict.getList("conflicts.ours", String.class), contains(PIN_LEFT));
+    assertThat(conflict.getList("conflicts.theirs", String.class), contains(PIN_RIGHT));
+
+    JsonPath merged =
+        merge(
+                repo,
+                directed(
+                    request("refs/heads/release/g8", "feature/a", "feature/left", "feature/right"),
+                    "sub",
+                    PIN_DIRECTED))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getString("outcome"), is("merged"));
+    assertThat(merged.getList("resolved", String.class), contains("sub"));
+    List<String> heads =
+        List.of(
+            remoteSha(repo, "refs/heads/feature/a"),
+            remoteSha(repo, "refs/heads/feature/left"),
+            remoteSha(repo, "refs/heads/feature/right"));
+    assertThat(merged.getList("parents", String.class), is(heads));
+    Path clone = clone(repo);
+    assertThat(parentsOf(clone, merged.getString("sha")), is(heads));
+    assertThat(
+        treeEntry(clone, merged.getString("sha"), "sub"),
+        startsWith("160000 commit " + PIN_DIRECTED));
+  }
+
+  @Test
+  public void containmentIsAnOrdinaryReadWithTwoOrdinaryAnswers() throws Exception {
+    String repo = seedThreeBranches();
+    String main = remoteSha(repo, "refs/heads/main");
+    String a = remoteSha(repo, "refs/heads/feature/a");
+
+    containment(repo, main, "feature/a").then().statusCode(200).body("contains", is(true));
+    // false is an answer, never an error.
+    containment(repo, a, "refs/heads/main").then().statusCode(200).body("contains", is(false));
+    containment(repo, "feature/a", "feature/a")
+        .then()
+        .statusCode(200)
+        .body("contains", is(true))
+        .body("commit", is(a))
+        .body("in", is(a))
+        .body("repoId", is(repo));
+
+    containment(repo, "0000000000000000000000000000000000000001", "refs/heads/main")
+        .then()
+        .statusCode(404)
+        .body("error", is("no-such-commit"));
+    containment(repo, "refs/heads/main", "feature/nope")
+        .then()
+        .statusCode(404)
+        .body("error", is("no-such-commit"))
+        .body("detail", is("feature/nope"));
+    containment(UUID.randomUUID().toString(), "refs/heads/main", "refs/heads/main")
+        .then()
+        .statusCode(404)
+        .body("error", is("no-such-repository"));
+    containment(repo, "main^{tree}", "refs/heads/main").then().statusCode(400);
+    given().when().get(API + repo + "/contains").then().statusCode(400);
+  }
+
+  @Test
   public void oneSourceOnlyCreatesTheTargetRatherThanAnEmptyOctopus() throws Exception {
     String repo = seedThreeBranches();
     JsonPath answer =
@@ -273,11 +518,152 @@ public class RepositoryMergeResourceTest {
         .post(API + repoId + "/merges");
   }
 
+  private io.restassured.response.Response containment(String repoId, String commit, String in) {
+    return given()
+        .queryParam("commit", commit)
+        .queryParam("in", in)
+        .when()
+        .get(API + repoId + "/contains");
+  }
+
   private static Map<String, Object> request(String target, String... sources) {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("target", target);
     body.put("sources", List.of(sources));
     return body;
+  }
+
+  /** The same body with one directive on it, which is how a caller opts into a directed fold. */
+  private static Map<String, Object> directed(Map<String, Object> body, String path, String gitlink) {
+    body.put("resolutions", List.of(Map.of("path", path, "gitlink", gitlink)));
+    return body;
+  }
+
+  // Pins of a submodule's repository, and deliberately commits nothing here holds: a gitlink names
+  // an object of ANOTHER repository, and a fixture that used a local sha would hide a host that
+  // tried to resolve one.
+  private static final String PIN_BASE = "1111111111111111111111111111111111111111";
+  private static final String PIN_LEFT = "2222222222222222222222222222222222222222";
+  private static final String PIN_RIGHT = "3333333333333333333333333333333333333333";
+  private static final String PIN_DIRECTED = "4444444444444444444444444444444444444444";
+
+  /** {@code feature/left} and {@code feature/right}, pinning {@code sub} at different commits. */
+  private String seedGitlinkConflict() throws Exception {
+    String repoId = UUID.randomUUID().toString();
+    Path work = seedGitlinkBase(repoId);
+    git(work, "checkout", "-q", "-b", "feature/left", "main");
+    pin(work, "sub", PIN_LEFT);
+    commitIndex(work, "left");
+    git(work, "checkout", "-q", "-b", "feature/right", "main");
+    pin(work, "sub", PIN_RIGHT);
+    commitIndex(work, "right");
+    git(work, "checkout", "-q", "main");
+    push(work, repoId, "main", "feature/left", "feature/right");
+    return repoId;
+  }
+
+  /** The same two heads, arguing about a text file as well as about the pin. */
+  private String seedGitlinkAndTextConflict() throws Exception {
+    String repoId = UUID.randomUUID().toString();
+    Path work = seedGitlinkBase(repoId);
+    git(work, "checkout", "-q", "-b", "feature/left", "main");
+    write(work, "shared.txt", "left\n");
+    git(work, "add", "shared.txt");
+    pin(work, "sub", PIN_LEFT);
+    commitIndex(work, "left");
+    git(work, "checkout", "-q", "-b", "feature/right", "main");
+    write(work, "shared.txt", "right\n");
+    git(work, "add", "shared.txt");
+    pin(work, "sub", PIN_RIGHT);
+    commitIndex(work, "right");
+    git(work, "checkout", "-q", "main");
+    push(work, repoId, "main", "feature/left", "feature/right");
+    return repoId;
+  }
+
+  /**
+   * Three heads where the FIRST fold is clean and the pin only breaks on the second — so the side
+   * the report calls "ours" is a throwaway accumulator rather than any ref, which is the case a flat
+   * report could not describe without leaking a sha that resolves nowhere.
+   */
+  private String seedLaterStepGitlinkConflict() throws Exception {
+    String repoId = UUID.randomUUID().toString();
+    Path work = seedGitlinkBase(repoId);
+    git(work, "checkout", "-q", "-b", "feature/a", "main");
+    write(work, "a.txt", "a\n");
+    git(work, "add", "a.txt");
+    commitIndex(work, "a");
+    git(work, "checkout", "-q", "-b", "feature/left", "main");
+    pin(work, "sub", PIN_LEFT);
+    commitIndex(work, "left");
+    git(work, "checkout", "-q", "-b", "feature/right", "main");
+    pin(work, "sub", PIN_RIGHT);
+    commitIndex(work, "right");
+    git(work, "checkout", "-q", "main");
+    push(work, repoId, "main", "feature/a", "feature/left", "feature/right");
+    return repoId;
+  }
+
+  /** A fresh repository whose {@code main} carries a file and a submodule pinned at {@link #PIN_BASE}. */
+  private Path seedGitlinkBase(String repoId) throws Exception {
+    repositories.create(repoId, "main");
+    Path work = Files.createTempDirectory("qits-merge-gitlink");
+    git(work, "init", "-q", "-b", "main", ".");
+    write(work, "base.txt", "base\n");
+    git(work, "add", "base.txt");
+    pin(work, "sub", PIN_BASE);
+    commitIndex(work, "base");
+    return work;
+  }
+
+  /** Two heads that rewrite the same line, for the report's "this is a plain file" half. */
+  private String seedTextConflict() throws Exception {
+    String repoId = UUID.randomUUID().toString();
+    repositories.create(repoId, "main");
+    Path work = Files.createTempDirectory("qits-merge-text");
+    git(work, "init", "-q", "-b", "main", ".");
+    write(work, "shared.txt", "base\n");
+    commit(work, "base");
+    git(work, "checkout", "-q", "-b", "feature/left", "main");
+    write(work, "shared.txt", "left\n");
+    commit(work, "left");
+    git(work, "checkout", "-q", "-b", "feature/right", "main");
+    write(work, "shared.txt", "right\n");
+    commit(work, "right");
+    git(work, "checkout", "-q", "main");
+    push(work, repoId, "main", "feature/left", "feature/right");
+    return repoId;
+  }
+
+  /**
+   * A gitlink entry, written straight into the index: there is no submodule to clone here and no
+   * need for one — a pin is a mode and an id, and {@code update-index} is how git itself writes one.
+   */
+  private static void pin(Path work, String path, String sha) throws Exception {
+    git(work, "update-index", "--add", "--cacheinfo", "160000," + sha + "," + path);
+  }
+
+  /** Commit what the index says, without the {@code git add .} that would drop a phantom submodule. */
+  private static void commitIndex(Path work, String message) throws Exception {
+    git(work, "-c", "user.email=qits@local", "-c", "user.name=qits", "commit", "-q", "-m", message);
+  }
+
+  /** A worktree clone of the served repository, for reading back what the host actually wrote. */
+  private Path clone(String repoId) throws Exception {
+    Path work = Files.createTempDirectory("qits-merge-read");
+    git(work, "clone", "-q", gitBase + "/" + repoId, ".");
+    return work;
+  }
+
+  /** The parents git says a commit has — read from the repository, not from the answer under test. */
+  private static List<String> parentsOf(Path clone, String sha) throws Exception {
+    String[] line = git(clone, "rev-list", "--parents", "-n", "1", sha).trim().split("\\s+");
+    return List.of(line).subList(1, line.length);
+  }
+
+  /** One tree entry, mode included — the only way to see a gitlink, which the browse route skips. */
+  private static String treeEntry(Path clone, String rev, String path) throws Exception {
+    return git(clone, "ls-tree", rev, "--", path).trim();
   }
 
   /** What the served repository says a ref is, over the wire, or a null-ish marker when it has none. */
