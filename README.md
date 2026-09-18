@@ -385,12 +385,12 @@ whole `X-Qits-` prefix, so a header would behave differently through the front d
 
 A release builds `docker/Dockerfile` — a Mandrel builder stage that native-compiles `service`, a
 `ubi-minimal` runtime stage that carries only the binary — and pushes it as
-`qits/qits-githost:<version>` (`.config/qits/ci-event-release.yml`, riding `SCMRelease`). **Nothing
-builds a push any more**: per-push CI is retired platform-wide, and this repository's other pipeline,
-`.config/qits/ci-event-release-request.yml`, runs the same build — minus the push — plus `mvn
-verify` and the userflow publish against a release request's fold, `release/<id>`. The build half is
-gating; the userflow half declares `gating: false`, so a red verify shows red without holding the
-fold. Both image builds run `--network host` with `--build-arg QITS_MAVEN_REPOSITORY_URL=…`, because
+`qits/qits-githost:<version>` — the release phase of `.config/qits/release.yml`, which declares the
+`java-service` archetype and overrides no slot, riding `SCMRelease`. **Nothing builds a push any more**: per-push CI is retired platform-wide, and the same
+document's `release-request:` phase runs the same build — minus the push — plus `mvn verify` and the
+userflow publish against a release request's fold, `release/<id>`. Both halves gate, because every
+step of the composed pipeline does and a step cannot declare otherwise: a red verify is a red verdict
+for the fold and holds it. Both image builds run `--network host` with `--build-arg QITS_MAVEN_REPOSITORY_URL=…`, because
 `qits-eventstream` exists only in the platform's own Maven repository and a docker build reaches no
 other address for it.
 
@@ -415,9 +415,9 @@ other repository's build clones from.
 
 Every integration test in `service` is a **userflow**: a `@UserStory` that emits its own
 documentation under `service/target/userstories/<category>/<slug>/` — the steps, the command
-transcripts, the files a story wrote, and a **network diagram** — which the non-gating second step
-of `ci-event-release-request.yml` publishes as the `@userflows/qits-githost` docs site, once per
-release-request fold. The proof and the documentation are the same
+transcripts, the files a story wrote, and a **network diagram** — which the second step of the
+release-request phase publishes as the `@userflows/qits-githost` docs site, once per
+release-request fold. That step gates like the one before it. The proof and the documentation are the same
 artifact, so neither can go stale without the build going red.
 
 **Three categories, nine stories.**
