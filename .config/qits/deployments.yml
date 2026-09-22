@@ -51,7 +51,7 @@ routes: /githost,/git
 # The host is not spelled because the derived one is already right: the application name minus its
 # `qits-` prefix is `githost`, which is the label every clone url already carries. The browser plane
 # and the git plane land on the same authority by design, not by accident.
-navigation-entries: system.Githost:5, services.details.Code:4, daemons.details.Code:4, libs.details.Code:4, frontends.details.Code:4, cli.details.Code:4, images.details.Code:4
+navigation-entries: system.Githost:5, services.details.Code:4, daemons.details.Code:4, libs.details.Code:4, apps.details.Code:4, frontends.details.Code:4, cli.details.Code:4, images.details.Code:4
 
 # TWO DATABASES, because this application opens two datasources with two Flyway lineages.
 # qits-deployments creates a login role and a database for each on the postgres of this tier before
