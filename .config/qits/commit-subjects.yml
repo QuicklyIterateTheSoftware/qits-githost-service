@@ -1,0 +1,6 @@
+# qits-githost refuses a push carrying a new commit whose subject is not
+# term(<project>-<n>): message — e.g. feat(qits-1337): refuse malformed subjects.
+# Merges and platform automation (qits:system, qits:ci-run) are exempt; the
+# break-glass is `git push -o qits.subject-bypass="<why>"`, and every use is
+# recorded. See README.md, "Commit subjects". Enabled by epic qits-297.
+enforce: true
