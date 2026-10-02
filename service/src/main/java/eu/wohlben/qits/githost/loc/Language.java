@@ -3,6 +3,7 @@ package eu.wohlben.qits.githost.loc;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Names the language of a tree path, or answers empty for one the map does not know.
@@ -54,11 +55,77 @@ public final class Language {
           Map.entry("toml", "TOML"),
           Map.entry("gradle", "Gradle"));
 
+  /**
+   * Lockfiles carry a language's extension but are written by a package manager, not by anyone on
+   * the platform: one {@code package-lock.json} is ~10k lines of JSON. They are skipped like an
+   * unnamed path.
+   */
+  private static final Set<String> LOCKFILES =
+      Set.of(
+          "package-lock.json",
+          "npm-shrinkwrap.json",
+          "pnpm-lock.yaml",
+          "yarn.lock",
+          "bun.lock",
+          "deno.lock");
+
+  /** What a language's lines are: code people write, data a program reads, or prose. */
+  public enum Category {
+    CODE,
+    DATA,
+    DOCS
+  }
+
+  /**
+   * The category of every language {@link #of} can answer. Closed and hand-kept like the maps
+   * above; a language missing here is a test failure ({@code LanguageTest}), never a silent CODE.
+   */
+  private static final Map<String, Category> CATEGORY =
+      Map.ofEntries(
+          Map.entry("Java", Category.CODE),
+          Map.entry("Kotlin", Category.CODE),
+          Map.entry("TypeScript", Category.CODE),
+          Map.entry("JavaScript", Category.CODE),
+          Map.entry("HTML", Category.CODE),
+          Map.entry("CSS", Category.CODE),
+          Map.entry("SQL", Category.CODE),
+          Map.entry("Shell", Category.CODE),
+          Map.entry("Python", Category.CODE),
+          Map.entry("Go", Category.CODE),
+          Map.entry("Gradle", Category.CODE),
+          Map.entry("Dockerfile", Category.CODE),
+          Map.entry("Makefile", Category.CODE),
+          Map.entry("XML", Category.DATA),
+          Map.entry("JSON", Category.DATA),
+          Map.entry("YAML", Category.DATA),
+          Map.entry("Properties", Category.DATA),
+          Map.entry("TOML", Category.DATA),
+          Map.entry("Markdown", Category.DOCS));
+
   private Language() {}
+
+  /** The category of a language {@link #of} answered. */
+  public static Category categoryOf(String language) {
+    Category category = CATEGORY.get(language);
+    if (category == null) {
+      throw new IllegalArgumentException("no category for language " + language);
+    }
+    return category;
+  }
+
+  /** Every language name {@link #of} can answer, for the completeness test. */
+  static Set<String> names() {
+    Set<String> names = new java.util.HashSet<>(BY_BASENAME.values());
+    names.addAll(BY_EXTENSION.values());
+    return names;
+  }
 
   /** The language of one slash-separated tree path, or empty for a path the map does not name. */
   public static Optional<String> of(String path) {
     String basename = basenameOf(path).toLowerCase(Locale.ROOT);
+    if (LOCKFILES.contains(basename)) {
+      return Optional.empty();
+    }
     // "Dockerfile.builder" is still a Dockerfile; the suffix is a variant name, not an extension.
     int firstDot = basename.indexOf('.');
     String bareName = firstDot < 0 ? basename : basename.substring(0, firstDot);

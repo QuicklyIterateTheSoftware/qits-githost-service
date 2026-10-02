@@ -16,9 +16,13 @@ import java.util.regex.Pattern;
  */
 public final class TestPath {
 
-  /** A directory anywhere on the path that puts everything beneath it in the test column. */
+  /**
+   * A directory anywhere on the path that puts everything beneath it in the test column. {@code
+   * golden-masters} and {@code pacts} hold recorded answers and consumer contracts: test data the
+   * contract tests read, not code the service runs.
+   */
   private static final Set<String> TEST_SEGMENTS =
-      Set.of("test", "tests", "spec", "specs", "__tests__");
+      Set.of("test", "tests", "spec", "specs", "__tests__", "golden-masters", "pacts");
 
   private static final Pattern SPEC_SUFFIX = Pattern.compile(".*\\.(spec|test)\\.(ts|tsx|js)$");
 

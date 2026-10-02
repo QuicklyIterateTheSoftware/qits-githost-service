@@ -3,6 +3,7 @@ package eu.wohlben.qits.githost.loc;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -36,5 +37,24 @@ public class LanguageTest {
     assertTrue(Language.of("src/app/main.lock").isEmpty());
     assertTrue(Language.of(".gitignore").isEmpty());
     assertTrue(Language.of("LICENSE").isEmpty());
+  }
+
+  @Test
+  public void lockfilesAreNotNamed() {
+    for (String lockfile :
+        List.of("package-lock.json", "web/pnpm-lock.yaml", "npm-shrinkwrap.json", "yarn.lock")) {
+      assertEquals(Optional.empty(), Language.of(lockfile), lockfile);
+    }
+    assertEquals(Optional.of("JSON"), Language.of("package.json"));
+  }
+
+  @Test
+  public void everyNamedLanguageHasACategory() {
+    for (String language : Language.names()) {
+      Language.categoryOf(language); // throws for a language missing from the category map
+    }
+    assertEquals(Language.Category.DATA, Language.categoryOf("JSON"));
+    assertEquals(Language.Category.DOCS, Language.categoryOf("Markdown"));
+    assertEquals(Language.Category.CODE, Language.categoryOf("Java"));
   }
 }

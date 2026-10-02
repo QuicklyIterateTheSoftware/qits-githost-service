@@ -1,18 +1,27 @@
 {
-  "commitSha": "a8113ff645bf90e4fea77ce6e5608ce6300584af",
+  "commitSha": "0393289b098120436475a8a28c4c782927369d24",
   "languages": [
     {
       "language": "Java",
+      "category": "CODE",
       "mainLines": 3,
       "testLines": 2
     },
     {
       "language": "TypeScript",
+      "category": "CODE",
       "mainLines": 4,
       "testLines": 1
     },
     {
+      "language": "JSON",
+      "category": "DATA",
+      "mainLines": 3,
+      "testLines": 0
+    },
+    {
       "language": "Markdown",
+      "category": "DOCS",
       "mainLines": 1,
       "testLines": 0
     }

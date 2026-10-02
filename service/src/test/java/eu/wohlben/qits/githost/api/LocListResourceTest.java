@@ -37,7 +37,10 @@ public class LocListResourceTest {
     given().queryParam("repositoryId", id).when().get(API).then().statusCode(200)
         .body("entries.repositoryId", contains(id))
         .body("entries[0].status", equalTo("COUNTED"))
-        .body("entries[0].languages.language", contains("Java", "TypeScript", "Markdown"))
+        // The lockfile and the generated client (web/api/**) are seeded but not counted.
+        .body("entries[0].languages.language", contains("Java", "TypeScript", "JSON", "Markdown"))
+        .body("entries[0].languages.category", contains("CODE", "CODE", "DATA", "DOCS"))
+        .body("entries[0].languages[1].mainLines", equalTo(4))
         .body("entries[0].languages[0].mainLines", equalTo(3))
         .body("entries[0].languages[0].testLines", equalTo(2));
   }

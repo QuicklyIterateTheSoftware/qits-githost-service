@@ -8,4 +8,5 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
  * load-bearing in the native image — the same rule every record on that resource documents.
  */
 @RegisterForReflection
-public record LanguageLoc(String language, long mainLines, long testLines) {}
+public record LanguageLoc(
+    String language, Language.Category category, long mainLines, long testLines) {}

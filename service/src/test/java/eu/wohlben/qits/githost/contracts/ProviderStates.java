@@ -60,14 +60,22 @@ public class ProviderStates {
   public static final String NO_REPOSITORY_WITH_THE_GIVEN_ID = "no repository with the given id";
   public static final String TWO_REPOSITORIES_ONE_COUNTED = "two repositories, one counted";
 
-  /** The seeded tree: Java and TypeScript, each with main and test code. */
+  /**
+   * The seeded tree: Java and TypeScript, each with main and test code, plus one file of each
+   * other category (JSON data, Markdown docs) and two files that must NOT be counted: a lockfile
+   * and a generated client marked in {@code .gitattributes}.
+   */
   static final Map<String, String> FILES =
       Map.of(
           "src/main/java/App.java", "class App {\n  void run() {}\n}\n",
           "src/test/java/AppTest.java", "class AppTest {\n}\n",
           "web/app.ts", "export const a = 1;\nexport const b = 2;\nexport const c = 3;\nexport {};\n",
           "web/app.spec.ts", "it('runs', () => {});\n",
-          "README.md", "# Contract repository\n");
+          "README.md", "# Contract repository\n",
+          "package.json", "{\n  \"name\": \"contract\"\n}\n",
+          "package-lock.json", "{\n  \"lockfileVersion\": 3\n}\n",
+          ".gitattributes", "web/api/** linguist-generated=true\n",
+          "web/api/client.gen.ts", "export const generated = 1;\n");
 
   private static final PersonIdent IDENT =
       new PersonIdent(

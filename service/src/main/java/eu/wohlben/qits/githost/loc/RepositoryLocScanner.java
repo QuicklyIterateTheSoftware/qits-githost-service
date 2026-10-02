@@ -7,6 +7,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.eclipse.jgit.attributes.Attribute;
+import org.eclipse.jgit.attributes.Attributes;
 import org.eclipse.jgit.diff.RawText;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.FileMode;
@@ -28,6 +30,12 @@ import org.eclipse.jgit.treewalk.TreeWalk;
  * symlinks are skipped (no blob to count, a target string respectively), and an unnamed path is
  * skipped <em>before</em> its blob is read — which is most of the walk, and most of the saving.
  * Lines are {@link RawText#size()}, the diff machinery's own idea of a line.
+ *
+ * <p><b>What is skipped on purpose.</b> Lockfiles ({@link Language}), and any path the commit's
+ * own {@code .gitattributes} marks {@code linguist-generated} or {@code linguist-vendored} — the
+ * marks GitHub's linguist reads, so a repository states once what nobody wrote by hand (a generated
+ * API client, a vendored library). The attributes come from the commit's tree, root and nested
+ * files, with git's precedence; the walk asks for them only for paths it would otherwise count.
  *
  * <p>The result is a pure function of the commit, sorted largest total first (ties by name) so the
  * stored copy and the wire answer are deterministic.
@@ -54,7 +62,7 @@ public final class RepositoryLocScanner {
         }
         String path = walker.getPathString();
         Optional<String> language = Language.of(path);
-        if (language.isEmpty()) {
+        if (language.isEmpty() || notWrittenByHand(walker.getAttributes())) {
           continue;
         }
         ObjectLoader loader = repo.open(walker.getObjectId(0), Constants.OBJ_BLOB);
@@ -72,12 +80,34 @@ public final class RepositoryLocScanner {
     }
     List<LanguageLoc> result = new ArrayList<>(byLanguage.size());
     for (Map.Entry<String, long[]> entry : byLanguage.entrySet()) {
-      result.add(new LanguageLoc(entry.getKey(), entry.getValue()[0], entry.getValue()[1]));
+      result.add(
+          new LanguageLoc(
+              entry.getKey(),
+              Language.categoryOf(entry.getKey()),
+              entry.getValue()[0],
+              entry.getValue()[1]));
     }
     result.sort(
         Comparator.comparingLong((LanguageLoc l) -> l.mainLines() + l.testLines())
             .reversed()
             .thenComparing(LanguageLoc::language));
     return result;
+  }
+
+  /** Linguist's two marks: set ({@code attr}, {@code attr=true}) means skip; unset or false counts. */
+  static boolean notWrittenByHand(Attributes attributes) {
+    return marked(attributes.get("linguist-generated"))
+        || marked(attributes.get("linguist-vendored"));
+  }
+
+  private static boolean marked(Attribute attribute) {
+    if (attribute == null) {
+      return false;
+    }
+    return switch (attribute.getState()) {
+      case SET -> true;
+      case CUSTOM -> "true".equalsIgnoreCase(attribute.getValue());
+      default -> false;
+    };
   }
 }
