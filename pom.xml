@@ -106,6 +106,10 @@
              Read git-storage/README.md before bumping it: everything in that module extends
              org.eclipse.jgit.internal.storage.dfs, which carries no API stability promise. -->
         <jgit.version>7.3.0.202506031305-r</jgit.version>
+        <!-- pact-jvm's JUnit 5 provider, for ConsumerPactVerificationTest: the version
+             qits-projects-service verifies with, so a consumer's pact is read the same way at
+             both providers. -->
+        <pact.version>4.6.21</pact.version>
 
         <!-- Quinoa is a Quarkiverse extension: not in quarkus-bom either, and its version does NOT
              track the platform's. 2.8.2 is built against Quarkus 3.27.3 LTS — older than the 3.34.6
@@ -154,6 +158,12 @@
                 <groupId>org.eclipse.jgit</groupId>
                 <artifactId>org.eclipse.jgit</artifactId>
                 <version>${jgit.version}</version>
+            </dependency>
+            <dependency>
+                <!-- Test scope at every declaration site. -->
+                <groupId>au.com.dius.pact.provider</groupId>
+                <artifactId>junit5</artifactId>
+                <version>${pact.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.quarkiverse.quinoa</groupId>

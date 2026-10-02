@@ -40,6 +40,10 @@ import org.eclipse.jgit.revwalk.RevObject;
 import org.eclipse.jgit.revwalk.RevTag;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.treewalk.TreeWalk;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.jboss.logging.Logger;
 
 /**
@@ -324,6 +328,22 @@ public class RepositoryBrowseResource {
    */
   @GET
   @Path("/loc")
+  @Operation(
+      operationId = "getLoc",
+      summary = "Lines of code of one repository at one commit (default: the default branch)")
+  @APIResponse(
+      responseCode = "200",
+      content =
+          @Content(
+              mediaType = MediaType.APPLICATION_JSON,
+              schema = @Schema(implementation = LocResponse.class)))
+  @APIResponse(
+      responseCode = "404",
+      description = "No such repository or revision",
+      content =
+          @Content(
+              mediaType = MediaType.APPLICATION_JSON,
+              schema = @Schema(implementation = ErrorBody.class)))
   public Response loc(@PathParam("repoId") String repoId, @QueryParam("rev") String rev) {
     if (!isValidRepoId(repoId)) {
       return badRequest("repoId must match " + REPO_ID_PATTERN);

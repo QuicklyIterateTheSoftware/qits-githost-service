@@ -1,4 +1,13 @@
 archetype: java-service
 artifacts:
   - { type: docker, name: qits/qits-githost, sbom: .sbom/sbom.json }
+  # The committed OpenAPI document, published as `@apidocs/qits-githost` on every release by the
+  # composed postlude (OpenApiSchemaExportTest keeps it current).
+  - { type: docs, name: "@apidocs/qits-githost", path: docs/openapi.yml }
+# The provider golden masters: the platform packages `golden-masters/` as
+# `eu.wohlben.qits:qits-githost-golden-masters` and `@qits/githost-golden-masters`, each published
+# only when its content changed, plus the `@contracts/qits-githost` docs bundle.
+contracts:
+  application: qits-githost
+  golden-masters: { from: golden-masters/, packages: [maven, npm] }
 userflows: qits-githost

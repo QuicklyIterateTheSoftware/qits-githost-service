@@ -44,6 +44,8 @@ public class RepositoryBrowseAuthTest {
         .statusCode(Response.Status.UNAUTHORIZED.getStatusCode());
     given().when().get("/githost/api/repositories/" + repo + "/loc").then()
         .statusCode(Response.Status.UNAUTHORIZED.getStatusCode());
+    given().when().get("/githost/api/loc").then()
+        .statusCode(Response.Status.UNAUTHORIZED.getStatusCode());
     // The write primitives sit under the same wildcard, so the policy answers them too — before
     // their own machine-role annotation ever runs. An unauthenticated caller never reaches JAX-RS.
     given().contentType("application/json")

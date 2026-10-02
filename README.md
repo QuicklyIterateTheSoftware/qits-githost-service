@@ -182,6 +182,7 @@ qits-projects.
 | Route | What it does |
 |---|---|
 | `GET /githost/api/repositories` | `{"repositories":[{"id", "protectDefaultBranch"}, …]}` — every repository this host serves, sorted, as records. |
+| `GET /githost/api/loc[?repositoryId=…]` | `{"entries":[{"repositoryId", "commitSha", "status", "languages":[{"language", "mainLines", "testLines"}]}, …]}` — the lines of code of every repository's default branch, in one request, sorted by id. `repositoryId` (repeatable) narrows it; a named id this host does not hold is left out, an invalid one is a 400. Answered from the stored counts only: `COUNTED` carries the numbers, `PENDING` means the tip is not counted yet and this call queued its count, `EMPTY` means no commit yet. Same roles as the per-repository `/loc`. |
 | `GET /githost/api/repositories/{repoId}/commit-subject-bypasses` | `{"bypasses":[{"id", "repositoryId", "pusher", "reason", "refs", "commits", "usedAt"}, …]}` — every recorded use of the commit-subject break-glass on one repository, newest first. `qits:admin`, `qits:system` or `qits:agent`; an unknown repository answers an empty list. |
 
 It answers the same question as `GET /git` and is not a duplicate of it: that one is a wire the
@@ -196,6 +197,25 @@ applied — which is why it is not simply "there is a row".
 throw rather than fall back, which is the 2026-08-11 lesson (`fe26a6c`) applied one surface further
 out: a page told "no repositories" shows an empty host, and nothing on it says the service could not
 ask.
+
+### Contracts: golden masters and pacts
+
+This service is a pact provider, set up the way qits-projects-service is:
+
+- **`docs/openapi.yml`** is the committed API document (`OpenApiSchemaExportTest`). Consumers
+  generate their clients from it; it is published as `@apidocs/qits-githost`.
+- **`golden-masters/`** holds what this service answers in each provider state
+  (`contracts/ProviderStates`), recorded by `GoldenMasterRecordingTest`: ids frozen to
+  `00000000-0000-4000-8000-00000000000N`, seeded commits fixed so their shas are stable. The
+  platform publishes the folder as `@qits/githost-golden-masters` (npm) and
+  `eu.wohlben.qits:qits-githost-golden-masters` (maven), only when it changed (`contracts:` in
+  `.config/qits/release.yml`). Consumers mock with these answers.
+- Both tests **compare by default** and fail with a diff. Rewrite with `-Dgolden.update=true`, then
+  review the diff.
+- **`ConsumerPactVerificationTest`** verifies every `pacts/<consumer>_qits-githost-service.json` on
+  the test classpath — the consumers' pinned pact jars, named by repository on both sides. No
+  consumer pins one yet, so an empty classpath passes with a log line. When the first pact jar is
+  pinned, drop `@IgnoreNoPactsToVerify` and set `ClasspathPactLoader.REQUIRED` to true.
 
 ### The git primitives
 

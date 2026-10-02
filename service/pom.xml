@@ -108,6 +108,12 @@
             <artifactId>quarkus-rest-jackson</artifactId>
         </dependency>
         <dependency>
+            <!-- The API document at /githost/q/openapi. docs/openapi.yml is its committed copy
+                 (OpenApiSchemaExportTest), which consumers generate their clients from. -->
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-openapi</artifactId>
+        </dependency>
+        <dependency>
             <!-- The SPA. Quinoa runs the npm build in src/main/webui (the qits-spa-githost
                  submodule) during augmentation and serves the result as static resources — see the
                  quarkus.quinoa.* block in application.properties for the paths.
@@ -175,6 +181,12 @@
         <dependency>
             <groupId>io.rest-assured</groupId>
             <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- ConsumerPactVerificationTest: verifies the consumer pacts this provider pins. -->
+            <groupId>au.com.dius.pact.provider</groupId>
+            <artifactId>junit5</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

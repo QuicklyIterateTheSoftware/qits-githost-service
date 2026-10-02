@@ -1,11 +1,19 @@
 package eu.wohlben.qits.githost.persistence;
 
+import eu.wohlben.qits.db.DbRetry;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.control.ActivateRequestContext;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 /**
@@ -33,6 +41,9 @@ public class RepositoryLocStore {
    */
   static final int KEPT_PER_REPOSITORY = 20;
 
+  @ConfigProperty(name = "qits.githost.db-retry-deadline", defaultValue = "15S")
+  Duration dbRetryDeadline;
+
   /** The stored summary JSON for one commit, or empty — for absence and for a store that is down. */
   @ActivateRequestContext
   public Optional<String> find(String repositoryId, String commitSha) {
@@ -49,6 +60,49 @@ public class RepositoryLocStore {
           commitSha);
       return Optional.empty();
     }
+  }
+
+  /**
+   * The stored summary of each {@code (repository, commit)} pair that has one, keyed by the pair.
+   * A pair with no row is absent from the map.
+   *
+   * <p><b>Strict, unlike the other reads here.</b> The bulk list ({@code LocListResource}) has no
+   * scanner to fall back on inside its request, so a store that cannot answer must throw — reading
+   * it as "nothing stored" would mark every repository pending. A short outage is waited out
+   * ({@link DbRetry}).
+   */
+  @ActivateRequestContext
+  public Map<GitRepositoryLocId, String> findAll(Collection<GitRepositoryLocId> keys) {
+    if (keys.isEmpty()) {
+      return Map.of();
+    }
+    Set<String> repositoryIds = new HashSet<>();
+    Set<String> commitShas = new HashSet<>();
+    for (GitRepositoryLocId key : keys) {
+      repositoryIds.add(key.repositoryId);
+      commitShas.add(key.commitSha);
+    }
+    Set<GitRepositoryLocId> wanted = new HashSet<>(keys);
+    List<GitRepositoryLoc> rows =
+        DbRetry.call(
+            "loc summary bulk read",
+            () ->
+                QuarkusTransaction.requiringNew()
+                    .call(
+                        () ->
+                            GitRepositoryLoc.<GitRepositoryLoc>list(
+                                "repositoryId in ?1 and commitSha in ?2",
+                                repositoryIds,
+                                commitShas)),
+            dbRetryDeadline);
+    Map<GitRepositoryLocId, String> out = new HashMap<>();
+    for (GitRepositoryLoc row : rows) {
+      GitRepositoryLocId id = new GitRepositoryLocId(row.repositoryId, row.commitSha);
+      if (wanted.contains(id)) {
+        out.put(id, row.payload);
+      }
+    }
+    return out;
   }
 
   /** Whether a summary is already stored. False when the store cannot answer — a rescan is cheap. */

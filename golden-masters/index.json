@@ -1,0 +1,117 @@
+{
+  "formatVersion": 1,
+  "provider": "qits-githost",
+  "states": [
+    {
+      "name": "a repository not counted yet",
+      "slug": "a-repository-not-counted-yet",
+      "params": {
+        "repositoryId": "00000000-0000-4000-8000-000000000001"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "listLoc",
+          "method": "GET",
+          "path": "/githost/api/loc",
+          "status": 200,
+          "file": "a-repository-not-counted-yet/listLoc.json",
+          "frozen": {
+            "ids": [
+              "$.entries[*].repositoryId"
+            ],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": "$.entries"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a repository with counted lines",
+      "slug": "a-repository-with-counted-lines",
+      "params": {
+        "repositoryId": "00000000-0000-4000-8000-000000000001"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "getLoc",
+          "method": "GET",
+          "path": "/githost/api/repositories/{repositoryId}/loc",
+          "status": 200,
+          "file": "a-repository-with-counted-lines/getLoc.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "listLoc",
+          "method": "GET",
+          "path": "/githost/api/loc",
+          "status": 200,
+          "file": "a-repository-with-counted-lines/listLoc.json",
+          "frozen": {
+            "ids": [
+              "$.entries[*].repositoryId"
+            ],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": "$.entries"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a repository with no commit",
+      "slug": "a-repository-with-no-commit",
+      "params": {
+        "repositoryId": "00000000-0000-4000-8000-000000000001"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "listLoc",
+          "method": "GET",
+          "path": "/githost/api/loc",
+          "status": 200,
+          "file": "a-repository-with-no-commit/listLoc.json",
+          "frozen": {
+            "ids": [
+              "$.entries[*].repositoryId"
+            ],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": "$.entries"
+          }
+        }
+      ]
+    },
+    {
+      "name": "no repository with the given id",
+      "slug": "no-repository-with-the-given-id",
+      "params": {
+        "repositoryId": "00000000-0000-4000-8000-000000000001"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "getLoc",
+          "method": "GET",
+          "path": "/githost/api/repositories/{repositoryId}/loc",
+          "status": 404,
+          "file": "no-repository-with-the-given-id/getLoc.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        }
+      ]
+    }
+  ]
+}
