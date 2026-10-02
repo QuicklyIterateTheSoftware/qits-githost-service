@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "repositoryId": "00000000-0000-4000-8000-000000000001",
+      "commitSha": "a8113ff645bf90e4fea77ce6e5608ce6300584af",
+      "status": "COUNTED",
+      "languages": [
+        {
+          "language": "Java",
+          "mainLines": 3,
+          "testLines": 2
+        },
+        {
+          "language": "TypeScript",
+          "mainLines": 4,
+          "testLines": 1
+        },
+        {
+          "language": "Markdown",
+          "mainLines": 1,
+          "testLines": 0
+        }
+      ]
+    },
+    {
+      "repositoryId": "00000000-0000-4000-8000-000000000002",
+      "commitSha": "a8113ff645bf90e4fea77ce6e5608ce6300584af",
+      "status": "PENDING",
+      "languages": []
+    }
+  ]
+}

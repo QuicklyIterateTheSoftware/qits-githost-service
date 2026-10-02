@@ -122,4 +122,9 @@ class ConsumerPactVerificationTest {
   Map<String, String> noRepositoryWithTheGivenId() {
     return states.params(ProviderStates.NO_REPOSITORY_WITH_THE_GIVEN_ID);
   }
+
+  @State(ProviderStates.TWO_REPOSITORIES_ONE_COUNTED)
+  Map<String, String> twoRepositoriesOneCounted() {
+    return states.params(ProviderStates.TWO_REPOSITORIES_ONE_COUNTED);
+  }
 }

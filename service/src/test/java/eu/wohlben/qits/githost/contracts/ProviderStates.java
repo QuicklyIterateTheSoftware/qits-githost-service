@@ -58,6 +58,7 @@ public class ProviderStates {
   public static final String A_REPOSITORY_NOT_COUNTED_YET = "a repository not counted yet";
   public static final String A_REPOSITORY_WITH_NO_COMMIT = "a repository with no commit";
   public static final String NO_REPOSITORY_WITH_THE_GIVEN_ID = "no repository with the given id";
+  public static final String TWO_REPOSITORIES_ONE_COUNTED = "two repositories, one counted";
 
   /** The seeded tree: Java and TypeScript, each with main and test code. */
   static final Map<String, String> FILES =
@@ -87,6 +88,7 @@ public class ProviderStates {
     states.put(A_REPOSITORY_NOT_COUNTED_YET, this::aRepositoryNotCountedYet);
     states.put(A_REPOSITORY_WITH_NO_COMMIT, this::aRepositoryWithNoCommit);
     states.put(NO_REPOSITORY_WITH_THE_GIVEN_ID, this::noRepositoryWithTheGivenId);
+    states.put(TWO_REPOSITORIES_ONE_COUNTED, this::twoRepositoriesOneCounted);
   }
 
   /** Every state name this provider answers for. */
@@ -133,6 +135,24 @@ public class ProviderStates {
     String id = UUID.randomUUID().toString();
     create(id);
     return new Setup(params("repositoryId", id), List.of());
+  }
+
+  /**
+   * A list that mixes both: one repository counted, one not counted yet. The counted one gets the
+   * smaller of two fresh ids, so it always lists first (the endpoint sorts by id) and the golden
+   * master does not depend on which random id came out lower.
+   */
+  private Setup twoRepositoriesOneCounted() {
+    List<String> ids =
+        List.of(UUID.randomUUID().toString(), UUID.randomUUID().toString()).stream()
+            .sorted()
+            .toList();
+    String counted = ids.get(0);
+    String pending = ids.get(1);
+    count(counted, seed(counted));
+    seed(pending);
+    return new Setup(
+        params("countedRepositoryId", counted, "pendingRepositoryId", pending), List.of());
   }
 
   private Setup noRepositoryWithTheGivenId() {

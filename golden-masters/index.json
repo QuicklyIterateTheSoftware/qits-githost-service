@@ -112,6 +112,32 @@
           }
         }
       ]
+    },
+    {
+      "name": "two repositories, one counted",
+      "slug": "two-repositories-one-counted",
+      "params": {
+        "countedRepositoryId": "00000000-0000-4000-8000-000000000001",
+        "pendingRepositoryId": "00000000-0000-4000-8000-000000000002"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "listLoc",
+          "method": "GET",
+          "path": "/githost/api/loc",
+          "status": 200,
+          "file": "two-repositories-one-counted/listLoc.json",
+          "frozen": {
+            "ids": [
+              "$.entries[*].repositoryId"
+            ],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": "$.entries"
+          }
+        }
+      ]
     }
   ]
 }

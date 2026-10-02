@@ -94,6 +94,14 @@ class GoldenMasterRecordingTest {
               "$.entries",
               null),
           new Interaction(
+              ProviderStates.TWO_REPOSITORIES_ONE_COUNTED,
+              "listLoc",
+              "GET",
+              "/githost/api/loc",
+              200,
+              "$.entries",
+              null),
+          new Interaction(
               ProviderStates.A_REPOSITORY_WITH_COUNTED_LINES,
               "getLoc",
               "GET",
