@@ -59,6 +59,8 @@ public class ProviderStates {
   public static final String A_REPOSITORY_WITH_NO_COMMIT = "a repository with no commit";
   public static final String NO_REPOSITORY_WITH_THE_GIVEN_ID = "no repository with the given id";
   public static final String TWO_REPOSITORIES_ONE_COUNTED = "two repositories, one counted";
+  public static final String A_REPOSITORY_COUNTED_AT_AN_OLDER_COMMIT =
+      "a repository counted at an older commit";
 
   /**
    * The seeded tree: Java and TypeScript, each with main and test code, plus one file of each
@@ -97,6 +99,7 @@ public class ProviderStates {
     states.put(A_REPOSITORY_WITH_NO_COMMIT, this::aRepositoryWithNoCommit);
     states.put(NO_REPOSITORY_WITH_THE_GIVEN_ID, this::noRepositoryWithTheGivenId);
     states.put(TWO_REPOSITORIES_ONE_COUNTED, this::twoRepositoriesOneCounted);
+    states.put(A_REPOSITORY_COUNTED_AT_AN_OLDER_COMMIT, this::aRepositoryCountedAtAnOlderCommit);
   }
 
   /** Every state name this provider answers for. */
@@ -163,6 +166,18 @@ public class ProviderStates {
         params("countedRepositoryId", counted, "pendingRepositoryId", pending), List.of());
   }
 
+  /**
+   * Counted, then {@code main} moved on by one commit nobody counted yet: the list answers the
+   * older count as STALE. The second commit adds a TypeScript file, so its count would differ.
+   */
+  private Setup aRepositoryCountedAtAnOlderCommit() {
+    String id = UUID.randomUUID().toString();
+    RevCommit first = seed(id);
+    count(id, first);
+    advance(id, first);
+    return new Setup(params("repositoryId", id), List.of());
+  }
+
   private Setup noRepositoryWithTheGivenId() {
     return new Setup(params("repositoryId", UUID.randomUUID().toString()), List.of());
   }
@@ -209,6 +224,40 @@ public class ProviderStates {
       }
       try (RevWalk walk = new RevWalk(repo)) {
         return walk.parseCommit(commitId);
+      }
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  /** Commits one more file on top of {@code parent} and moves {@code main} to it, in-process. */
+  private void advance(String id, RevCommit parent) {
+    try (Repository repo = repositories.open(id);
+        ObjectInserter inserter = repo.newObjectInserter()) {
+      DirCache index = DirCache.newInCore();
+      DirCacheBuilder builder = index.builder();
+      builder.addTree(new byte[0], 0, repo.newObjectReader(), parent.getTree());
+      DirCacheEntry added = new DirCacheEntry("web/more.ts");
+      added.setFileMode(FileMode.REGULAR_FILE);
+      added.setObjectId(
+          inserter.insert(
+              Constants.OBJ_BLOB, "export const d = 4;\n".getBytes(StandardCharsets.UTF_8)));
+      builder.add(added);
+      builder.finish();
+      CommitBuilder commit = new CommitBuilder();
+      commit.setTreeId(index.writeTree(inserter));
+      commit.setParentId(parent);
+      commit.setAuthor(IDENT);
+      commit.setCommitter(IDENT);
+      commit.setMessage("feat(contract-1): one more line nobody counted yet\n");
+      ObjectId commitId = inserter.insert(commit);
+      inserter.flush();
+      RefUpdate update = repo.updateRef(Constants.R_HEADS + "main");
+      update.setNewObjectId(commitId);
+      update.setExpectedOldObjectId(parent);
+      RefUpdate.Result result = update.update();
+      if (result != RefUpdate.Result.FAST_FORWARD) {
+        throw new IllegalStateException("Advancing " + id + " moved main: " + result);
       }
     } catch (IOException e) {
       throw new UncheckedIOException(e);

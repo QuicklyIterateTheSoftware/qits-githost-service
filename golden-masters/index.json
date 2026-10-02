@@ -3,6 +3,31 @@
   "provider": "qits-githost",
   "states": [
     {
+      "name": "a repository counted at an older commit",
+      "slug": "a-repository-counted-at-an-older-commit",
+      "params": {
+        "repositoryId": "00000000-0000-4000-8000-000000000001"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "listLoc",
+          "method": "GET",
+          "path": "/githost/api/loc",
+          "status": 200,
+          "file": "a-repository-counted-at-an-older-commit/listLoc.json",
+          "frozen": {
+            "ids": [
+              "$.entries[*].repositoryId"
+            ],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": "$.entries"
+          }
+        }
+      ]
+    },
+    {
       "name": "a repository not counted yet",
       "slug": "a-repository-not-counted-yet",
       "params": {

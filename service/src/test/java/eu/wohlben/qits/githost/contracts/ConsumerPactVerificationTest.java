@@ -127,4 +127,9 @@ class ConsumerPactVerificationTest {
   Map<String, String> twoRepositoriesOneCounted() {
     return states.params(ProviderStates.TWO_REPOSITORIES_ONE_COUNTED);
   }
+
+  @State(ProviderStates.A_REPOSITORY_COUNTED_AT_AN_OLDER_COMMIT)
+  Map<String, String> aRepositoryCountedAtAnOlderCommit() {
+    return states.params(ProviderStates.A_REPOSITORY_COUNTED_AT_AN_OLDER_COMMIT);
+  }
 }

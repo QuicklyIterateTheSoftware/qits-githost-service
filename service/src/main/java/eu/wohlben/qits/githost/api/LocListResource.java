@@ -65,7 +65,16 @@ public class LocListResource {
   public enum LocStatus {
     /** The default branch's tip is counted; {@code languages} holds the numbers. */
     COUNTED,
-    /** The tip is not counted yet; its scan is queued. {@code languages} is empty. */
+    /**
+     * The tip is not counted yet, so the row carries the repository's newest stored count instead:
+     * an older commit, named by {@code commitSha}. Rough and slightly outdated, never empty. The
+     * tip's count is queued by this call.
+     */
+    STALE,
+    /**
+     * The repository was never counted; its tip's count is queued by this call. {@code languages}
+     * is empty.
+     */
     PENDING,
     /** The repository has no commit yet. {@code commitSha} is null, {@code languages} empty. */
     EMPTY
@@ -74,8 +83,10 @@ public class LocListResource {
   /**
    * One repository's default branch.
    *
-   * @param commitSha the default branch's tip, null when {@code EMPTY}
-   * @param languages one entry per language, largest total first, empty unless {@code COUNTED}
+   * @param commitSha the counted commit: the tip when {@code COUNTED} or {@code PENDING}, an older
+   *     commit when {@code STALE}, null when {@code EMPTY}
+   * @param languages one entry per language, largest total first; empty when {@code PENDING} or
+   *     {@code EMPTY}
    */
   @RegisterForReflection
   public record LocEntry(
@@ -95,8 +106,9 @@ public class LocListResource {
       summary = "Lines of code of every repository's default branch",
       description =
           "One row per repository this host holds, or per named repositoryId it holds. COUNTED rows"
-              + " carry the numbers; PENDING rows are queued for counting by this call; EMPTY rows"
-              + " have no commit yet.")
+              + " carry the default branch's numbers; STALE rows carry the newest stored numbers of"
+              + " an older commit while the tip is counted; PENDING rows were never counted; EMPTY"
+              + " rows have no commit yet. This call queues every tip that is not counted.")
   public LocListResponse list(@QueryParam("repositoryId") List<String> repositoryIds) {
     Set<String> named = null;
     if (repositoryIds != null && !repositoryIds.isEmpty()) {
@@ -144,8 +156,16 @@ public class LocListResource {
           }
         });
     Map<GitRepositoryLocId, String> stored;
+    Map<String, RepositoryLocStore.StoredSummary> newest;
     try {
       stored = locStore.findAll(wanted);
+      List<String> uncounted = new ArrayList<>();
+      for (GitRepositoryLocId key : wanted) {
+        if (!stored.containsKey(key)) {
+          uncounted.add(key.repositoryId);
+        }
+      }
+      newest = locStore.newest(uncounted);
     } catch (Exception e) {
       throw unavailable("could not read the stored lines-of-code summaries", e);
     }
@@ -159,16 +179,24 @@ public class LocListResource {
         continue;
       }
       String payload = stored.get(new GitRepositoryLocId(id, sha));
+      LocStatus status = LocStatus.COUNTED;
+      String counted = sha;
       if (payload == null) {
         indexer.enqueue(id, sha);
-        entries.add(new LocEntry(id, sha, LocStatus.PENDING, List.of()));
-        continue;
+        RepositoryLocStore.StoredSummary older = newest.get(id);
+        if (older == null) {
+          entries.add(new LocEntry(id, sha, LocStatus.PENDING, List.of()));
+          continue;
+        }
+        status = LocStatus.STALE;
+        counted = older.commitSha();
+        payload = older.payload();
       }
       try {
         LocResponse summary = mapper.readValue(payload, LocResponse.class);
-        entries.add(new LocEntry(id, sha, LocStatus.COUNTED, summary.languages()));
+        entries.add(new LocEntry(id, counted, status, summary.languages()));
       } catch (Exception e) {
-        throw unavailable("could not read the stored summary of " + id + "@" + sha, e);
+        throw unavailable("could not read the stored summary of " + id + "@" + counted, e);
       }
     }
     return new LocListResponse(entries);

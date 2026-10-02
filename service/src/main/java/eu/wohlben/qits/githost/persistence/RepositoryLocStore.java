@@ -105,6 +105,37 @@ public class RepositoryLocStore {
     return out;
   }
 
+  /** A stored summary and the commit it counts. */
+  public record StoredSummary(String commitSha, String payload) {}
+
+  /**
+   * The newest stored summary of each repository that has one, by {@code computedAt}: what the
+   * bulk list answers (as STALE) while a tip is not counted yet. Strict like {@link #findAll}.
+   * Pruning keeps the newest rows, so a repository that was ever counted always has one.
+   */
+  @ActivateRequestContext
+  public Map<String, StoredSummary> newest(Collection<String> repositoryIds) {
+    if (repositoryIds.isEmpty()) {
+      return Map.of();
+    }
+    List<GitRepositoryLoc> rows =
+        DbRetry.call(
+            "loc summary newest read",
+            () ->
+                QuarkusTransaction.requiringNew()
+                    .call(
+                        () ->
+                            GitRepositoryLoc.<GitRepositoryLoc>list(
+                                "repositoryId in ?1 order by computedAt desc, commitSha",
+                                Set.copyOf(repositoryIds))),
+            dbRetryDeadline);
+    Map<String, StoredSummary> out = new HashMap<>();
+    for (GitRepositoryLoc row : rows) {
+      out.putIfAbsent(row.repositoryId, new StoredSummary(row.commitSha, row.payload));
+    }
+    return out;
+  }
+
   /** Whether a summary is already stored. False when the store cannot answer — a rescan is cheap. */
   @ActivateRequestContext
   public boolean exists(String repositoryId, String commitSha) {

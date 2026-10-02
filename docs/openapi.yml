@@ -122,6 +122,7 @@ components:
       type: string
       enum:
       - COUNTED
+      - STALE
       - PENDING
       - EMPTY
     MergeRequest:
@@ -187,8 +188,10 @@ paths:
     get:
       summary: Lines of code of every repository's default branch
       description: "One row per repository this host holds, or per named repositoryId\
-        \ it holds. COUNTED rows carry the numbers; PENDING rows are queued for counting\
-        \ by this call; EMPTY rows have no commit yet."
+        \ it holds. COUNTED rows carry the default branch's numbers; STALE rows carry\
+        \ the newest stored numbers of an older commit while the tip is counted; PENDING\
+        \ rows were never counted; EMPTY rows have no commit yet. This call queues\
+        \ every tip that is not counted."
       operationId: listLoc
       parameters:
       - name: repositoryId
