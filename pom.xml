@@ -33,7 +33,7 @@
          no monorepo and no parent to inherit from. -->
     <groupId>eu.wohlben.qits</groupId>
     <artifactId>qits-githost</artifactId>
-    <version>2026.1003.75019</version>
+    <version>2026.1003.121236</version>
     <packaging>pom</packaging>
     <name>qits-githost</name>
 
