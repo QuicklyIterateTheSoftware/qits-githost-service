@@ -457,9 +457,9 @@ A release builds `docker/Dockerfile` — a Mandrel builder stage that native-com
 document's `release-request:` phase runs the same build — minus the push — plus `mvn verify` and the
 userflow publish against a release request's fold, `release/<id>`. Both halves gate, because every
 step of the composed pipeline does and a step cannot declare otherwise: a red verify is a red verdict
-for the fold and holds it. Both image builds run `--network host` with `--build-arg QITS_MAVEN_REPOSITORY_URL=…`, because
-`qits-eventstream` exists only in the platform's own Maven repository and a docker build reaches no
-other address for it.
+for the fold and holds it. Both image builds run `--network host` with `--build-arg QITS_DOMAIN=…`, because
+`qits-eventstream` exists only in the platform's own Maven repository (`registry.qits.$QITS_DOMAIN`)
+and a docker build reaches no other address for it.
 
 **Each pipeline is one step with two halves**, and the split is not cosmetic: the client depends on
 `@qits/ui-components`, which lives only on the platform's own npm registry, and a docker `RUN` can
@@ -619,9 +619,10 @@ deep link → `index.html`, `/githost/api/nope` and `/githost/q/nope` → 404 ne
 `/git/…` or `/bootstrap-git/…` → 404, which is the half the absolute `ignored-path-prefixes` list
 now carries. `/githost/q/health/ready` → UP.
 
-`npm ci` needs the platform's npm registries (localhost:8081 for the `@qits` scope, localhost:8082
-for the npmjs cache — the client's committed `.npmrc`); Quinoa itself reuses the `node_modules` it
-finds and runs the host's node.
+`npm ci` needs the platform's npm registries (`https://registry.qits.$QITS_DOMAIN/artifacts/npm/npm/`
+for the `@qits` scope, `https://mirror.qits.$QITS_DOMAIN/npm/npmjs/` for the npmjs cache — the
+client's committed `.npmrc`); Quinoa itself reuses the `node_modules` it finds and runs the host's
+node.
 
 Otherwise the build needs no docker: the suite drives the real `git` CLI against the in-process
 routes and — in the userflow ITs — the real `git` and `curl` against the packaged artifact on a
