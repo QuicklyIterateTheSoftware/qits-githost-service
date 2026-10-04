@@ -466,10 +466,11 @@ whole `X-Qits-` prefix, so a header would behave differently through the front d
 A release builds `docker/Dockerfile` — a Mandrel builder stage that native-compiles `service`, a
 `ubi-minimal` runtime stage that carries only the binary — and pushes it as
 `qits/qits-githost:<version>` — the release phase of `.config/qits/release.yml`, which declares the
-`java-service` archetype and overrides its `release:` slot alone, riding `SCMRelease`. That slot is
-the archetype's own image step, verbatim, followed by a `maven-base` step that builds the
-`githost-events` jar and its SBOM: the platform publishes `eu.wohlben.qits:qits-githost-events` from
-that last step, together with the contracts and `@apidocs/qits-githost` (qits-890). **Nothing builds a push any more**: per-push CI is retired platform-wide, and the same
+`java-service` archetype and overrides no slot, riding `SCMRelease`. The archetype's release slot
+is the image step followed by a `maven-base` step that builds every declared `type: maven` module
+and its SBOM — here `githost-events`, so the platform publishes `eu.wohlben.qits:qits-githost-events`
+from that last step, together with the contracts and `@apidocs/qits-githost` (qits-890).
+`git-storage` is not declared and not published: nothing outside this repository depends on it. **Nothing builds a push any more**: per-push CI is retired platform-wide, and the same
 document's `release-request:` phase runs the same build — minus the push — plus `mvn verify` and the
 userflow publish against a release request's fold, `release/<id>`. Both halves gate, because every
 step of the composed pipeline does and a step cannot declare otherwise: a red verify is a red verdict

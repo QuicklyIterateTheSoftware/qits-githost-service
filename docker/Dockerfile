@@ -81,11 +81,12 @@ RUN ./mvnw --version
 
 # The whole reactor, not a module list. `service` depends on `git-storage` and `githost-events` at
 # this build's own version, which no registry holds yet when the image is built (githost-events is
-# published by the release slot's LAST step, after this one, and git-storage never), so a builder
-# container with an empty ~/.m2 has nowhere else to get them — the sources have to be in the context. Copying module by module would mean
-# editing this file every time one is added, and forgetting to would fail the build with an
-# unresolved dependency rather than anything that names the real cause. `.dockerignore` is what keeps
-# this cheap, and it also stops a stale target/ shadowing what this stage compiles.
+# published by the java-service archetype's maven step, after this one, and git-storage never), so
+# a builder container with an empty ~/.m2 has nowhere else to get them — the sources have to be in
+# the context. Copying module by module would mean editing this file every time one is added, and
+# forgetting to would fail the build with an unresolved dependency rather than anything that names
+# the real cause. `.dockerignore` is what keeps this cheap, and it also stops a stale target/
+# shadowing what this stage compiles.
 COPY . .
 
 # -Dnative flips quarkus.native.enabled (the `native` profile lives in service/pom.xml — only that
@@ -204,8 +205,9 @@ RUN --mount=type=secret,id=qits-client-id \
 #
 # The document covers the `service` module — the one this image ships — and not the git-storage and
 # githost-events jars beside it in the reactor. Those are not this image's business: the
-# githost-events jar is built, published and given its own SBOM by the release slot's maven step
-# (`.config/qits/release.yml`, qits-890), and git-storage is published by nothing, because nothing
+# githost-events jar is built, published and given its own SBOM by the java-service archetype's
+# maven step, which builds every `type: maven` entry `.config/qits/release.yml` declares (qits-890;
+# this repository overrides no slot), and git-storage is published by nothing, because nothing
 # outside this repository depends on it.
 
 # --- sbom -----------------------------------------------------------------------------------------
