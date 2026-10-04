@@ -466,7 +466,10 @@ whole `X-Qits-` prefix, so a header would behave differently through the front d
 A release builds `docker/Dockerfile` — a Mandrel builder stage that native-compiles `service`, a
 `ubi-minimal` runtime stage that carries only the binary — and pushes it as
 `qits/qits-githost:<version>` — the release phase of `.config/qits/release.yml`, which declares the
-`java-service` archetype and overrides no slot, riding `SCMRelease`. **Nothing builds a push any more**: per-push CI is retired platform-wide, and the same
+`java-service` archetype and overrides its `release:` slot alone, riding `SCMRelease`. That slot is
+the archetype's own image step, verbatim, followed by a `maven-base` step that builds the
+`githost-events` jar and its SBOM: the platform publishes `eu.wohlben.qits:qits-githost-events` from
+that last step, together with the contracts and `@apidocs/qits-githost` (qits-890). **Nothing builds a push any more**: per-push CI is retired platform-wide, and the same
 document's `release-request:` phase runs the same build — minus the push — plus `mvn verify` and the
 userflow publish against a release request's fold, `release/<id>`. Both halves gate, because every
 step of the composed pipeline does and a step cannot declare otherwise: a red verify is a red verdict
@@ -474,7 +477,7 @@ for the fold and holds it. Both image builds run `--network host` with `--build-
 `qits-eventstream` exists only in the platform's own Maven repository (`registry.qits.$QITS_DOMAIN`)
 and a docker build reaches no other address for it.
 
-**Each pipeline is one step with two halves**, and the split is not cosmetic: the client depends on
+**Each image build is one step with two halves**, and the split is not cosmetic: the client depends on
 `@qits/ui-components`, which lives only on the platform's own npm registry, and a docker `RUN` can
 reach that registry by no address at all. So the step container builds the bundle first, and the
 image build packages one that already exists — its Quinoa install/ci/build commands are neutered to

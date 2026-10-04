@@ -1,6 +1,10 @@
 archetype: java-service
 artifacts:
   - { type: docker, name: qits/qits-githost, sbom: .sbom/sbom.json }
+  # The event vocabulary consumers compile against (qits-ci, qits-projects). Its only dependency is
+  # the external qits-eventstream, so it links to no sibling; git-storage is NOT declared, because
+  # nothing outside this repository depends on it.
+  - { type: maven, name: "eu.wohlben.qits:qits-githost-events", path: githost-events, sbom: githost-events/target/sbom.json }
   # The committed OpenAPI document, published as `@apidocs/qits-githost` on every release by the
   # composed postlude (OpenApiSchemaExportTest keeps it current).
   - { type: docs, name: "@apidocs/qits-githost", path: docs/openapi.yml }
@@ -11,3 +15,140 @@ contracts:
   application: qits-githost
   golden-masters: { from: golden-masters/, packages: [maven, npm] }
 userflows: qits-githost
+
+# AN IMAGE AND A JAR, SO THE RELEASE SLOT IS THIS REPOSITORY'S OWN (qits-890). The java-service
+# archetype's `release:` builds one image and nothing else, so with no slot of its own this
+# repository declared no maven entry, the postlude had no jar on disk to upload, and
+# `qits-githost-events` — the jar every consumer of the push events compiles against — was never
+# published by any release. Overriding a slot replaces it whole, so the slot below is two steps:
+# the archetype's own release step, VERBATIM, and a maven step after it. `release-request:` is NOT
+# overridden — the QA half stays the archetype's, and the image step here must stay byte-identical
+# to its buildctl invocation so the release is a stack of builder cache hits rather than a second
+# native compile. If the archetype's release step changes, copy it here again.
+#
+# THE MAVEN STEP IS THE LAST RELEASE STEP ON PURPOSE: the composed postlude publishes from the LAST
+# step only — the maven upload first, then the golden-master contract packages, the
+# `@contracts/qits-githost` docs and `@apidocs/qits-githost` — so the step holding the jar has to be
+# that one, and the contract and apidocs publishes ride on it from the tree as before. Every release
+# step submits each declared SBOM it holds: the image's from the first step (`.sbom/`), the jar's
+# from this one (`githost-events/target/sbom.json`), and the last step checks that both arrived.
+# Modelled on qits-containers-service, which ships an image and two jars the same way.
+release:
+
+  # The same image and the same build as the QA half, plus the two exports. The composer has already
+  # fetched the release tag and detached at it before this script runs.
+  - image: qits/build-images/node-docker-base:latest
+    build: true
+    timeout-seconds: 3600
+    script: |
+      # THE COORDINATE, OUT OF THE DECLARATION THAT ANNOUNCES IT. See the header for why this is
+      # read rather than derived, and why the spelling is one line of flow YAML.
+      declared=$(sed -n \
+        's/^[[:space:]]*-[[:space:]]*{[[:space:]]*type:[[:space:]]*docker[[:space:]]*,[[:space:]]*name:[[:space:]]*\([^,}[:space:]]*\).*/\1/p' \
+        .config/qits/release.yml)
+      count=$(printf '%s' "$declared" | grep -c . || true)
+      if [ "$count" != 1 ]; then
+        echo "release.yml declares $count docker artifacts and java-service pushes exactly one." >&2
+        echo "Spell it as one flow line — '- { type: docker, name: qits/x, sbom: .sbom/sbom.json }'" >&2
+        echo "— or declare this repository's own 'release:' steps." >&2
+        exit 1
+      fi
+      case "$declared" in
+        *[!A-Za-z0-9._:/@+-]*)
+          echo "release.yml's docker artifact name is not a coordinate: $declared" >&2
+          exit 1 ;;
+      esac
+      # The first segment is the platform namespace and is re-supplied from the environment, which
+      # is how every hand-written file spelled it: a deployment may re-point the namespace and the
+      # declaration may not have to move.
+      image=${declared#*/}
+      # THE ADDRESSES ARE CODE (qits-731): the platform's public domain is the one input, and every
+      # host and path below is a constant under it — registry.qits.<domain> is the image registry
+      # and the hosted @qits scope, mirror.qits.<domain> the npmjs cache. The composed prelude has
+      # already demanded the domain; the `:?` says so again here.
+      qits_domain=${QITS_DOMAIN:?this step was told no QITS_DOMAIN}
+      ref="registry.qits.$qits_domain/$QITS_IMAGE_REPOSITORY/$image:$QITS_VERSION"
+      echo "releasing $ref"
+
+      # --- half one: the bundle -------------------------------------------------------------------
+      # Byte-identical to the QA step's, deliberately. `checkout --detach` on the tag is what makes
+      # the submodule update land on the gitlink the RELEASE recorded rather than on main's.
+      origin_parent="${QITS_CI_REPOSITORY_URL%/*}"
+      webui_dirs=""
+      if [ -f .gitmodules ]; then
+        for key in $(git config -f .gitmodules --name-only --get-regexp '^submodule\..*\.path$'); do
+          name=${key#submodule.}
+          name=${name%.path}
+          path=$(git config -f .gitmodules --get "$key")
+          git -c "submodule.$name.url=$origin_parent/$name" submodule update --init "$path"
+          if [ -f "$path/package.json" ]; then
+            webui_dirs="$webui_dirs $path"
+          fi
+        done
+      fi
+
+      # The submodules' lockfiles, checked now that they exist — see the QA step.
+      if [ -f /tmp/qits-lockfile-origins.sh ]; then sh /tmp/qits-lockfile-origins.sh; fi
+
+      npm_hosted_origin="https://registry.qits.$qits_domain"
+      npm_proxy_origin="https://mirror.qits.$qits_domain"
+      npm_hosted_path=/artifacts/npm/npm/
+      for dir in $webui_dirs; do
+        (
+          cd "$dir"
+          env npm_config_registry="$npm_proxy_origin/npm/npmjs/" \
+              "npm_config_@qits:registry=$npm_hosted_origin$npm_hosted_path" \
+              npm ci --no-audit --no-fund
+          npm run build
+        )
+      done
+
+      # --- half two: the image --------------------------------------------------------------------
+      # `push=true` IS THE PUBLISH: the image goes from the builder straight to the registry and
+      # never enters any local image store, at registry.qits.<domain> — the registry's public name,
+      # which the builder resolves like everything else here.
+      buildctl build --frontend dockerfile.v0 \
+        --local context=. --local dockerfile=docker \
+        --opt build-arg:QITS_DOMAIN="$qits_domain" \
+        --opt build-arg:QITS_MAVEN_REPOSITORY_URL="https://registry.qits.$qits_domain/artifacts/maven/maven" \
+        --opt build-arg:QITS_MAVEN_CENTRAL_URL="https://mirror.qits.$qits_domain/mirror/maven/central" \
+        --secret id=qits-client-id,src=/tmp/qits-client-id \
+        --secret id=qits-client-secret,src=/tmp/qits-client-secret \
+        --output "type=image,name=$ref,push=true"
+
+      # --- the SBOM, GENERATED HERE AND SUBMITTED BY THE PLATFORM ---------------------------------
+      # The second build reaches the Dockerfile's `sbom` stage — a `FROM scratch` holding the
+      # service module's CycloneDX document, exported with `type=local` instead of pushed. Build
+      # args and secrets are byte-identical to the image build above, which is what makes every
+      # layer a cache hit in the same builder and this export seconds rather than a second native
+      # compile.
+      #
+      # NOTHING SUBMITS IT HERE. The composed postlude runs `qits-publish sbom submit` for every
+      # declared artifact carrying `sbom:`, after this script and before the step's exit code — so
+      # "SBOM before green" holds by construction. Declare `sbom: .sbom/sbom.json` and stop.
+      buildctl build --frontend dockerfile.v0 \
+        --local context=. --local dockerfile=docker \
+        --opt target=sbom \
+        --opt build-arg:QITS_DOMAIN="$qits_domain" \
+        --opt build-arg:QITS_MAVEN_REPOSITORY_URL="https://registry.qits.$qits_domain/artifacts/maven/maven" \
+        --opt build-arg:QITS_MAVEN_CENTRAL_URL="https://mirror.qits.$qits_domain/mirror/maven/central" \
+        --secret id=qits-client-id,src=/tmp/qits-client-id \
+        --secret id=qits-client-secret,src=/tmp/qits-client-secret \
+        --output type=local,dest=.sbom
+
+  - image: qits/build-images/maven-base:latest
+    timeout-seconds: 1800
+    script: |
+      # BUILD ONLY, NEVER DEPLOY: the platform's postlude uploads the jar this step leaves in
+      # githost-events/target/ and submits the SBOM makeBom writes beside it. `-pl githost-events
+      # -am` is the events module and its reactor parent alone — it has no sibling dependency, so
+      # neither git-storage nor the service is compiled here.
+      qits_domain=${QITS_DOMAIN:-wohlben.eu}
+      export QITS_MAVEN_REPOSITORY_URL="https://registry.qits.$qits_domain/artifacts/maven/maven"
+      export QITS_MAVEN_CENTRAL_URL="https://mirror.qits.$qits_domain/mirror/maven/central"
+      ./mvnw -B -ntp -s .qits-maven-settings.xml -pl githost-events -am package -DskipTests \
+        -Dqits.maven.repository.url="$QITS_MAVEN_REPOSITORY_URL"
+      ./mvnw -B -ntp -s .qits-maven-settings.xml -pl githost-events -DskipTests \
+        org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeBom \
+        -DoutputFormat=json -DoutputName=sbom -DschemaVersion=1.6 \
+        -Dqits.maven.repository.url="$QITS_MAVEN_REPOSITORY_URL"

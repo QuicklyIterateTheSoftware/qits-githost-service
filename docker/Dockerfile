@@ -79,9 +79,10 @@ COPY mvnw .
 COPY .mvn/ .mvn/
 RUN ./mvnw --version
 
-# The whole reactor, not a module list. `service` depends on `git-storage` and `githost-events`,
-# 1.0.0-SNAPSHOTs this repo publishes nowhere, so a builder container with an empty ~/.m2 has nowhere
-# else to get them — the sources have to be in the context. Copying module by module would mean
+# The whole reactor, not a module list. `service` depends on `git-storage` and `githost-events` at
+# this build's own version, which no registry holds yet when the image is built (githost-events is
+# published by the release slot's LAST step, after this one, and git-storage never), so a builder
+# container with an empty ~/.m2 has nowhere else to get them — the sources have to be in the context. Copying module by module would mean
 # editing this file every time one is added, and forgetting to would fail the build with an
 # unresolved dependency rather than anything that names the real cause. `.dockerignore` is what keeps
 # this cheap, and it also stops a stale target/ shadowing what this stage compiles.
@@ -202,8 +203,10 @@ RUN --mount=type=secret,id=qits-client-id \
 # -DskipNotDeployed=false is silently ignored; only the cyclonedx.-prefixed one reaches the plugin.
 #
 # The document covers the `service` module — the one this image ships — and not the git-storage and
-# githost-events jars beside it in the reactor. Those are a Maven release's business, and this
-# pipeline does not publish them.
+# githost-events jars beside it in the reactor. Those are not this image's business: the
+# githost-events jar is built, published and given its own SBOM by the release slot's maven step
+# (`.config/qits/release.yml`, qits-890), and git-storage is published by nothing, because nothing
+# outside this repository depends on it.
 
 # --- sbom -----------------------------------------------------------------------------------------
 # The service module's CycloneDX document, exported so the release step can PUT it to the artifacts
