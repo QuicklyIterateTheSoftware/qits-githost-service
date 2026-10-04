@@ -246,22 +246,6 @@ public class GitHostRoutes {
   private static final int MAX_PATH_LENGTH = 1024;
 
   /**
-   * {@code -o qits.no-ci} — "do not build this push". It <b>suppresses no event</b>: it becomes
-   * {@code suppressCi} on every {@code SCMPublishCommit} the push produces, and each consumer
-   * decides what that means to it. A run engine skips the build; a backup trigger ignores the flag,
-   * because a backup is owed even for a push CI is meant to leave alone.
-   *
-   * <p>That is the one behaviour change of the move off the HTTP fan-out, and it is deliberate: the
-   * notifier decided FOR its two consumers, which put the option's meaning in the publisher and left
-   * no room for a third consumer to have an opinion.
-   *
-   * <p>Read in {@link #service}'s post-receive lambda, not by {@link ProtectedRefHook}: it grants no
-   * write, so it is not a bypass of anything. See {@code ProtectedRefHook}'s "two bypasses" javadoc,
-   * third bullet.
-   */
-  private static final String NO_CI_OPTION = "qits.no-ci";
-
-  /**
    * The JSON body limit for the lifecycle {@code PUT} — a {@code {"defaultBranch": "…"}} document,
    * nowhere near what a pack needs. Stated explicitly rather than inherited, for the same reason
    * {@link #maxPackSize} is: {@code BodyHandler.create()} defaults to 10 MiB, and a bound this far
@@ -743,7 +727,7 @@ public class GitHostRoutes {
         rp.setPostReceiveHook(
             (pack, commands) ->
                 CausationScope.with(
-                    cause, () -> announce(opened, repo, commands, hasNoCiOption(pack))));
+                    cause, () -> announce(opened, repo, commands)));
         rp.receive(in, out, null);
       }
       rc.response()
@@ -870,25 +854,9 @@ public class GitHostRoutes {
    * what this repository is called — the whole reason the git host can serve names and still hold
    * no domain. A push on the id-addressed scheme announces both as null.
    */
-  private void announce(
-      OpenedRepo opened,
-      Repository repo,
-      Collection<ReceiveCommand> commands,
-      boolean suppressCi) {
-    for (ScmAnnouncer announcer : announcers) {
-      try {
-        announcer.onPostReceive(
-            opened.repoId(), opened.projectId(), opened.repoName(), repo, commands, suppressCi);
-      } catch (Exception e) {
-        LOG.warnf(e, "post-receive announcement for %s failed", opened.repoId());
-      }
-    }
-  }
-
-  /** Whether this push carried {@code -o qits.no-ci}. */
-  private boolean hasNoCiOption(ReceivePack pack) {
-    List<String> options = pack.getPushOptions();
-    return options != null && options.contains(NO_CI_OPTION);
+  private void announce(OpenedRepo opened, Repository repo, Collection<ReceiveCommand> commands) {
+    ScmAnnouncer.announceToEach(
+        announcers, opened.repoId(), opened.projectId(), opened.repoName(), repo, commands);
   }
 
   // --- content reads ------------------------------------------------------------------------------

@@ -16,9 +16,6 @@ import java.util.UUID;
  * the only thing left to name the branch by, and it is what lets a consumer tell "the branch I knew
  * about" from one that had already moved on.
  *
- * <p>There is no {@code suppressCi} here and that is deliberate: {@code -o qits.no-ci} is about not
- * starting a build for pushed work, and a deletion starts none.
- *
  * <p>{@code projectId} and {@code repoName} are the address the push arrived on, echoed and not
  * resolved, and null for a push on the internal {@code /git/<storageId>} scheme — see {@link
  * SCMPublishCommit} for the whole of that rule.

@@ -64,7 +64,7 @@ class PostReceiveEventsTest {
     ObjectId first = commit("first\n");
     ObjectId second = commit("second commit\n", first);
 
-    List<QitsEvent> events = map(update("refs/heads/main", first, second), false);
+    List<QitsEvent> events = map(update("refs/heads/main", first, second));
 
     SCMPublishCommit event = assertInstanceOf(SCMPublishCommit.class, only(events));
     assertEquals("r", event.repoId());
@@ -77,7 +77,6 @@ class PostReceiveEventsTest {
     assertEquals(AUTHORED, event.authoredAt());
     assertEquals(COMMITTED, event.committedAt());
     assertEquals("second commit\n", event.message());
-    assertFalse(event.suppressCi());
     assertEquals(RECEIVED, event.occurredAt());
   }
 
@@ -88,7 +87,7 @@ class PostReceiveEventsTest {
     SCMPublishCommit event =
         assertInstanceOf(
             SCMPublishCommit.class,
-            only(map(create("refs/heads/main", root), false)));
+            only(map(create("refs/heads/main", root))));
 
     assertEquals(ObjectId.zeroId().name(), event.oldSha());
     assertEquals(List.of(), event.parents(), "a root commit has no parents");
@@ -105,8 +104,7 @@ class PostReceiveEventsTest {
             List.of(
                 create("refs/heads/main", main),
                 create("refs/heads/feature/x", feature),
-                create("refs/tags/v1", tag)),
-            false);
+                create("refs/tags/v1", tag)));
 
     assertEquals(3, events.size());
     assertEquals("main", assertInstanceOf(SCMPublishCommit.class, events.get(0)).branch());
@@ -120,7 +118,7 @@ class PostReceiveEventsTest {
     ObjectId tag = annotatedTag("v2026.810.1", head, "the release\n");
 
     SCMPublishTag event =
-        assertInstanceOf(SCMPublishTag.class, only(map(create("refs/tags/v2026.810.1", tag), false)));
+        assertInstanceOf(SCMPublishTag.class, only(map(create("refs/tags/v2026.810.1", tag))));
 
     assertTrue(event.annotated());
     assertEquals(tag.name(), event.sha(), "the ref holds the TAG object");
@@ -135,7 +133,7 @@ class PostReceiveEventsTest {
     ObjectId head = commit("tag me\n");
 
     SCMPublishTag event =
-        assertInstanceOf(SCMPublishTag.class, only(map(create("refs/tags/nightly", head), false)));
+        assertInstanceOf(SCMPublishTag.class, only(map(create("refs/tags/nightly", head))));
 
     assertFalse(event.annotated());
     assertEquals(head.name(), event.sha());
@@ -151,7 +149,7 @@ class PostReceiveEventsTest {
     ObjectId tag = annotatedTag("v1", head, "gone too");
 
     List<QitsEvent> events =
-        map(List.of(delete("refs/heads/feature/x", head), delete("refs/tags/v1", tag)), false);
+        map(List.of(delete("refs/heads/feature/x", head), delete("refs/tags/v1", tag)));
 
     SCMDeleteBranch branch = assertInstanceOf(SCMDeleteBranch.class, events.get(0));
     assertEquals("feature/x", branch.branch());
@@ -160,22 +158,6 @@ class PostReceiveEventsTest {
     SCMDeleteTag deletedTag = assertInstanceOf(SCMDeleteTag.class, events.get(1));
     assertEquals("v1", deletedTag.tagName());
     assertEquals(tag.name(), deletedTag.sha(), "a deleted annotated tag names the tag OBJECT");
-  }
-
-  @Test
-  void theNoCiOptionLandsOnEveryCommitEventOfThePush() throws Exception {
-    ObjectId main = commit("imported\n");
-    ObjectId other = commit("imported too\n");
-
-    List<QitsEvent> events =
-        map(
-            List.of(create("refs/heads/main", main), create("refs/heads/legacy", other)),
-            true);
-
-    assertEquals(2, events.size());
-    for (QitsEvent event : events) {
-      assertTrue(assertInstanceOf(SCMPublishCommit.class, event).suppressCi());
-    }
   }
 
   @Test
@@ -188,7 +170,7 @@ class PostReceiveEventsTest {
 
     assertEquals(
         List.of(),
-        PostReceiveEvents.of("r", "qits", "n", repo, List.of(refused), false, RECEIVED));
+        PostReceiveEvents.of("r", "qits", "n", repo, List.of(refused), RECEIVED));
   }
 
   @Test
@@ -203,8 +185,7 @@ class PostReceiveEventsTest {
                 create("refs/heads/main", head),
                 create("refs/tags/v1", tag),
                 delete("refs/heads/old", gone),
-                delete("refs/tags/v0", gone)),
-            false);
+                delete("refs/tags/v0", gone)));
 
     assertEquals(PROJECT, assertInstanceOf(SCMPublishCommit.class, addressed.get(0)).projectId());
     assertEquals(REPO_NAME, assertInstanceOf(SCMPublishCommit.class, addressed.get(0)).repoName());
@@ -223,7 +204,7 @@ class PostReceiveEventsTest {
     SCMPublishCommit event =
         assertInstanceOf(
             SCMPublishCommit.class,
-            only(PostReceiveEvents.of("r", null, null, repo, List.of(mirrored), false, RECEIVED)));
+            only(PostReceiveEvents.of("r", null, null, repo, List.of(mirrored), RECEIVED)));
     assertEquals("r", event.repoId());
     assertNull(event.projectId());
     assertNull(event.repoName());
@@ -233,21 +214,21 @@ class PostReceiveEventsTest {
   void aRefInNeitherNamespaceIsSilentRatherThanGuessedAt() throws Exception {
     ObjectId head = commit("noted\n");
 
-    assertEquals(List.of(), map(create("refs/notes/commits", head), false));
-    assertEquals(List.of(), map(create("refs/qits/whatever", head), false));
+    assertEquals(List.of(), map(create("refs/notes/commits", head)));
+    assertEquals(List.of(), map(create("refs/qits/whatever", head)));
   }
 
   // --- helpers -------------------------------------------------------------------------------
 
-  private List<QitsEvent> map(ReceiveCommand command, boolean suppressCi) {
-    return map(List.of(command), suppressCi);
+  private List<QitsEvent> map(ReceiveCommand command) {
+    return map(List.of(command));
   }
 
-  private List<QitsEvent> map(List<ReceiveCommand> commands, boolean suppressCi) {
+  private List<QitsEvent> map(List<ReceiveCommand> commands) {
     for (ReceiveCommand command : commands) {
       command.setResult(ReceiveCommand.Result.OK);
     }
-    return PostReceiveEvents.of("r", PROJECT, REPO_NAME, repo, commands, suppressCi, RECEIVED);
+    return PostReceiveEvents.of("r", PROJECT, REPO_NAME, repo, commands, RECEIVED);
   }
 
   private static QitsEvent only(List<QitsEvent> events) {

@@ -3,8 +3,10 @@ package eu.wohlben.qits.githost.api;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import eu.wohlben.qits.githost.GitIdentity;
 import eu.wohlben.qits.githost.GitRepositoryProvider;
+import eu.wohlben.qits.githost.ScmAnnouncer;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -51,6 +53,7 @@ import org.eclipse.jgit.merge.MergeStrategy;
 import org.eclipse.jgit.merge.ResolveMerger;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.transport.ReceiveCommand;
 import org.eclipse.jgit.treewalk.EmptyTreeIterator;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilterGroup;
@@ -77,17 +80,21 @@ import org.jboss.logging.Logger;
  * ObjectInserter}, and the ref moves through the reftable database. Nothing touches a disk that is
  * not the blob store.
  *
- * <h2>These writes do not fire post-receive</h2>
+ * <h2>Every write is announced, exactly like a push</h2>
  *
- * <p><b>Stated because it inverts a property this storage was built for.</b> {@code
- * QitsDfsRepository}'s javadoc says receive-pack is the only writer, so nothing changes a ref
- * without firing {@code post-receive} — and therefore without publishing {@code SCMPublishCommit}
- * and friends. These endpoints are a second writer, and they publish <b>nothing</b>. That is the
- * design and not an oversight: the caller is a domain service that is already narrating what it is
- * doing (a release request changed, a release happened), and an {@code SCMPublishCommit} for every
- * intermediate merge of a release request would announce steps nobody outside qits-projects has any
- * business reacting to. A consumer that wants to know a release happened listens for {@code
- * SCMRelease}, which its publisher emits.
+ * <p>Each door that moves a ref hands the move to every {@link ScmAnnouncer} as the one {@link
+ * ReceiveCommand} a push carrying it would have held, so {@code SCMPublishCommit}, {@code
+ * SCMPublishTag} and {@code SCMDeleteBranch} come out of a merge, a commit, a tag or a deletion just
+ * as they come out of {@code git push} — the platform's invariant is that every ref move is
+ * announced, whichever door moved it. A write that moved nothing ({@code unchanged}, or a ref update
+ * answering {@code NO_CHANGE}) announces nothing, and an announcer that fails is logged and never
+ * fails the door: the ref has already moved.
+ *
+ * <p>The address travels in the request, because this host stores no names: {@code projectId} and
+ * {@code repoName} on the body of a merge, a commit and a tag, and as query parameters of the same
+ * names on a {@code DELETE …/branches/{name}}. Both are optional and echoed, never resolved; a caller
+ * that omits them is still served, and its events carry {@code null} for both — the same as a push
+ * on the internal {@code /git/<storageId>} scheme.
  *
  * <h2>The guard</h2>
  *
@@ -164,6 +171,24 @@ public class RepositoryRefsResource {
 
   @Inject GitIdentity identity;
 
+  /** Told about every ref move a door makes. Zero is supported: then nothing is announced. */
+  @Inject Instance<ScmAnnouncer> announcers;
+
+  /**
+   * Where a write landed and the public address the caller named it by, so a move can be announced
+   * the way a push on {@code /git/<projectId>/<repoName>} would be. Either name may be {@code null}.
+   */
+  private record Origin(String repoId, String projectId, String repoName) {
+    Origin {
+      projectId = blankToNull(projectId);
+      repoName = blankToNull(repoName);
+    }
+
+    private static String blankToNull(String value) {
+      return value == null || value.isBlank() ? null : value;
+    }
+  }
+
   /** An author a caller named for itself. Both halves or neither — see {@link GitIdentity}. */
   @RegisterForReflection
   public record Author(String name, String email) {}
@@ -195,6 +220,9 @@ public class RepositoryRefsResource {
    * a caller can decide without a worktree — two heads pinning a submodule at different commits — is
    * also the one this host is asked to fold most often, and the alternative is an orchestrator that
    * has to clone a superproject just to write a single 20-byte tree entry.
+   *
+   * <p>{@code projectId} and {@code repoName} are optional: the public address the move is
+   * announced under (see "Every write is announced" above).
    */
   @RegisterForReflection
   public record MergeRequest(
@@ -202,7 +230,19 @@ public class RepositoryRefsResource {
       List<String> sources,
       String message,
       Author author,
-      List<Resolution> resolutions) {
+      List<Resolution> resolutions,
+      String projectId,
+      String repoName) {
+    /** The form before the announced address existed. */
+    public MergeRequest(
+        String target,
+        List<String> sources,
+        String message,
+        Author author,
+        List<Resolution> resolutions) {
+      this(target, sources, message, author, resolutions, null, null);
+    }
+
     /** The form before directed resolutions existed: sources alone decide the tree. */
     public MergeRequest(String target, List<String> sources, String message, Author author) {
       this(target, sources, message, author, List.of());
@@ -271,10 +311,17 @@ public class RepositoryRefsResource {
   /**
    * An annotated tag at {@code sha}. {@code name} is a tag name ({@code 2026.903.120000}) or the
    * full ref ({@code refs/tags/2026.903.120000}); {@code sha} is a ref, tag or sha naming the
-   * commit to tag. {@code message} defaults to the tag's own name.
+   * commit to tag. {@code message} defaults to the tag's own name. {@code projectId} and {@code
+   * repoName} are the optional address the new tag is announced under.
    */
   @RegisterForReflection
-  public record TagRequest(String name, String sha, String message, Author author) {}
+  public record TagRequest(
+      String name, String sha, String message, Author author, String projectId, String repoName) {
+    /** The form before the announced address existed. */
+    public TagRequest(String name, String sha, String message, Author author) {
+      this(name, sha, message, author, null, null);
+    }
+  }
 
   /**
    * The created tag. {@code sha} is the <b>tag object</b> — this host only makes annotated tags, so
@@ -313,6 +360,8 @@ public class RepositoryRefsResource {
    * <p>A gitlink's sha names a commit of a <em>different</em> repository, so it is deliberately
    * not resolved against this one — exactly git's own reading of the mode — and only its shape (40
    * hex digits) is checked. qits-projects banks a wrapper's submodule pins with this on release.
+   *
+   * <p>{@code projectId} and {@code repoName} are the optional address the move is announced under.
    */
   @RegisterForReflection
   public record CommitRequest(
@@ -321,7 +370,20 @@ public class RepositoryRefsResource {
       Map<String, String> files,
       List<String> deletePaths,
       Map<String, String> gitlinks,
-      Author author) {
+      Author author,
+      String projectId,
+      String repoName) {
+    /** The form before the announced address existed. */
+    public CommitRequest(
+        String ref,
+        String message,
+        Map<String, String> files,
+        List<String> deletePaths,
+        Map<String, String> gitlinks,
+        Author author) {
+      this(ref, message, files, deletePaths, gitlinks, author, null, null);
+    }
+
     /** The form before gitlink entries existed: files and deletions only. */
     public CommitRequest(
         String ref,
@@ -450,7 +512,12 @@ public class RepositoryRefsResource {
       if (repo == null) {
         return notFound("no-such-repository", repoId);
       }
-      return fold(repo, request, sources, directed);
+      return fold(
+          repo,
+          new Origin(repoId, request.projectId(), request.repoName()),
+          request,
+          sources,
+          directed);
     } catch (Exception e) {
       throw unavailable("could not merge into " + request.target() + " of repository " + repoId, e);
     }
@@ -463,7 +530,11 @@ public class RepositoryRefsResource {
    * shape. Empty is the overwhelming case and takes exactly the path this method has always taken.
    */
   private Response fold(
-      Repository repo, MergeRequest request, List<String> sources, Map<String, String> directed)
+      Repository repo,
+      Origin origin,
+      MergeRequest request,
+      List<String> sources,
+      Map<String, String> directed)
       throws IOException {
     String target = request.target();
     try (ObjectInserter inserter = repo.newObjectInserter();
@@ -535,7 +606,9 @@ public class RepositoryRefsResource {
         }
         // The target is absent, or an ancestor of the one surviving head: move the ref onto it
         // rather than writing a merge commit with a single parent.
-        Response moved = moveRef(repo, target, targetOld, only.commit(), "fast-forward: " + only.spelling());
+        Response moved =
+            moveRef(
+                repo, origin, target, targetOld, only.commit(), "fast-forward: " + only.spelling());
         return moved != null
             ? moved
             : Response.ok(
@@ -652,7 +725,7 @@ public class RepositoryRefsResource {
           insertCommit(inserter, resultTree, parents, person, mergeMessage(request, effective));
       inserter.flush();
 
-      Response moved = moveRef(repo, target, targetOld, merged, "octopus merge");
+      Response moved = moveRef(repo, origin, target, targetOld, merged, "octopus merge");
       if (moved != null) {
         return moved;
       }
@@ -739,7 +812,14 @@ public class RepositoryRefsResource {
         ObjectId tagId = inserter.insert(builder);
         inserter.flush();
 
-        Response refused = moveRef(repo, tagRef, null, tagId, "tag " + name);
+        Response refused =
+            moveRef(
+                repo,
+                new Origin(repoId, request.projectId(), request.repoName()),
+                tagRef,
+                null,
+                tagId,
+                "tag " + name);
         if (refused != null) {
           // Lost the race between the read above and this update: the other caller's tag is the
           // one that exists, and this caller must learn that rather than a generic conflict.
@@ -852,7 +932,14 @@ public class RepositoryRefsResource {
                 authorOf(request.author()),
                 request.message());
         inserter.flush();
-        Response refused = moveRef(repo, request.ref(), tip, committed, "commit onto " + request.ref());
+        Response refused =
+            moveRef(
+                repo,
+                new Origin(repoId, request.projectId(), request.repoName()),
+                request.ref(),
+                tip,
+                committed,
+                "commit onto " + request.ref());
         if (refused != null) {
           return refused;
         }
@@ -865,22 +952,6 @@ public class RepositoryRefsResource {
     }
   }
 
-  /**
-   * Deletes a branch ref — a release request's backing branch and the source branches it consumed,
-   * in the flow this exists for.
-   *
-   * <p><b>The repository's default branch is refused, always.</b> {@code ProtectedRefHook} guards
-   * the same ref on the push door, and this door has to guard it too or the seatbelt would have a
-   * hole shaped like an HTTP call. It is refused <b>unconditionally</b> rather than under that
-   * hook's {@code protect-default-branch} switch, and the difference is deliberate: the switch
-   * ships off because this host serves its own redeploy and a protection bug must not be able to
-   * reject the push that fixes it — an argument about pushes, which nothing here is. No caller of a
-   * ref primitive has a reason to delete a repository's default branch, and one that wants the
-   * repository gone deletes the repository ({@code DELETE /git/:repoId}).
-   *
-   * <p>The name is the tail of the path, so a slashy branch needs no encoding dance: {@code DELETE
-   * …/branches/release/17} and {@code …/branches/refs/heads/release/17} both name the same ref.
-   */
   /**
    * Where a branch of this repository stands — the read half of the primitives, for a caller
    * composing a cross-repository fact out of refs it does not own. qits-projects resolves each
@@ -1002,10 +1073,33 @@ public class RepositoryRefsResource {
     }
   }
 
+  /**
+   * Deletes a branch ref — a release request's backing branch and the source branches it consumed,
+   * in the flow this exists for.
+   *
+   * <p><b>The repository's default branch is refused, always.</b> {@code ProtectedRefHook} guards
+   * the same ref on the push door, and this door has to guard it too or the seatbelt would have a
+   * hole shaped like an HTTP call. It is refused <b>unconditionally</b> rather than under that
+   * hook's {@code protect-default-branch} switch, and the difference is deliberate: the switch
+   * ships off because this host serves its own redeploy and a protection bug must not be able to
+   * reject the push that fixes it — an argument about pushes, which nothing here is. No caller of a
+   * ref primitive has a reason to delete a repository's default branch, and one that wants the
+   * repository gone deletes the repository ({@code DELETE /git/:repoId}).
+   *
+   * <p>The name is the tail of the path, so a slashy branch needs no encoding dance: {@code DELETE
+   * …/branches/release/17} and {@code …/branches/refs/heads/release/17} both name the same ref.
+   *
+   * <p>{@code projectId} and {@code repoName} are optional query parameters — a {@code DELETE}
+   * carries no body — naming the address the deletion is announced under as {@code
+   * SCMDeleteBranch}.
+   */
   @DELETE
   @Path("/branches/{name:.+}")
   public Response deleteBranch(
-      @PathParam("repoId") String repoId, @PathParam("name") String name) {
+      @PathParam("repoId") String repoId,
+      @PathParam("name") String name,
+      @QueryParam("projectId") String projectId,
+      @QueryParam("repoName") String repoName) {
     if (!isValidRepoId(repoId)) {
       return badRequest("repoId must match " + REPO_ID_PATTERN);
     }
@@ -1032,7 +1126,15 @@ public class RepositoryRefsResource {
       update.setRefLogMessage("qits-githost: delete " + ref, false);
       RefUpdate.Result result = update.delete();
       return switch (result) {
-        case FORCED, NEW, NO_CHANGE -> Response.noContent().build();
+        case FORCED, NEW -> {
+          announce(
+              repo,
+              new Origin(repoId, projectId, repoName),
+              new ReceiveCommand(
+                  branch.getObjectId(), ObjectId.zeroId(), ref, ReceiveCommand.Type.DELETE));
+          yield Response.noContent().build();
+        }
+        case NO_CHANGE -> Response.noContent().build();
         case LOCK_FAILURE, REJECTED, REJECTED_CURRENT_BRANCH, REJECTED_OTHER_REASON ->
             Response.status(Response.Status.CONFLICT)
                 .entity(new ErrorBody("ref-moved", ref + ": " + result.name()))
@@ -1330,16 +1432,24 @@ public class RepositoryRefsResource {
   }
 
   /**
-   * Moves the ref, or answers the refusal. Returns {@code null} when the update landed — the caller
-   * then builds its own success body.
+   * Moves the ref and announces the move, or answers the refusal. Returns {@code null} when the
+   * update landed — the caller then builds its own success body.
    *
    * <p>The update is a compare-and-swap against what this request read, so a ref that moved under
    * a concurrent caller is a 409 rather than a silent overwrite. {@code setForceUpdate} is on
    * because a re-merge legitimately rewrites the target: the octopus is rebuilt from the heads, and
    * the caller owns the ref it named.
+   *
+   * <p>A landed update is announced as a {@code CREATE} when there was no ref and an {@code UPDATE}
+   * otherwise; {@code NO_CHANGE} moved nothing and is announced as nothing.
    */
-  private static Response moveRef(
-      Repository repo, String ref, ObjectId expectedOld, ObjectId to, String reflog)
+  private Response moveRef(
+      Repository repo,
+      Origin origin,
+      String ref,
+      ObjectId expectedOld,
+      ObjectId to,
+      String reflog)
       throws IOException {
     RefUpdate update = repo.updateRef(ref);
     update.setNewObjectId(to);
@@ -1348,7 +1458,18 @@ public class RepositoryRefsResource {
     update.setRefLogMessage("qits-githost: " + reflog, false);
     RefUpdate.Result result = update.update();
     return switch (result) {
-      case NEW, FORCED, FAST_FORWARD, NO_CHANGE -> null;
+      case NEW, FORCED, FAST_FORWARD -> {
+        announce(
+            repo,
+            origin,
+            expectedOld == null
+                ? new ReceiveCommand(
+                    ObjectId.zeroId(), to.toObjectId(), ref, ReceiveCommand.Type.CREATE)
+                : new ReceiveCommand(
+                    expectedOld.toObjectId(), to.toObjectId(), ref, ReceiveCommand.Type.UPDATE));
+        yield null;
+      }
+      case NO_CHANGE -> null;
       case LOCK_FAILURE, REJECTED, REJECTED_CURRENT_BRANCH, REJECTED_OTHER_REASON ->
           Response.status(Response.Status.CONFLICT)
               .entity(new ErrorBody("ref-moved", ref + ": " + result.name()))
@@ -1358,6 +1479,17 @@ public class RepositoryRefsResource {
               "could not update " + ref + ": " + result.name(),
               Response.Status.INTERNAL_SERVER_ERROR);
     };
+  }
+
+  /**
+   * Tells every announcer about one ref move this door made, while {@code repo} is still open — the
+   * same call a push's post-receive makes, with the command already {@code OK} because the update
+   * landed. Never throws: see {@link ScmAnnouncer#announceToEach}.
+   */
+  private void announce(Repository repo, Origin origin, ReceiveCommand command) {
+    command.setResult(ReceiveCommand.Result.OK);
+    ScmAnnouncer.announceToEach(
+        announcers, origin.repoId(), origin.projectId(), origin.repoName(), repo, List.of(command));
   }
 
   private static ObjectId insertCommit(

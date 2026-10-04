@@ -91,8 +91,8 @@ hiding it, so nobody schedules a repack to save space.
 
 - **The git CLI cannot open one of these.** There is no directory to point `--git-dir` at, no worktree
   to add, no config file to write. Every operation is either the wire protocol or in-process JGit.
-  That is the point: receive-pack becomes the only writer, so no ref moves without firing
-  `post-receive`.
+  That is the point: the only writers are receive-pack and the host's own in-process code, so no
+  ref moves behind the host's back and every move can be announced.
 - **`getConfig()` does not persist.** `DfsRepository` answers with a `DfsConfig` whose load and save
   are no-ops, so a per-repository setting written there is read back as the platform default.
   Anything that was a line in a bare's own `config` — `[qits] protectDefaultBranch`, for one — needs

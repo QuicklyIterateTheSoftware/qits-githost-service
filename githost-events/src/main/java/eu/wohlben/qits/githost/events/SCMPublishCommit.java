@@ -26,12 +26,6 @@ import java.util.UUID;
  * (when the work was written) and {@code committedAt} (when this commit object was made, which a
  * rebase or an amend moves and the other does not).
  *
- * <p><b>{@code suppressCi} absorbs {@code -o qits.no-ci}</b> rather than suppressing the event.
- * The old notifier decided for its two consumers — it skipped the CI POST and sent the projects one
- * — which meant the option's meaning lived in the publisher and no third consumer could ever have
- * an opinion. Here the push option is a FACT ON THE EVENT: a run engine skips it, a backup trigger
- * ignores it, and neither has to be known here. An event is not a command.
- *
  * <p><b>{@code occurredAt} is {@code receivedAt}</b> — when this host finished taking the push, not
  * when the commit was authored or made. Those two are the pusher's clock and are in the payload
  * where a consumer can read them; the event log is ordered by when the platform learned.
@@ -63,7 +57,6 @@ public record SCMPublishCommit(
     Instant authoredAt,
     Instant committedAt,
     String message,
-    boolean suppressCi,
     Instant receivedAt)
     implements QitsEvent {
 
@@ -90,7 +83,6 @@ public record SCMPublishCommit(
       Instant authoredAt,
       Instant committedAt,
       String message,
-      boolean suppressCi,
       Instant receivedAt) {
     this(
         null,
@@ -106,7 +98,6 @@ public record SCMPublishCommit(
         authoredAt,
         committedAt,
         message,
-        suppressCi,
         receivedAt);
   }
 

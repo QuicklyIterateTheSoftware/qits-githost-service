@@ -35,8 +35,7 @@ public class LocAnnouncer implements ScmAnnouncer {
       String projectId,
       String repoName,
       Repository repo,
-      Collection<ReceiveCommand> commands,
-      boolean suppressCi) {
+      Collection<ReceiveCommand> commands) {
     // A multi-branch push often lands one commit under several names; scan it once.
     Set<String> tips = new LinkedHashSet<>();
     for (ReceiveCommand command : commands) {

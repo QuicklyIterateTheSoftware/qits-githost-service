@@ -222,7 +222,9 @@ This service is a pact provider, set up the way qits-projects-service is:
 Beside the browser's reads sit the **write primitives** — generic git operations a domain service
 composes, all of them **in-core against the bare** (JGit, no worktree, no clone, no checkout) and all
 of them **machine-only** (`qits:system`; a browser session's `qits:admin` is refused). They speak
-refs, shas and paths and know nothing about what they are being used for.
+refs, shas and paths and know nothing about what they are being used for. **Every ref move they
+make is announced exactly like a push** (see "Events"), under the optional `projectId`/`repoName`
+the caller names.
 
 | Route | What it does |
 |---|---|
@@ -238,7 +240,8 @@ POST /githost/api/repositories/<repoId>/merges
  "sources": ["refs/heads/main", "feature/x", "refs/tags/2026.901.1", "<sha>"],
  "message": "…",                                  // optional
  "author": {"name": "…", "email": "…"},           // optional
- "resolutions": [{"path": "components/x", "gitlink": "<sha>"}]}   // optional, see below
+ "resolutions": [{"path": "components/x", "gitlink": "<sha>"}],   // optional, see below
+ "projectId": "…", "repoName": "…"}               // optional: the address the move is announced under
 
 200 {"target": "refs/heads/release/17", "sha": "<commit>", "outcome": "merged",
      "parents": ["…", "…"], "skipped": ["refs/heads/main"], "resolved": ["components/x"]}
@@ -290,7 +293,8 @@ POST /githost/api/repositories/<repoId>/tags
 {"name": "2026.903.120000",          // or the full refs/tags/… ref
  "sha": "refs/heads/release/17",     // a ref, tag or sha naming the commit to tag
  "message": "…",                     // optional, defaults to the tag's own name
- "author": {"name": "…", "email": "…"}}
+ "author": {"name": "…", "email": "…"},
+ "projectId": "…", "repoName": "…"}  // optional: the address the tag is announced under
 
 201 {"tag": "refs/tags/2026.903.120000", "sha": "<tag object>", "object": "<commit>"}
 409 {"error": "tag-exists", "tag": "refs/tags/2026.903.120000", "sha": "<what the ref says>"}
@@ -309,7 +313,8 @@ POST /githost/api/repositories/<repoId>/commits
  "message": "bump the manifests",
  "files": {"pom.xml": "…", "web/package.json": "…"},   // path -> UTF-8 content
  "deletePaths": ["old/thing.txt"],                     // optional
- "author": {"name": "…", "email": "…"}}                // optional
+ "author": {"name": "…", "email": "…"},                // optional
+ "projectId": "…", "repoName": "…"}                    // optional: the announced address
 
 200 {"ref": "…", "sha": "<commit>", "parent": "<old tip>", "outcome": "committed" | "unchanged"}
 409 {"error": "ref-moved", …}     // the branch moved under the caller
@@ -322,6 +327,7 @@ second empty commit. The ref moves as a compare-and-swap against the tip the req
 
 ```
 DELETE /githost/api/repositories/<repoId>/branches/release/17      // 204
+DELETE /githost/api/repositories/<repoId>/branches/release/17?projectId=…&repoName=…   // the announced address
 DELETE /githost/api/repositories/<repoId>/branches/main            // 409 {"error":"protected-branch"}
 ```
 
@@ -331,10 +337,14 @@ on the push door, and this door would otherwise be a hole in that seatbelt shape
 Unconditionally rather than under that hook's `protect-default-branch` switch: the switch ships off
 because this host serves its own redeploy pushes, an argument about pushes that this door is not.
 
-**These writes fire no `post-receive` and publish no events.** That inverts the property the DFS
-storage was built for — receive-pack as the only writer — deliberately: the caller is a domain
-service already narrating what it is doing, and an `SCMPublishCommit` per intermediate merge would
-announce steps nobody outside it can act on.
+**These writes are announced like a push.** Each one that moves a ref hands every `ScmAnnouncer`
+the `ReceiveCommand` a push carrying it would have held, so `SCMPublishCommit`, `SCMPublishTag` and
+`SCMDeleteBranch` come out of a fold, a release commit, a release tag or a branch deletion exactly as
+out of `git push`, and the lines-of-code memo is warmed the same way. The platform's invariant is
+that every ref move is announced, whichever door moved it. `projectId` and `repoName` are optional
+and echoed — on the body of a merge, a commit and a tag, as query parameters on a `DELETE`, which has
+no body; a caller that omits them is announced with neither. A write that moved nothing
+(`unchanged`) announces nothing, and an announcer's failure is logged and never fails the door.
 
 ### The client
 
@@ -347,21 +357,28 @@ the doctrine; `application.properties` carries the per-key reasoning.
 ## Events
 
 A push publishes through `QitsEventBus` — the qits-eventstream outbox, so a consumer that was down
-while the push landed reads the event back. This replaces the post-receive HTTP fan-out, which
+while the push landed reads the event back. So does every write through the REST doors under
+`/githost/api/repositories/{repoId}` (merges, commits, tags, branch deletions): each ref move they
+make is announced exactly as the push carrying it would be, so a consumer cannot tell — and need not
+care — which door moved a ref. A door write that moved nothing (`unchanged`) announces nothing, and
+an announcer's failure never fails the door. This replaces the post-receive HTTP fan-out, which
 retried in memory for about three minutes and then logged the loss.
 
 Depend on `eu.wohlben.qits:qits-githost-events` for the vocabulary. Wire name = simple class name.
 
 | Event | When | Payload |
 |---|---|---|
-| `SCMPublishCommit` | per successfully updated branch ref | `repoId`, `projectId`, `repoName`, `branch`, `oldSha`, `sha`, `parents[]`, `authorName`, `authorEmail`, `authoredAt`, `committedAt`, `message`, `suppressCi`, `receivedAt` |
+| `SCMPublishCommit` | per successfully updated branch ref | `repoId`, `projectId`, `repoName`, `branch`, `oldSha`, `sha`, `parents[]`, `authorName`, `authorEmail`, `authoredAt`, `committedAt`, `message`, `receivedAt` |
 | `SCMPublishTag` | per created or updated tag ref | `repoId`, `projectId`, `repoName`, `tagName`, `sha`, `targetSha`, `taggerName`, `taggerEmail`, `message`, `annotated`, `receivedAt` |
 | `SCMDeleteBranch` | per deleted branch ref | `repoId`, `projectId`, `repoName`, `branch`, `sha` (the old tip), `receivedAt` |
 | `SCMDeleteTag` | per deleted tag ref | `repoId`, `projectId`, `repoName`, `tagName`, `sha` (the old tip), `receivedAt` |
 
 **`projectId` and `repoName` are the address the push arrived on**, echoed and not resolved: the
 public clone url carries both, so the route already holds them when it announces and this host still
-looks nothing up and stores no name. They are **null — omitted from the payload — for a push on the
+looks nothing up and stores no name. A REST door takes them from its caller instead — optional
+`projectId`/`repoName` on the body of `POST …/merges`, `…/commits` and `…/tags`, and query parameters
+of the same names on `DELETE …/branches/{name}`; a caller that omits them is served and announced
+with neither. They are **null — omitted from the payload — for a push on the
 id-addressed scheme**, which is qits-projects mirroring history the platform already announced. A
 consumer that needs a name ignores those events. Both keys are additive: an older payload simply has
 neither.
@@ -369,13 +386,10 @@ neither.
 `occurredAt` is `receivedAt` on all four: when this host finished taking the push. A commit's own
 two clocks (`authoredAt`, `committedAt`) are the pusher's and stay in the payload.
 
-Three things are new against the old `{repoId, branch, oldSha, newSha}` body:
+Two things are new against the old `{repoId, branch, oldSha, newSha}` body:
 
 - **Tags leave the host at all.** The fan-out filtered to `refs/heads/*`.
 - **Deletions are announced.** The fan-out skipped every `DELETE`.
-- **`-o qits.no-ci` is a field, not a decision.** It becomes `suppressCi` and every consumer decides
-  what that means to it. The notifier used to skip the CI POST and send the projects one, which put
-  the option's meaning in the publisher.
 
 A refused ref publishes nothing: it did not move.
 
@@ -389,8 +403,8 @@ an announcement — keeps going into the SCM events rather than restarting at th
 qits-eventstream propagates a cause with a pair of JAX-RS filters, and **a push is not a JAX-RS
 request** — the git routes are raw Vert.x, which no filter sees. So `GitHostRoutes.causationOf`
 reads the header itself and wraps the post-receive announcement in `CausationScope.with(...)`.
-(There is a JAX-RS surface here now, at `/githost/api`, where those filters do apply; it publishes
-nothing, so nothing about the push path changed.) Blank and malformed both read as absent: causation is
+(There is a JAX-RS surface here now, at `/githost/api`, where those filters do apply, so a REST door
+write announces under its request's cause with no help from this class.) Blank and malformed both read as absent: causation is
 advisory and a push is never refused over it. Only the receive-pack path reads it — the content GETs
 publish nothing.
 
@@ -444,7 +458,6 @@ whole `X-Qits-` prefix, so a header would behave differently through the front d
 - `-o qits.release` — an integrate-produced release. Fast-forward only.
 - `-o qits.token=<value>` — push the protected branch anyway, if the value matches and the pusher is
   a platform service client.
-- `-o qits.no-ci` — not a bypass. It rides through to `SCMPublishCommit.suppressCi`.
 - `-o qits.subject-bypass=<reason>` — push past the commit-subject guard. Needs a non-blank reason;
   each use that mattered is recorded (see "Commit subjects").
 
@@ -566,8 +579,8 @@ which is the honest answer for "this machine has no git".
 
 A repository has no directory anywhere, and no file anywhere either. Its packs, pack indexes and
 reftables are blobs in this service's own content-addressed store; the pack list is rows in
-`git_pack` / `git_pack_file`. So receive-pack is the only writer, and no ref moves without the
-post-receive hook firing.
+`git_pack` / `git_pack_file`. So the only writers are receive-pack and the in-process REST doors, and
+no ref moves through either without being announced.
 
 **The blobs are rows too, on the same database.** `V2__blob_tables.sql` adds the store's three
 tables — `blob`, `blob_content` and `blob_chunk` — and it is a **verbatim copy** of `qits-blobstore`'s

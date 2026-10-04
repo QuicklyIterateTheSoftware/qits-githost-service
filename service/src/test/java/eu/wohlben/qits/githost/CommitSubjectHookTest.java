@@ -79,7 +79,7 @@ class CommitSubjectHookTest {
 
   @Test
   void theBypassNeedsAReason() {
-    var none = CommitSubjectHook.bypassOption(List.of("qits.no-ci"));
+    var none = CommitSubjectHook.bypassOption(List.of("qits.release"));
     assertFalse(none.presented());
     assertFalse(none.reasonGiven());
 

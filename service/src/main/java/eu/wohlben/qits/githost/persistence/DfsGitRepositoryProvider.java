@@ -24,9 +24,9 @@ import org.jboss.logging.Logger;
  *
  * <p><b>The git CLI cannot open one of these.</b> There is no directory to point {@code --git-dir}
  * at, no worktree to add and no config file to write, so every operation on such a repository is
- * either the wire protocol or in-process JGit. That is the point rather than a limitation:
- * receive-pack becomes the only writer, so no ref moves without firing {@code post-receive}. It is
- * also why the per-repository protection override had to become a row — {@code
+ * either the wire protocol or in-process JGit. That is the point rather than a limitation: the only
+ * writers are receive-pack and the in-process REST doors, and neither moves a ref without announcing
+ * it. It is also why the per-repository protection override had to become a row — {@code
  * DfsRepository.getConfig()} does not persist.
  */
 @ApplicationScoped

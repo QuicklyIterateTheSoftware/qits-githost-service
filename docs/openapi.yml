@@ -66,6 +66,10 @@ components:
             type: string
         author:
           $ref: "#/components/schemas/Author"
+        projectId:
+          type: string
+        repoName:
+          type: string
     ErrorBody:
       type: object
       properties:
@@ -142,6 +146,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Resolution"
+        projectId:
+          type: string
+        repoName:
+          type: string
     RepositoriesResponse:
       type: object
       properties:
@@ -174,6 +182,10 @@ components:
           type: string
         author:
           $ref: "#/components/schemas/Author"
+        projectId:
+          type: string
+        repoName:
+          type: string
     UUID:
       type: string
       format: uuid
@@ -250,6 +262,14 @@ paths:
       - name: repoId
         in: path
         required: true
+        schema:
+          type: string
+      - name: projectId
+        in: query
+        schema:
+          type: string
+      - name: repoName
+        in: query
         schema:
           type: string
       responses:

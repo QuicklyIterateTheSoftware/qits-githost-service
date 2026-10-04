@@ -19,8 +19,8 @@ import org.eclipse.jgit.lib.RefUpdate;
  *   <li><b>The git CLI cannot open it.</b> There is no directory to point {@code --git-dir} at, no
  *       worktree to add, no config file to write. Every operation on a repository stored this way is
  *       either the wire protocol or in-process JGit; there is no third door. That property is the
- *       point — receive-pack becomes the only writer, so nothing changes a ref without firing {@code
- *       post-receive}.
+ *       point — the only writers are receive-pack and the host's own in-process code, so nothing
+ *       changes a ref behind the host's back and every move can be announced.
  *   <li><b>{@link #getConfig()} does not persist.</b> {@code DfsRepository} answers with a {@code
  *       DfsConfig}, whose load and save are no-ops, so a per-repository setting written there is
  *       forgotten immediately and read back as the platform default. Anything that was a line in a

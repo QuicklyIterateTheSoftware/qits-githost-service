@@ -59,11 +59,10 @@ public class ScmEventAnnouncer implements ScmAnnouncer {
       String projectId,
       String repoName,
       Repository repo,
-      Collection<ReceiveCommand> commands,
-      boolean suppressCi) {
+      Collection<ReceiveCommand> commands) {
     Instant receivedAt = Instant.now();
     List<QitsEvent> events =
-        PostReceiveEvents.of(repoId, projectId, repoName, repo, commands, suppressCi, receivedAt);
+        PostReceiveEvents.of(repoId, projectId, repoName, repo, commands, receivedAt);
     for (QitsEvent event : events) {
       bus.publish(event);
     }

@@ -109,7 +109,7 @@ class EventWireReflectionTest {
     SCMPublishCommit out =
         new SCMPublishCommit(
             "r", "qits", "testing-repo", "main", "0".repeat(40), "abc", List.of(), "Ada",
-            "ada@local", WHEN, WHEN, "seed", false, WHEN);
+            "ada@local", WHEN, WHEN, "seed", WHEN);
 
     JsonNode body = CanonicalJson.parse(CanonicalJson.envelope(EventEnvelope.of(out)));
 

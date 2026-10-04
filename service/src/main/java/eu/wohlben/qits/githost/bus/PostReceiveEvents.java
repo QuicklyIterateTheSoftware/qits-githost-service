@@ -77,13 +77,12 @@ final class PostReceiveEvents {
       String repoName,
       Repository repo,
       Collection<ReceiveCommand> commands,
-      boolean suppressCi,
       Instant receivedAt) {
     Address address = new Address(repoId, projectId, repoName);
     List<QitsEvent> events = new ArrayList<>();
     try (RevWalk walk = new RevWalk(repo)) {
       for (ReceiveCommand command : commands) {
-        QitsEvent event = eventFor(address, walk, command, suppressCi, receivedAt);
+        QitsEvent event = eventFor(address, walk, command, receivedAt);
         if (event != null) {
           events.add(event);
         }
@@ -93,11 +92,7 @@ final class PostReceiveEvents {
   }
 
   private static QitsEvent eventFor(
-      Address address,
-      RevWalk walk,
-      ReceiveCommand command,
-      boolean suppressCi,
-      Instant receivedAt) {
+      Address address, RevWalk walk, ReceiveCommand command, Instant receivedAt) {
     if (command.getResult() != ReceiveCommand.Result.OK) {
       return null;
     }
@@ -114,7 +109,7 @@ final class PostReceiveEvents {
                 branch,
                 command.getOldId().name(),
                 receivedAt)
-            : publishedCommit(address, walk, branch, command, suppressCi, receivedAt);
+            : publishedCommit(address, walk, branch, command, receivedAt);
       }
       if (ref.startsWith(Constants.R_TAGS)) {
         String tagName = ref.substring(Constants.R_TAGS.length());
@@ -137,12 +132,7 @@ final class PostReceiveEvents {
 
   /** The head commit's own facts, read out of the pack that just arrived. */
   private static SCMPublishCommit publishedCommit(
-      Address address,
-      RevWalk walk,
-      String branch,
-      ReceiveCommand command,
-      boolean suppressCi,
-      Instant receivedAt)
+      Address address, RevWalk walk, String branch, ReceiveCommand command, Instant receivedAt)
       throws Exception {
     RevCommit head = walk.parseCommit(command.getNewId());
     List<String> parents = new ArrayList<>(head.getParentCount());
@@ -164,7 +154,6 @@ final class PostReceiveEvents {
         author == null ? null : author.getWhenAsInstant(),
         committer == null ? null : committer.getWhenAsInstant(),
         head.getFullMessage(),
-        suppressCi,
         receivedAt);
   }
 

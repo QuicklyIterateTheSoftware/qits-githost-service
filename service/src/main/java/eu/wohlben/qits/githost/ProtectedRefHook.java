@@ -45,7 +45,7 @@ import org.jboss.logging.Logger;
  * its seeding push buys no safety — which is also what keeps {@code qits-local-up.sh}'s first-run
  * push working with no option at all. Updates and deletes of the protected ref are guarded.
  *
- * <h2>The two bypasses, and a third option that is not one</h2>
+ * <h2>The two bypasses</h2>
  *
  * <ul>
  *   <li>{@code -o qits.release} — "this is an integrate-produced release". <b>Fast-forward only</b>,
@@ -61,12 +61,6 @@ import org.jboss.logging.Logger;
  *       and no push scope (rule 4 of {@link RefScopeHook}). A person, a workstation and a credential
  *       with {@code git_refs} are refused even with the right value, so knowing the value is not
  *       enough.
- *   <li>{@code -o qits.no-ci} — <b>not</b> a bypass of this hook, and this class never reads it: it
- *       rides through to {@code SCMPublishCommit.suppressCi}, where each consumer decides what it
- *       means ({@code GitHostRoutes.service}'s post-receive lambda, {@code ScmEventAnnouncer}). It
- *       grants no write this pusher did not already have — a push that could carry it could equally
- *       push nothing at all — so it needs no gate of its own. Named here because it rides the same
- *       push-options channel as the two bypasses above and is easy to look for in the wrong class.
  * </ul>
  *
  * <p>Push options rather than a header, because a header cannot serve all three doors this host is

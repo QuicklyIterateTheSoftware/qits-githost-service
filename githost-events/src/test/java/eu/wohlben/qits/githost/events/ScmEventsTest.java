@@ -45,7 +45,6 @@ class ScmEventsTest {
         AUTHORED,
         COMMITTED,
         "Serve one file without cloning",
-        false,
         RECEIVED);
   }
 
@@ -116,7 +115,7 @@ class ScmEventsTest {
             + "\"projectId\":\"qits\","
             + "\"receivedAt\":\"2026-08-10T09:02:03Z\",\"repoId\":\"qits-githost\","
             + "\"repoName\":\"qits-githost-repo\","
-            + "\"sha\":\"2222222222222222222222222222222222222222\",\"suppressCi\":false}",
+            + "\"sha\":\"2222222222222222222222222222222222222222\"}",
         json.get("payload").asText());
   }
 
@@ -146,7 +145,7 @@ class ScmEventsTest {
         List.of(
             new SCMPublishCommit(
                 "r", null, null, "main", "old", "new", List.of("old"), "q", "q@l", AUTHORED,
-                COMMITTED, "mirror", false, RECEIVED),
+                COMMITTED, "mirror", RECEIVED),
             new SCMPublishTag(
                 "r", null, null, "v1", "abc", "abc", null, null, null, false, RECEIVED),
             new SCMDeleteBranch("r", null, null, "feature/x", "44", RECEIVED),
@@ -193,7 +192,7 @@ class ScmEventsTest {
     SCMPublishCommit root =
         new SCMPublishCommit(
             "r", "qits", "n", "main", "0".repeat(40), "abc", null, "q", "q@l", AUTHORED,
-            COMMITTED, "seed", false, RECEIVED);
+            COMMITTED, "seed", RECEIVED);
 
     assertEquals(List.of(), root.parents());
     assertTrue(CanonicalJson.payload(root).contains("\"parents\":[]"));
@@ -247,15 +246,16 @@ class ScmEventsTest {
   }
 
   @Test
-  void theNoCiPushOptionIsAFactOnTheEventRatherThanASuppressedEvent() {
-    // The old notifier decided for its consumers: -o qits.no-ci skipped the CI POST and sent the
-    // projects one. The option is data now, so a third consumer can have its own opinion.
-    SCMPublishCommit suppressed =
-        new SCMPublishCommit(
-            "r", "qits", "n", "main", "old", "new", List.of("old"), "q", "q@l", AUTHORED,
-            COMMITTED, "import", true, RECEIVED);
-
-    assertTrue(suppressed.suppressCi());
-    assertTrue(CanonicalJson.payload(suppressed).contains("\"suppressCi\":true"));
+  void aPayloadCarryingAFieldThatHasSinceRetiredStillBinds() {
+    // Fields retire from this vocabulary — the push-option flag that once rode every commit event
+    // did, once CI came to be gated by the release request alone. A payload published while such a
+    // field existed is still in every consumer's history and must replay, so an unknown key binds.
+    SCMPublishCommit old =
+        CanonicalJson.payloadTo(
+            "{\"branch\":\"main\",\"receivedAt\":\"2026-08-10T09:02:03Z\",\"repoId\":\"r\","
+                + "\"retiredFlag\":true,\"sha\":\"22\"}",
+            SCMPublishCommit.class);
+    assertEquals("main", old.branch());
+    assertEquals("22", old.sha());
   }
 }

@@ -1,5 +1,7 @@
 package eu.wohlben.qits.githost;
 
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -13,10 +15,12 @@ import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
+import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import java.net.URL;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -41,6 +45,11 @@ import org.junit.jupiter.api.Test;
  *
  * <p>The suite's scheduler is off (see the test properties), so no sweeper retries a row out from
  * under an assertion.
+ *
+ * <p>The REST write doors of {@code api.RepositoryRefsResource} are asserted here too, against the
+ * same outbox: a merge, a commit, a tag and a branch deletion through them must publish exactly what
+ * the equivalent push publishes, under the address the caller named, and a write that moved nothing
+ * must publish nothing.
  *
  * <p>A class of its own rather than more cases in {@link GitHostTest}, because a bus that is on is a
  * different process configuration and {@code @TestProfile} is per class — the same reason the
@@ -77,8 +86,13 @@ public class ScmEventPublishTest {
   @PersistenceUnit("eventstream")
   EntityManager outbox;
 
+  /** Armed by the one case that proves an announcer's failure never fails a door. */
+  @Inject FailingAnnouncer failingAnnouncer;
+
   @TestHTTPResource("/git")
   URL gitBase;
+
+  private static final String API = "/githost/api/repositories/";
 
   @BeforeEach
   void forgetPreviousPublishes() {
@@ -100,7 +114,6 @@ public class ScmEventPublishTest {
     assertTrue(published.payload.contains("\"branch\":\"main\""), published.payload);
     assertTrue(published.payload.contains("\"sha\":\"" + head + "\""), published.payload);
     assertTrue(published.payload.contains("\"repoId\":\"" + repoId + "\""), published.payload);
-    assertTrue(published.payload.contains("\"suppressCi\":false"), published.payload);
     // The half the HTTP event never carried: the head's own metadata, read off the pack.
     assertTrue(published.payload.contains("\"authorEmail\":\"qits@local\""), published.payload);
     assertTrue(published.payload.contains("\"parents\":["), published.payload);
@@ -159,22 +172,6 @@ public class ScmEventPublishTest {
   }
 
   @Test
-  public void theNoCiOptionIsCarriedOnTheEventRatherThanSuppressingIt() throws Exception {
-    // The option used to skip the CI delivery and only that one, which put its meaning in the
-    // publisher. It is a field now, so every consumer sees the push and decides for itself.
-    String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
-    Path clone = GitHostFixture.clone(gitBase, repoId);
-    forgetPreviousPublishes();
-
-    GitHostFixture.commitFile(
-        clone, "imported.txt", "history that predates the platform\n", "import");
-    GitHostFixture.git(clone, "git", "push", "-o", "qits.no-ci", "origin", "main");
-
-    OutboxEvent published = only("SCMPublishCommit");
-    assertTrue(published.payload.contains("\"suppressCi\":true"), published.payload);
-  }
-
-  @Test
   public void oneReleasePushOfABranchAndAnAnnotatedTagPublishesBoth() throws Exception {
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     Path clone = GitHostFixture.clone(gitBase, repoId);
@@ -224,10 +221,10 @@ public class ScmEventPublishTest {
   @Test
   public void aPushCarryingACauseChainsItsEventsOntoIt() throws Exception {
     // qits-eventstream propagates a cause across an HTTP hop with a pair of JAX-RS filters. A push
-    // is not a JAX-RS request — the git routes are raw Vert.x, which no filter sees, and the API at
-    // /githost/api publishes nothing — so GitHostRoutes reads the header itself, and this is what
-    // says the hand-rolled half really works, over a real `git push` rather than a synthetic
-    // request. `http.extraHeader` is git's own way of putting one on every HTTP request it makes.
+    // is not a JAX-RS request — the git routes are raw Vert.x, which no filter sees, while the REST
+    // doors at /githost/api are JAX-RS and get it for free — so GitHostRoutes reads the header
+    // itself, and this is what says the hand-rolled half really works, over a real `git push` rather
+    // than a synthetic request. `http.extraHeader` is git's own way of putting one on every HTTP request it makes.
     String cause = UUID.randomUUID().toString();
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     Path clone = GitHostFixture.clone(gitBase, repoId);
@@ -267,6 +264,245 @@ public class ScmEventPublishTest {
         "main");
 
     assertNull(only("SCMPublishCommit").parentId, "a malformed cause reads exactly like none");
+  }
+
+  // --- the REST write doors ---------------------------------------------------------------------
+
+  @Test
+  public void aMergeThroughTheDoorAnnouncesTheTargetLikeAPushWould() throws Exception {
+    // The release flow's folds and its finalize merge into main move refs through this door. A
+    // consumer keyed on "main moved" — qits-maintenance's rescan — must hear it exactly as it would
+    // hear a push: the short branch name, both shas, and the public address the caller named.
+    String projectId = UUID.randomUUID().toString();
+    String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    String before = GitHostFixture.head(clone);
+    GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "feature/x");
+    GitHostFixture.commitFile(clone, "feature.txt", "work\n", "work");
+    String feature = GitHostFixture.head(clone);
+    GitHostFixture.git(clone, "git", "push", "-q", "origin", "feature/x");
+    forgetPreviousPublishes();
+
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("target", "refs/heads/main");
+    body.put("sources", List.of("refs/heads/feature/x"));
+    body.put("projectId", projectId);
+    body.put("repoName", "testing-repo");
+    post(repoId, "/merges", body).then().statusCode(200);
+
+    OutboxEvent published = only("SCMPublishCommit");
+    assertTrue(published.payload.contains("\"branch\":\"main\""), published.payload);
+    assertTrue(published.payload.contains("\"oldSha\":\"" + before + "\""), published.payload);
+    assertTrue(published.payload.contains("\"sha\":\"" + feature + "\""), published.payload);
+    assertTrue(published.payload.contains("\"repoId\":\"" + repoId + "\""), published.payload);
+    assertTrue(
+        published.payload.contains("\"projectId\":\"" + projectId + "\""), published.payload);
+    assertTrue(published.payload.contains("\"repoName\":\"testing-repo\""), published.payload);
+    assertEquals(1, rows().size(), "one ref moved, so one event");
+  }
+
+  @Test
+  public void anOctopusOntoANewTargetIsAnnouncedAsItsCreation() throws Exception {
+    String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "a");
+    GitHostFixture.commitFile(clone, "a.txt", "a\n", "a");
+    GitHostFixture.git(clone, "git", "checkout", "-q", "main");
+    GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "b");
+    GitHostFixture.commitFile(clone, "b.txt", "b\n", "b");
+    GitHostFixture.git(clone, "git", "push", "-q", "origin", "a", "b");
+    forgetPreviousPublishes();
+
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("target", "refs/heads/release/1");
+    body.put("sources", List.of("refs/heads/a", "refs/heads/b"));
+    body.put("projectId", "p");
+    body.put("repoName", "n");
+    String merged =
+        post(repoId, "/merges", body)
+            .then()
+            .statusCode(200)
+            .extract()
+            .path("sha");
+
+    OutboxEvent published = only("SCMPublishCommit");
+    assertTrue(published.payload.contains("\"branch\":\"release/1\""), published.payload);
+    assertTrue(published.payload.contains("\"oldSha\":\"" + "0".repeat(40) + "\""), published.payload);
+    assertTrue(published.payload.contains("\"sha\":\"" + merged + "\""), published.payload);
+  }
+
+  @Test
+  public void aMergeThatMovedNothingAnnouncesNothing() throws Exception {
+    // Re-running a fold is free by design — the "unchanged" answer — and a ref that did not move is
+    // not a ref move. Announcing it would have every consumer react to a push nobody made.
+    String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
+    forgetPreviousPublishes();
+
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("target", "refs/heads/main");
+    body.put("sources", List.of("refs/heads/main"));
+    body.put("projectId", "p");
+    body.put("repoName", "n");
+    post(repoId, "/merges", body)
+        .then()
+        .statusCode(200)
+        .body("outcome", is("unchanged"));
+
+    assertEquals(List.of(), rows(), "an unchanged merge publishes nothing");
+  }
+
+  @Test
+  public void aCommitThroughTheDoorAnnouncesTheBranch() throws Exception {
+    String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
+    String before = GitHostFixture.requireRemoteRefSha(gitBase, repoId, "refs/heads/main");
+    forgetPreviousPublishes();
+
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("ref", "refs/heads/main");
+    body.put("message", "stamp the version");
+    body.put("files", Map.of("VERSION", "2026.1004.1\n"));
+    body.put("projectId", "p");
+    body.put("repoName", "n");
+    String committed =
+        post(repoId, "/commits", body)
+            .then()
+            .statusCode(200)
+            .extract()
+            .path("sha");
+
+    OutboxEvent published = only("SCMPublishCommit");
+    assertTrue(published.payload.contains("\"branch\":\"main\""), published.payload);
+    assertTrue(published.payload.contains("\"oldSha\":\"" + before + "\""), published.payload);
+    assertTrue(published.payload.contains("\"sha\":\"" + committed + "\""), published.payload);
+    assertTrue(published.payload.contains("\"message\":\"stamp the version\\n\""), published.payload);
+    assertTrue(published.payload.contains("\"projectId\":\"p\""), published.payload);
+    assertTrue(published.payload.contains("\"repoName\":\"n\""), published.payload);
+
+    // The same edit again builds the tip's own tree: "unchanged", and nothing more is said.
+    forgetPreviousPublishes();
+    post(repoId, "/commits", body)
+        .then()
+        .statusCode(200)
+        .body("outcome", is("unchanged"));
+    assertEquals(List.of(), rows(), "an unchanged commit publishes nothing");
+  }
+
+  @Test
+  public void aTagThroughTheDoorAnnouncesTheTag() throws Exception {
+    String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
+    String head = GitHostFixture.requireRemoteRefSha(gitBase, repoId, "refs/heads/main");
+    forgetPreviousPublishes();
+
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("name", "2026.1004.1");
+    body.put("sha", "refs/heads/main");
+    body.put("message", "released");
+    body.put("projectId", "p");
+    body.put("repoName", "n");
+    String tagObject =
+        post(repoId, "/tags", body)
+            .then()
+            .statusCode(201)
+            .extract()
+            .path("sha");
+
+    OutboxEvent tag = only("SCMPublishTag");
+    assertTrue(tag.payload.contains("\"tagName\":\"2026.1004.1\""), tag.payload);
+    assertTrue(tag.payload.contains("\"annotated\":true"), tag.payload);
+    assertTrue(tag.payload.contains("\"sha\":\"" + tagObject + "\""), tag.payload);
+    assertTrue(tag.payload.contains("\"targetSha\":\"" + head + "\""), tag.payload);
+    assertTrue(tag.payload.contains("\"projectId\":\"p\""), tag.payload);
+    assertTrue(tag.payload.contains("\"repoName\":\"n\""), tag.payload);
+    assertEquals(1, rows().size(), "a tag publishes the tag and nothing else");
+  }
+
+  @Test
+  public void aBranchDeletedThroughTheDoorAnnouncesTheDeletion() throws Exception {
+    // A release deletes the branches it consumed through this door; qits-maintenance ends a bump's
+    // branch row on hearing it. The address rides the query string, because a DELETE has no body.
+    String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "maintenance/dependencies");
+    GitHostFixture.commitFile(clone, "bump.txt", "bumped\n", "bump");
+    String tip = GitHostFixture.head(clone);
+    GitHostFixture.git(clone, "git", "push", "-q", "origin", "maintenance/dependencies");
+    forgetPreviousPublishes();
+
+    given()
+        .queryParam("projectId", "p")
+        .queryParam("repoName", "n")
+        .when()
+        .delete(API + repoId + "/branches/maintenance/dependencies")
+        .then()
+        .statusCode(204);
+
+    OutboxEvent deleted = only("SCMDeleteBranch");
+    assertTrue(
+        deleted.payload.contains("\"branch\":\"maintenance/dependencies\""), deleted.payload);
+    assertTrue(deleted.payload.contains("\"sha\":\"" + tip + "\""), deleted.payload);
+    assertTrue(deleted.payload.contains("\"projectId\":\"p\""), deleted.payload);
+    assertTrue(deleted.payload.contains("\"repoName\":\"n\""), deleted.payload);
+    assertEquals(1, rows().size(), "a delete publishes a deletion and nothing else");
+  }
+
+  @Test
+  public void aCallerThatNamesNoAddressIsStillServedAndAnnouncedWithoutOne() throws Exception {
+    // The older callers, which predate the address: still served, and their moves announced the way
+    // an id-addressed push is — with both name keys simply absent.
+    String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "old/caller");
+    GitHostFixture.commitFile(clone, "old.txt", "old\n", "old");
+    GitHostFixture.git(clone, "git", "push", "-q", "origin", "old/caller");
+    forgetPreviousPublishes();
+
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("target", "refs/heads/main");
+    body.put("sources", List.of("refs/heads/old/caller"));
+    post(repoId, "/merges", body).then().statusCode(200);
+    given().when().delete(API + repoId + "/branches/old/caller").then().statusCode(204);
+
+    OutboxEvent merged = only("SCMPublishCommit");
+    OutboxEvent deleted = only("SCMDeleteBranch");
+    for (OutboxEvent row : List.of(merged, deleted)) {
+      assertFalse(row.payload.contains("projectId"), row.payload);
+      assertFalse(row.payload.contains("repoName"), row.payload);
+      assertTrue(row.payload.contains("\"repoId\":\"" + repoId + "\""), row.payload);
+    }
+  }
+
+  @Test
+  public void anAnnouncerThatThrowsNeverFailsTheDoor() throws Exception {
+    // The ref has moved by the time anyone is told. A broken announcer must neither turn that into
+    // an error for the caller nor keep the announcers beside it from hearing of the move.
+    String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
+    forgetPreviousPublishes();
+
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("ref", "refs/heads/main");
+    body.put("message", "despite a broken announcer");
+    body.put("files", Map.of("broken.txt", "still lands\n"));
+    String committed;
+    failingAnnouncer.arm();
+    try {
+      committed =
+          post(repoId, "/commits", body)
+              .then()
+              .statusCode(200)
+              .extract()
+              .path("sha");
+    } finally {
+      failingAnnouncer.disarm();
+    }
+
+    assertEquals(
+        committed, GitHostFixture.requireRemoteRefSha(gitBase, repoId, "refs/heads/main"));
+    OutboxEvent published = only("SCMPublishCommit");
+    assertTrue(published.payload.contains("\"sha\":\"" + committed + "\""), published.payload);
+  }
+
+  private io.restassured.response.Response post(String repoId, String path, Object body) {
+    return given().contentType(ContentType.JSON).body(body).when().post(API + repoId + path);
   }
 
   /** Every outbox row, for the cases that assert on what a push did NOT publish. */
