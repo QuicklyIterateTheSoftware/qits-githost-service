@@ -221,6 +221,15 @@ public class RepositoryRefsResource {
    * also the one this host is asked to fold most often, and the alternative is an orchestrator that
    * has to clone a superproject just to write a single 20-byte tree entry.
    *
+   * <p>{@code versionPins} is optional and opt-in in exactly the same way: absent or {@code false},
+   * the fold is the one this endpoint has always performed. {@code true} turns on <b>a merge
+   * rule</b>, not a write: a TEXT conflict in a {@code pom.xml} or {@code package.json} whose every
+   * conflicting line pair differs only in version tokens is decided for the newer version, out of
+   * the three blobs the merge was already comparing (see {@link VersionPinRule}). The caller sends
+   * no content and names no path; it only asks for the rule. It exists because two release
+   * sources bumping the same dependency version is the text conflict a fold meets most, and it is
+   * decidable without a person — the newer release is the answer every time.
+   *
    * <p>{@code projectId} and {@code repoName} are optional: the public address the move is
    * announced under (see "Every write is announced" above).
    */
@@ -232,7 +241,20 @@ public class RepositoryRefsResource {
       Author author,
       List<Resolution> resolutions,
       String projectId,
-      String repoName) {
+      String repoName,
+      Boolean versionPins) {
+    /** The form before the version-pin rule existed: every text conflict is the caller's. */
+    public MergeRequest(
+        String target,
+        List<String> sources,
+        String message,
+        Author author,
+        List<Resolution> resolutions,
+        String projectId,
+        String repoName) {
+      this(target, sources, message, author, resolutions, projectId, repoName, null);
+    }
+
     /** The form before the announced address existed. */
     public MergeRequest(
         String target,
@@ -259,10 +281,15 @@ public class RepositoryRefsResource {
    * octopus it asked for; {@code skipped} names the sources that contributed nothing because
    * another head already contained them.
    *
-   * <p>{@code resolved} names the paths this fold decided from a {@link Resolution} rather than from
-   * the sources, sorted, and empty when the merge stood on its own. It is reported because a caller
-   * that stores what it folded should be able to tell a tree git computed from a tree a directive
-   * steered, without re-deriving it from the request.
+   * <p>{@code resolved} names the paths this fold decided from a {@link Resolution} or by the
+   * version-pin rule rather than from the sources, sorted, and empty when the merge stood on its
+   * own. It is reported because a caller that stores what it folded should be able to tell a tree
+   * git computed from a tree a directive or a rule steered, without re-deriving it from the request.
+   *
+   * <p>{@code resolvedVersions} says what the version-pin rule decided, one {@link ResolvedVersion}
+   * per token pair it took the newer side of, and is empty when it decided nothing. It is reported
+   * for the same reason as {@code resolved}, one level finer: a path alone does not say which
+   * version won, and a caller recording a release should not have to diff a manifest to find out.
    */
   @RegisterForReflection
   public record MergeResponse(
@@ -271,7 +298,32 @@ public class RepositoryRefsResource {
       String outcome,
       List<String> parents,
       List<String> skipped,
-      List<String> resolved) {}
+      List<String> resolved,
+      List<ResolvedVersion> resolvedVersions) {
+    /** The form before the version-pin rule existed. */
+    public MergeResponse(
+        String target,
+        String sha,
+        String outcome,
+        List<String> parents,
+        List<String> skipped,
+        List<String> resolved) {
+      this(target, sha, outcome, parents, skipped, resolved, List.of());
+    }
+  }
+
+  /**
+   * One version the version-pin rule decided: at {@code line} (1-based) of the merged {@code path},
+   * {@code ours} met {@code theirs} and {@code chosen} — the numerically newer — was written. All
+   * three are the tokens as the files spell them, qualifier included.
+   *
+   * <p>{@code ours} is the side the fold had accumulated so far and {@code theirs} the head being
+   * folded in, exactly the two sides a {@link ConflictedPath} names. {@code line} is a line of the
+   * file the deciding step wrote; on an octopus a LATER step can still move it by merging lines in
+   * above it, so it locates the decision rather than promising an offset in the published tree.
+   */
+  @RegisterForReflection
+  public record ResolvedVersion(String path, int line, String ours, String theirs, String chosen) {}
 
   /**
    * A conflict, reported rather than resolved. {@code head} is the source <b>as the caller spelled
@@ -454,6 +506,15 @@ public class RepositoryRefsResource {
    * the orchestrator owns and not a text the merger could ever have merged. See {@link
    * MergeRequest#resolutions()} for why it cannot become a general write door.
    *
+   * <p><b>The version-pin rule is the other exception, and it is a merge rule rather than a
+   * write.</b> With {@link MergeRequest#versionPins()} on, a text conflict in a {@code pom.xml} or
+   * {@code package.json} that is nothing but both heads bumping the same version tokens is decided
+   * for the newer version ({@link VersionPinRule}). The bytes come from the merge's own three
+   * blobs, never from the request, so this door stays <b>not a general write door</b>: a caller can
+   * switch the rule on, and cannot say what it writes. Both exceptions are all or none — a step whose
+   * conflicts the directives and the rule do not decide in full is the same 409 as ever, naming only
+   * what is left undecided, and nothing is written.
+   *
    * <p><b>Nothing here protects the target.</b> Merging into a repository's default branch is
    * allowed and is a designed use of this endpoint (a release reaches {@code main} only after it
    * deployed, and it reaches it through here). {@code ProtectedRefHook} guards the <i>push</i> door
@@ -622,10 +683,13 @@ public class RepositoryRefsResource {
                 .build();
       }
 
+      boolean versionPins = Boolean.TRUE.equals(request.versionPins());
       PersonIdent person = authorOf(request.author());
       RevCommit accumulator = effective.get(0).commit();
       ObjectId resultTree = null;
       Set<String> decided = new TreeSet<>();
+      Set<String> pinned = new TreeSet<>();
+      List<ResolvedVersion> resolvedVersions = new ArrayList<>();
       for (int i = 1; i < effective.size(); i++) {
         Head next = effective.get(i);
         ResolveMerger merger = (ResolveMerger) MergeStrategy.RECURSIVE.newMerger(repo, true);
@@ -637,14 +701,15 @@ public class RepositoryRefsResource {
         ObjectId folded;
         if (merger.merge(false, accumulator, theirs)) {
           folded = merger.getResultTreeId();
-        } else if (directed.isEmpty()) {
+        } else if (directed.isEmpty() && !versionPins) {
           return conflict(target, conflictsOf(merger, walk, accumulator, theirs, next, null));
         } else {
-          // A directed step. The result tree of a FAILED merge says nothing — there is no patching
-          // getResultTreeId() — so the conflict is removed from the question instead: BOTH sides are
-          // rewritten to hold what the caller decided, and the same pairwise merge is run again
-          // against those rewritings, where the path is now identical on both sides and the
-          // recursive merger takes it without an argument.
+          // A directed step: a Resolution, the version-pin rule, or both. The result tree of a FAILED
+          // merge says nothing — there is no patching getResultTreeId() — so the conflict is removed
+          // from the question instead: BOTH sides are rewritten to hold what the caller (or the
+          // rule) decided, and the same pairwise merge is run again against those rewritings, where
+          // the path is now identical on both sides and the recursive merger takes it without an
+          // argument.
           //
           // Both sides, not just the head being folded in, and that is not belt-and-braces: a
           // directive names a pin of its own, which is very often neither side's. Rewrite only
@@ -671,17 +736,47 @@ public class RepositoryRefsResource {
             }
             applies.put(path, pin);
           }
+          // The version-pin rule, at THIS step and against THIS step's three sides: base is the
+          // merge base the step computed, ours the accumulator, theirs the head being folded in. On
+          // an octopus that composes naturally — a step only ever sees a bump the steps before it
+          // have already settled, so A, B and C bumping one version end at the newest of the three
+          // whichever order they fold in, and a step that meets no conflict needs no rule. The
+          // decided file is written as a blob into both sides below, exactly like a directed pin.
+          Map<String, ObjectId> rewritten = new TreeMap<>();
+          List<ResolvedVersion> stepVersions = new ArrayList<>();
+          if (versionPins) {
+            for (String path : disputed) {
+              Sides side = sides.get(path);
+              if (applies.containsKey(path)
+                  || !merger.getUnmergedPaths().contains(path)
+                  || side == null
+                  || !"file".equals(side.kind())
+                  || side.ours() == null
+                  || side.theirs() == null) {
+                // Not a text conflict: a gitlink, a delete/modify, a failing path. Not the rule's.
+                continue;
+              }
+              VersionPinRule.Decision decision =
+                  VersionPinRule.decide(path, merger.getMergeResults().get(path));
+              if (decision != null) {
+                rewritten.put(path, inserter.insert(Constants.OBJ_BLOB, decision.content()));
+                stepVersions.addAll(decision.versions());
+              }
+            }
+          }
           Set<String> residue = new TreeSet<>(disputed);
           residue.removeAll(applies.keySet());
+          residue.removeAll(rewritten.keySet());
           if (!residue.isEmpty()) {
             // Partly directed is not directed. Answering 409 with what is left over beats folding
             // half a conflict and leaving the caller to discover the rest from the tree.
             return conflict(target, conflictsOf(merger, walk, accumulator, theirs, next, residue));
           }
           RevCommit directedOurs =
-              directedHead(inserter, reader, walk, person, accumulator, applies, target);
+              directedHead(inserter, reader, walk, person, accumulator, applies, rewritten, target);
           RevCommit directedTheirs =
-              directedHead(inserter, reader, walk, person, theirs, applies, next.spelling());
+              directedHead(
+                  inserter, reader, walk, person, theirs, applies, rewritten, next.spelling());
           ResolveMerger retry = (ResolveMerger) MergeStrategy.RECURSIVE.newMerger(repo, true);
           retry.setObjectInserter(inserter);
           retry.setCommitNames(new String[] {"BASE", target, next.spelling()});
@@ -693,6 +788,8 @@ public class RepositoryRefsResource {
                 target, conflictsOf(retry, walk, directedOurs, directedTheirs, next, null));
           }
           decided.addAll(applies.keySet());
+          pinned.addAll(rewritten.keySet());
+          resolvedVersions.addAll(stepVersions);
           folded = retry.getResultTreeId();
         }
         if (i == effective.size() - 1) {
@@ -729,6 +826,8 @@ public class RepositoryRefsResource {
       if (moved != null) {
         return moved;
       }
+      Set<String> resolved = new TreeSet<>(decided);
+      resolved.addAll(pinned);
       return Response.ok(
               new MergeResponse(
                   target,
@@ -736,7 +835,8 @@ public class RepositoryRefsResource {
                   "merged",
                   parents.stream().map(ObjectId::name).toList(),
                   skipped,
-                  List.copyOf(decided)))
+                  List.copyOf(resolved),
+                  List.copyOf(resolvedVersions)))
           .build();
     }
   }
@@ -918,7 +1018,7 @@ public class RepositoryRefsResource {
           ObjectReader reader = inserter.newReader();
           RevWalk walk = new RevWalk(reader)) {
         RevCommit parent = walk.parseCommit(tip);
-        ObjectId tree = editedTree(inserter, reader, parent, files, deletions, gitlinks);
+        ObjectId tree = editedTree(inserter, reader, parent, files, deletions, gitlinks, Map.of());
         if (tree.equals(parent.getTree())) {
           return Response.ok(
                   new CommitResponse(request.ref(), parent.name(), parent.name(), "unchanged"))
@@ -1160,6 +1260,9 @@ public class RepositoryRefsResource {
    * <p>A gitlink writes no object at all — the sha names a commit of another repository, so there
    * is nothing to insert here and nothing to verify against this object store; the entry is the
    * mode and the id, which is all a submodule pin is.
+   *
+   * <p>{@code blobs} are files already inserted, path → blob id: the merge's own decided content,
+   * which is bytes and not a caller's UTF-8 string. They take the same mode rule as {@code files}.
    */
   private static ObjectId editedTree(
       ObjectInserter inserter,
@@ -1167,7 +1270,8 @@ public class RepositoryRefsResource {
       RevCommit parent,
       Map<String, String> files,
       List<String> deletions,
-      Map<String, String> gitlinks)
+      Map<String, String> gitlinks,
+      Map<String, ObjectId> blobs)
       throws IOException {
     DirCache cache = DirCache.newInCore();
     DirCacheBuilder from = cache.builder();
@@ -1175,9 +1279,15 @@ public class RepositoryRefsResource {
     from.finish();
 
     DirCacheEditor editor = cache.editor();
+    Map<String, ObjectId> written = new LinkedHashMap<>();
     for (Map.Entry<String, String> file : files.entrySet()) {
-      ObjectId blob =
-          inserter.insert(Constants.OBJ_BLOB, file.getValue().getBytes(StandardCharsets.UTF_8));
+      written.put(
+          file.getKey(),
+          inserter.insert(Constants.OBJ_BLOB, file.getValue().getBytes(StandardCharsets.UTF_8)));
+    }
+    written.putAll(blobs);
+    for (Map.Entry<String, ObjectId> file : written.entrySet()) {
+      ObjectId blob = file.getValue();
       editor.add(
           new DirCacheEditor.PathEdit(file.getKey()) {
             @Override
@@ -1237,6 +1347,10 @@ public class RepositoryRefsResource {
    *
    * <p>A side that already holds every pin is returned unchanged rather than re-committed, so the
    * ordinary case where the caller directed the path to what one head already said inserts nothing.
+   *
+   * <p>{@code blobs} are the files the version-pin rule decided, path → the blob it wrote. They are
+   * set on both sides the same way, keeping each side's own mode, so the retry takes them as the
+   * one content both heads agree on.
    */
   private static RevCommit directedHead(
       ObjectInserter inserter,
@@ -1245,9 +1359,10 @@ public class RepositoryRefsResource {
       PersonIdent person,
       RevCommit head,
       Map<String, String> pins,
+      Map<String, ObjectId> blobs,
       String spelling)
       throws IOException {
-    ObjectId tree = editedTree(inserter, reader, head, Map.of(), List.of(), pins);
+    ObjectId tree = editedTree(inserter, reader, head, Map.of(), List.of(), pins, blobs);
     if (tree.equals(head.getTree())) {
       return head;
     }

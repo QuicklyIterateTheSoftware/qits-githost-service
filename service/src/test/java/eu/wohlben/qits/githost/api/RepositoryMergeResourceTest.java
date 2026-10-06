@@ -426,6 +426,324 @@ public class RepositoryMergeResourceTest {
         startsWith("160000 commit " + PIN_DIRECTED));
   }
 
+  // --- the version-pin rule ------------------------------------------------------------------
+
+  /** The pom the version-pin tests fold, with the two bumped properties as parameters. */
+  private static String pom(String artifact, String protocol, String eventstream) {
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        + "<project>\n"
+        + "  <artifactId>" + artifact + "</artifactId>\n"
+        + "  <properties>\n"
+        + "    <qits.workspace-daemon-protocol.version>" + protocol
+        + "</qits.workspace-daemon-protocol.version>\n"
+        + "    <java.version>21</java.version>\n"
+        + "    <maven.compiler.release>21</maven.compiler.release>\n"
+        + "    <qits.eventstream.version>" + eventstream + "</qits.eventstream.version>\n"
+        + "  </properties>\n"
+        + "</project>\n";
+  }
+
+  /** {@code main}, {@code feature/left} and {@code feature/right}, each writing one file differently. */
+  private String seedFileConflict(String path, String base, String left, String right)
+      throws Exception {
+    String repoId = UUID.randomUUID().toString();
+    repositories.create(repoId, "main");
+    Path work = Files.createTempDirectory("qits-merge-pins");
+    git(work, "init", "-q", "-b", "main", ".");
+    write(work, path, base);
+    commit(work, "base");
+    git(work, "checkout", "-q", "-b", "feature/left", "main");
+    write(work, path, left);
+    commit(work, "left");
+    git(work, "checkout", "-q", "-b", "feature/right", "main");
+    write(work, path, right);
+    commit(work, "right");
+    git(work, "checkout", "-q", "main");
+    push(work, repoId, "main", "feature/left", "feature/right");
+    return repoId;
+  }
+
+  /** The same body, asking for the version-pin rule. */
+  private static Map<String, Object> pinned(Map<String, Object> body) {
+    body.put("versionPins", true);
+    return body;
+  }
+
+  /** A blob's exact content at a revision, read from a clone of what the host wrote. */
+  private static String blob(Path clone, String rev, String path) throws Exception {
+    return git(clone, "cat-file", "blob", rev + ":" + path);
+  }
+
+  @Test
+  public void twoBumpsOfTheSameVersionsInAPomFoldToTheNewerOnes() throws Exception {
+    // The fold that motivated the rule: two released sources each bumped the protocol version, and
+    // the answer is the newer one. A second property shows a pair is compared numerically — 1.4.10
+    // beats 1.4.2 although it sorts lower as text — and that "ours" can be the side that wins.
+    String repo =
+        seedFileConflict(
+            "pom.xml",
+            pom("demo", "2026.1005.191755", "1.4.0"),
+            pom("demo", "2026.1006.55511", "1.4.10"),
+            pom("demo-app", "2026.1006.64435", "1.4.2"));
+    JsonPath merged =
+        merge(repo, pinned(request("refs/heads/release/v1", "feature/left", "feature/right")))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getString("outcome"), is("merged"));
+    assertThat(merged.getList("resolved", String.class), contains("pom.xml"));
+    assertThat(merged.getList("resolvedVersions.path", String.class), contains("pom.xml", "pom.xml"));
+    assertThat(merged.getList("resolvedVersions.line", Integer.class), contains(5, 8));
+    assertThat(
+        merged.getList("resolvedVersions.ours", String.class),
+        contains("2026.1006.55511", "1.4.10"));
+    assertThat(
+        merged.getList("resolvedVersions.theirs", String.class),
+        contains("2026.1006.64435", "1.4.2"));
+    assertThat(
+        merged.getList("resolvedVersions.chosen", String.class),
+        contains("2026.1006.64435", "1.4.10"));
+
+    // The ref moved to the answer, the parents are the real sources, and the tree is the merge —
+    // the clean change on the right included — byte for byte, final newline and all.
+    assertThat(remoteSha(repo, "refs/heads/release/v1"), is(merged.getString("sha")));
+    List<String> heads =
+        List.of(remoteSha(repo, "refs/heads/feature/left"), remoteSha(repo, "refs/heads/feature/right"));
+    assertThat(merged.getList("parents", String.class), is(heads));
+    Path clone = clone(repo);
+    assertThat(parentsOf(clone, merged.getString("sha")), is(heads));
+    assertThat(
+        blob(clone, merged.getString("sha"), "pom.xml"),
+        is(pom("demo-app", "2026.1006.64435", "1.4.10")));
+  }
+
+  @Test
+  public void componentsAreComparedAsNumbersWhateverTheirLength() throws Exception {
+    // 919 is shorter than 1006 and sorts after it as text; the release scheme's day-of-year
+    // component is variable-length, so only a numeric comparison gets it right. CRLF endings and a
+    // missing final newline ride along to show the file's own bytes are kept.
+    String base = "<project>\r\n  <version>2026.901.1</version>\r\n</project>";
+    String left = "<project>\r\n  <version>2026.1006.5</version>\r\n</project>";
+    String right = "<project>\r\n  <version>2026.919.120127</version>\r\n</project>";
+    String repo = seedFileConflict("sub/dir/pom.xml", base, left, right);
+    JsonPath merged =
+        merge(repo, pinned(request("refs/heads/release/v2", "feature/left", "feature/right")))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getList("resolved", String.class), contains("sub/dir/pom.xml"));
+    assertThat(merged.getList("resolvedVersions.chosen", String.class), contains("2026.1006.5"));
+    assertThat(merged.getList("resolvedVersions.line", Integer.class), contains(2));
+    assertThat(blob(clone(repo), merged.getString("sha"), "sub/dir/pom.xml"), is(left));
+  }
+
+  @Test
+  public void aVersionBumpBesideAnyOtherChangeIsStillAConflict() throws Exception {
+    String base = "<project>\n  <!-- pinned -->\n  <version>1.2.0</version>\n</project>\n";
+    String left = "<project>\n  <!-- pinned for the bug -->\n  <version>1.3.0</version>\n</project>\n";
+    String right = "<project>\n  <!-- pinned -->\n  <version>1.4.0</version>\n</project>\n";
+    String repo = seedFileConflict("pom.xml", base, left, right);
+    merge(repo, pinned(request("refs/heads/release/v3", "feature/left", "feature/right")))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("pom.xml"))
+        .body("conflicts.kind", contains("file"));
+    assertThat(remoteSha(repo, "refs/heads/release/v3"), is(nullSha()));
+  }
+
+  @Test
+  public void aPackageJsonRangeIsDecidedOnlyWhenItsOperatorAgrees() throws Exception {
+    String base = "{\n  \"dependencies\": {\n    \"@qits/x\": \"^1.2.3\"\n  }\n}\n";
+    String left = "{\n  \"dependencies\": {\n    \"@qits/x\": \"^1.3.0\"\n  }\n}\n";
+    String same = "{\n  \"dependencies\": {\n    \"@qits/x\": \"^1.2.9\"\n  }\n}\n";
+    String tilde = "{\n  \"dependencies\": {\n    \"@qits/x\": \"~1.2.9\"\n  }\n}\n";
+
+    String agreeing = seedFileConflict("package.json", base, left, same);
+    JsonPath merged =
+        merge(agreeing, pinned(request("refs/heads/release/v4", "feature/left", "feature/right")))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getList("resolvedVersions.chosen", String.class), contains("1.3.0"));
+    assertThat(blob(clone(agreeing), merged.getString("sha"), "package.json"), is(left));
+
+    String disagreeing = seedFileConflict("package.json", base, left, tilde);
+    merge(disagreeing, pinned(request("refs/heads/release/v4", "feature/left", "feature/right")))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("package.json"));
+    assertThat(remoteSha(disagreeing, "refs/heads/release/v4"), is(nullSha()));
+  }
+
+  @Test
+  public void aQualifierMismatchOrAnUnorderablePairIsAConflict() throws Exception {
+    String base = "<project>\n  <version>1.2.0</version>\n</project>\n";
+    String snapshot = seedFileConflict(
+        "pom.xml",
+        base,
+        "<project>\n  <version>1.3.0-SNAPSHOT</version>\n</project>\n",
+        "<project>\n  <version>1.3.0</version>\n</project>\n");
+    merge(snapshot, pinned(request("refs/heads/release/v5", "feature/left", "feature/right")))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("pom.xml"));
+
+    // The same value spelled two ways has no newer side.
+    String spelled = seedFileConflict(
+        "pom.xml",
+        base,
+        "<project>\n  <version>1.3</version>\n</project>\n",
+        "<project>\n  <version>1.3.0</version>\n</project>\n");
+    merge(spelled, pinned(request("refs/heads/release/v5", "feature/left", "feature/right")))
+        .then()
+        .statusCode(409);
+    assertThat(remoteSha(spelled, "refs/heads/release/v5"), is(nullSha()));
+  }
+
+  @Test
+  public void onlyAPomOrAPackageJsonIsDecided() throws Exception {
+    String repo =
+        seedFileConflict("versions.txt", "x 1.0.0\n", "x 1.1.0\n", "x 1.2.0\n");
+    merge(repo, pinned(request("refs/heads/release/v6", "feature/left", "feature/right")))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("versions.txt"));
+    String lock =
+        seedFileConflict(
+            "package-lock.json",
+            "{\"version\": \"1.0.0\"}\n",
+            "{\"version\": \"1.1.0\"}\n",
+            "{\"version\": \"1.2.0\"}\n");
+    merge(lock, pinned(request("refs/heads/release/v6", "feature/left", "feature/right")))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("package-lock.json"));
+  }
+
+  @Test
+  public void withoutTheFlagAVersionBumpIsTheConflictItAlwaysWas() throws Exception {
+    String repo =
+        seedFileConflict(
+            "pom.xml",
+            pom("demo", "2026.1005.191755", "1.4.0"),
+            pom("demo", "2026.1006.55511", "1.4.0"),
+            pom("demo", "2026.1006.64435", "1.4.0"));
+    merge(repo, request("refs/heads/release/v7", "feature/left", "feature/right"))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("pom.xml"));
+    Map<String, Object> off = request("refs/heads/release/v7", "feature/left", "feature/right");
+    off.put("versionPins", false);
+    merge(repo, off).then().statusCode(409);
+    assertThat(remoteSha(repo, "refs/heads/release/v7"), is(nullSha()));
+  }
+
+  @Test
+  public void aVersionPinAndAGitlinkDirectiveDecideOneFoldTogether() throws Exception {
+    String repoId = UUID.randomUUID().toString();
+    Path work = seedGitlinkBase(repoId);
+    write(work, "pom.xml", pom("demo", "1.0.0", "1.4.0"));
+    git(work, "add", "pom.xml");
+    commitIndex(work, "pom");
+    git(work, "checkout", "-q", "-b", "feature/left", "main");
+    write(work, "pom.xml", pom("demo", "1.1.0", "1.4.0"));
+    git(work, "add", "pom.xml");
+    pin(work, "sub", PIN_LEFT);
+    commitIndex(work, "left");
+    git(work, "checkout", "-q", "-b", "feature/right", "main");
+    write(work, "pom.xml", pom("demo", "1.0.1", "1.4.0"));
+    git(work, "add", "pom.xml");
+    pin(work, "sub", PIN_RIGHT);
+    commitIndex(work, "right");
+    git(work, "checkout", "-q", "main");
+    push(work, repoId, "main", "feature/left", "feature/right");
+
+    // The rule alone leaves the pin, and the 409 names only that.
+    merge(repoId, pinned(request("refs/heads/release/v8", "feature/left", "feature/right")))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("sub"))
+        .body("conflicts.kind", contains("gitlink"));
+    // The directive alone leaves the pom.
+    merge(
+            repoId,
+            directed(request("refs/heads/release/v8", "feature/left", "feature/right"), "sub", PIN_DIRECTED))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("pom.xml"));
+    assertThat(remoteSha(repoId, "refs/heads/release/v8"), is(nullSha()));
+
+    JsonPath merged =
+        merge(
+                repoId,
+                pinned(
+                    directed(
+                        request("refs/heads/release/v8", "feature/left", "feature/right"),
+                        "sub",
+                        PIN_DIRECTED)))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getList("resolved", String.class), contains("pom.xml", "sub"));
+    assertThat(merged.getList("resolvedVersions.chosen", String.class), contains("1.1.0"));
+    Path clone = clone(repoId);
+    assertThat(blob(clone, merged.getString("sha"), "pom.xml"), is(pom("demo", "1.1.0", "1.4.0")));
+    assertThat(
+        treeEntry(clone, merged.getString("sha"), "sub"),
+        startsWith("160000 commit " + PIN_DIRECTED));
+  }
+
+  @Test
+  public void aBumpThatOnlyConflictsOnTheSecondOctopusStepIsDecidedThere() throws Exception {
+    // feature/a folds in cleanly; the pom only conflicts when feature/right meets the accumulator
+    // that already carries feature/left's bump — so that step's three sides are what decide it.
+    String repoId = UUID.randomUUID().toString();
+    repositories.create(repoId, "main");
+    Path work = Files.createTempDirectory("qits-merge-pins-octopus");
+    git(work, "init", "-q", "-b", "main", ".");
+    write(work, "pom.xml", pom("demo", "2026.1005.191755", "1.4.0"));
+    commit(work, "base");
+    git(work, "checkout", "-q", "-b", "feature/a", "main");
+    write(work, "a.txt", "a\n");
+    commit(work, "a");
+    git(work, "checkout", "-q", "-b", "feature/left", "main");
+    write(work, "pom.xml", pom("demo", "2026.1006.64435", "1.4.0"));
+    commit(work, "left");
+    git(work, "checkout", "-q", "-b", "feature/right", "main");
+    write(work, "pom.xml", pom("demo", "2026.1006.55511", "1.5.0"));
+    commit(work, "right");
+    git(work, "checkout", "-q", "main");
+    push(work, repoId, "main", "feature/a", "feature/left", "feature/right");
+
+    JsonPath merged =
+        merge(
+                repoId,
+                pinned(
+                    request(
+                        "refs/heads/release/v9", "feature/a", "feature/left", "feature/right")))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getString("outcome"), is("merged"));
+    assertThat(merged.getList("parents", String.class), hasSize(3));
+    assertThat(merged.getList("resolved", String.class), contains("pom.xml"));
+    // Only the protocol line conflicted; right's eventstream bump was a clean chunk and is merged
+    // as git merged it. "ours" is the accumulator, which by then carries feature/left's bump.
+    assertThat(merged.getList("resolvedVersions.ours", String.class), contains("2026.1006.64435"));
+    assertThat(merged.getList("resolvedVersions.theirs", String.class), contains("2026.1006.55511"));
+    assertThat(merged.getList("resolvedVersions.chosen", String.class), contains("2026.1006.64435"));
+    Path clone = clone(repoId);
+    assertThat(
+        blob(clone, merged.getString("sha"), "pom.xml"),
+        is(pom("demo", "2026.1006.64435", "1.5.0")));
+    assertThat(blob(clone, merged.getString("sha"), "a.txt"), is("a\n"));
+  }
+
   @Test
   public void containmentIsAnOrdinaryReadWithTwoOrdinaryAnswers() throws Exception {
     String repo = seedThreeBranches();
@@ -692,6 +1010,7 @@ public class RepositoryMergeResourceTest {
   }
 
   private static void write(Path work, String name, String content) throws Exception {
+    Files.createDirectories(work.resolve(name).getParent());
     Files.writeString(work.resolve(name), content);
   }
 

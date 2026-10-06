@@ -241,10 +241,13 @@ POST /githost/api/repositories/<repoId>/merges
  "message": "…",                                  // optional
  "author": {"name": "…", "email": "…"},           // optional
  "resolutions": [{"path": "components/x", "gitlink": "<sha>"}],   // optional, see below
+ "versionPins": true,                             // optional, see below
  "projectId": "…", "repoName": "…"}               // optional: the address the move is announced under
 
 200 {"target": "refs/heads/release/17", "sha": "<commit>", "outcome": "merged",
-     "parents": ["…", "…"], "skipped": ["refs/heads/main"], "resolved": ["components/x"]}
+     "parents": ["…", "…"], "skipped": ["refs/heads/main"], "resolved": ["components/x", "pom.xml"],
+     "resolvedVersions": [{"path": "pom.xml", "line": 5, "ours": "2026.1006.55511",
+                           "theirs": "2026.1006.64435", "chosen": "2026.1006.64435"}]}
 409 {"error": "merge-conflict", "target": "…",
      "conflicts": [{"path": "pom.xml", "head": "feature/x", "headSha": "…", "reason": "content",
                     "kind": "file", "base": "<blob>", "ours": "<blob>", "theirs": "<blob>"}]}
@@ -276,6 +279,23 @@ entry. A conflict the directives do not cover in full is still a 409 rather than
 published commit's **parents are the real sources**: a merge commit's tree is independent of its
 parents, and the rewritings the resolution needs are throwaway commits nothing ever points at.
 `resolved` names the paths a fold decided this way, and is empty otherwise.
+
+**`versionPins` is a merge rule the caller switches on, not a write.** With it `true`, a *text*
+conflict in a `pom.xml` or `package.json` (by basename; `package-lock.json` and everything else stay
+conflicted) is decided when JGit's own merge result for the file says it is nothing but a version
+bump on both sides: every conflicting chunk pairs ours and theirs line for line, each pair is
+identical once version tokens (`\d+(\.\d+)+`, optional `-QUALIFIER`, not glued to a letter, digit,
+`_`, `.` or `-`) are masked, and each differing token pair has the same qualifier and a numerically
+newer side (components compared as numbers, the shorter padded with zeros — `2026.1006.x` beats
+`2026.919.x`; `1.2` against `1.2.0` has no newer side and stays a conflict). The line written is the
+ours line with the newer tokens; clean chunks are what JGit merged, and the file's bytes — encoding,
+line endings, final newline — are its own. Nothing in the request reaches the file. It composes with
+`resolutions` and is all or none the same way: a step with anything left undecided is the 409,
+naming only what is left, and nothing is written. On an octopus the rule applies at whichever
+pairwise step meets the conflict, against that step's base, accumulator and head. `resolvedVersions`
+lists one `{path, line, ours, theirs, chosen}` per token pair decided (`line` 1-based in the file the
+deciding step wrote), and those paths join `resolved`. Absent or `false`, the fold is exactly the old
+one.
 
 ```
 GET /githost/api/repositories/<repoId>/contains?commit=<sha-or-rev>&in=<sha-or-rev>

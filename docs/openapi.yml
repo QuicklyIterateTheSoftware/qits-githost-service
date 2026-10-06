@@ -150,6 +150,8 @@ components:
           type: string
         repoName:
           type: string
+        versionPins:
+          type: boolean
     RepositoriesResponse:
       type: object
       properties:
