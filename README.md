@@ -291,7 +291,11 @@ all or none the same way: a step with anything left undecided is the 409, naming
 and nothing is written. On an octopus the rule applies at whichever pairwise step meets the
 conflict, against that step's base, accumulator and head. `resolvedVersions` lists one `{path, line,
 ours, theirs, chosen}` per token pair decided (`line` 1-based in the file the deciding step wrote),
-and those paths join `resolved`. Absent or `false`, the fold is exactly the old one.
+and those paths join `resolved`. The merge commit records the same decisions in git history, one
+trailer per entry in that order — `Resolved-Version: <path>:<line> ours=<v> theirs=<v> -> <chosen>` —
+after a blank line, or appended to the caller's message's own trailer block if it ends in one. A fold
+that decided no version pin writes the message untouched. Absent or `false`, the fold is exactly the
+old one.
 
 The formats (`PinFormats.REGISTERED`; the flag applies all of them, and a path two formats claim is
 decided by neither):
