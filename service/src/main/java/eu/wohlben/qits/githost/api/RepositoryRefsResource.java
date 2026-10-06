@@ -223,10 +223,12 @@ public class RepositoryRefsResource {
    *
    * <p>{@code versionPins} is optional and opt-in in exactly the same way: absent or {@code false},
    * the fold is the one this endpoint has always performed. {@code true} turns on <b>a merge
-   * rule</b>, not a write: a TEXT conflict in a {@code pom.xml} or {@code package.json} whose every
-   * conflicting line pair differs only in version tokens is decided for the newer version, out of
-   * the three blobs the merge was already comparing (see {@link VersionPinRule}). The caller sends
-   * no content and names no path; it only asks for the rule. It exists because two release
+   * rule</b>, not a write: a TEXT conflict in a manifest some registered {@link PinFormat} reads —
+   * a {@code pom.xml}, a {@code package.json}, a {@code Dockerfile}'s {@code FROM} tags; see {@link
+   * PinFormats#REGISTERED} — whose every conflicting line pair differs only in version tokens is
+   * decided for the newer version, out of the three blobs the merge was already comparing (see
+   * {@link VersionPinRule}). The flag applies every registered format; the caller sends no content
+   * and names no path, it only asks for the rule. It exists because two release
    * sources bumping the same dependency version is the text conflict a fold meets most, and it is
    * decidable without a person — the newer release is the answer every time.
    *
@@ -507,9 +509,9 @@ public class RepositoryRefsResource {
    * MergeRequest#resolutions()} for why it cannot become a general write door.
    *
    * <p><b>The version-pin rule is the other exception, and it is a merge rule rather than a
-   * write.</b> With {@link MergeRequest#versionPins()} on, a text conflict in a {@code pom.xml} or
-   * {@code package.json} that is nothing but both heads bumping the same version tokens is decided
-   * for the newer version ({@link VersionPinRule}). The bytes come from the merge's own three
+   * write.</b> With {@link MergeRequest#versionPins()} on, a text conflict in a file a registered
+   * {@link PinFormat} reads that is nothing but both heads bumping the same version tokens is
+   * decided for the newer version ({@link VersionPinRule}). The bytes come from the merge's own three
    * blobs, never from the request, so this door stays <b>not a general write door</b>: a caller can
    * switch the rule on, and cannot say what it writes. Both exceptions are all or none — a step whose
    * conflicts the directives and the rule do not decide in full is the same 409 as ever, naming only

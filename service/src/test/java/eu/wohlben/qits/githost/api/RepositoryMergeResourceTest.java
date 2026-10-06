@@ -745,6 +745,78 @@ public class RepositoryMergeResourceTest {
   }
 
   @Test
+  public void twoBumpsOfADockerfileFromTagFoldToTheNewerOnes() throws Exception {
+    // The pins qits-maintenance bumps in a Dockerfile are FROM tags. The registry's port is not one,
+    // the -jre qualifier has to agree, and the stage name rides along untouched.
+    String base =
+        "FROM eclipse-temurin:21.0.4-jre AS build\n"
+            + "WORKDIR /app\n"
+            + "COPY . .\n"
+            + "FROM registry.local:5000/qits/runtime:2026.1005.191755\n";
+    String left =
+        "FROM eclipse-temurin:21.0.10-jre AS build\n"
+            + "WORKDIR /app\n"
+            + "COPY . .\n"
+            + "FROM registry.local:5000/qits/runtime:2026.1006.55511\n";
+    String right =
+        "FROM eclipse-temurin:21.0.6-jre AS build\n"
+            + "WORKDIR /app\n"
+            + "COPY . .\n"
+            + "FROM registry.local:5000/qits/runtime:2026.1006.64435\n";
+    String repo = seedFileConflict("images/runtime.Dockerfile", base, left, right);
+    JsonPath merged =
+        merge(repo, pinned(request("refs/heads/release/d1", "feature/left", "feature/right")))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getList("resolved", String.class), contains("images/runtime.Dockerfile"));
+    assertThat(merged.getList("resolvedVersions.line", Integer.class), contains(1, 4));
+    assertThat(
+        merged.getList("resolvedVersions.chosen", String.class),
+        contains("21.0.10-jre", "2026.1006.64435"));
+    assertThat(
+        blob(clone(repo), merged.getString("sha"), "images/runtime.Dockerfile"),
+        is(
+            "FROM eclipse-temurin:21.0.10-jre AS build\n"
+                + "WORKDIR /app\n"
+                + "COPY . .\n"
+                + "FROM registry.local:5000/qits/runtime:2026.1006.64435\n"));
+  }
+
+  @Test
+  public void aDockerfileDigestIsNeverAVersion() throws Exception {
+    String repo =
+        seedFileConflict(
+            "Dockerfile",
+            "FROM alpine:3.19@sha256:" + "a".repeat(64) + "\n",
+            "FROM alpine:3.20@sha256:" + "b".repeat(64) + "\n",
+            "FROM alpine:3.21@sha256:" + "c".repeat(64) + "\n");
+    merge(repo, pinned(request("refs/heads/release/d2", "feature/left", "feature/right")))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("Dockerfile"));
+    assertThat(remoteSha(repo, "refs/heads/release/d2"), is(nullSha()));
+  }
+
+  @Test
+  public void aDockerfileVersionOutsideAFromLineIsAConflict() throws Exception {
+    // A pom would call 1.2.4 a version wherever it stood; a Dockerfile only reads FROM tags (and a
+    // trivial ARG), so an ENV that two heads bumped is plain text and stays the caller's.
+    String repo =
+        seedFileConflict(
+            "Dockerfile",
+            "FROM alpine:3.19\nENV TOOL_VERSION=1.2.3\n",
+            "FROM alpine:3.19\nENV TOOL_VERSION=1.2.4\n",
+            "FROM alpine:3.19\nENV TOOL_VERSION=1.2.5\n");
+    merge(repo, pinned(request("refs/heads/release/d3", "feature/left", "feature/right")))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("Dockerfile"));
+    assertThat(remoteSha(repo, "refs/heads/release/d3"), is(nullSha()));
+  }
+
+  @Test
   public void containmentIsAnOrdinaryReadWithTwoOrdinaryAnswers() throws Exception {
     String repo = seedThreeBranches();
     String main = remoteSha(repo, "refs/heads/main");

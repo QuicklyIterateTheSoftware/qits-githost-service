@@ -1,5 +1,6 @@
 package eu.wohlben.qits.githost.api;
 
+import eu.wohlben.qits.githost.api.PinFormat.Token;
 import eu.wohlben.qits.githost.api.RepositoryRefsResource.ResolvedVersion;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -8,10 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.OptionalInt;
 import org.eclipse.jgit.diff.RawText;
 import org.eclipse.jgit.diff.Sequence;
 import org.eclipse.jgit.merge.MergeChunk;
@@ -20,7 +18,9 @@ import org.eclipse.jgit.merge.MergeResult;
 
 /**
  * The version-pin merge rule: a text conflict in a manifest that is nothing but two heads bumping
- * the same version token is decided for the newer version.
+ * the same version pins is decided for the newer versions. This class is the <b>engine</b>; what a
+ * pin looks like in each ecosystem is a {@link PinFormat}, and the formats applied are {@link
+ * PinFormats#REGISTERED}.
  *
  * <p><b>A merge rule, not a write door.</b> Every byte this writes comes out of the three blobs the
  * merge was already comparing, through JGit's own {@link MergeResult} for the path: the clean
@@ -28,13 +28,14 @@ import org.eclipse.jgit.merge.MergeResult;
  * tokens swapped for the newer of the two. Nothing a caller sends can reach the output — a caller
  * only says "apply the rule" ({@code MergeRequest#versionPins}), never what to write.
  *
- * <p><b>Narrow on purpose.</b> A file is decided only if every conflicting chunk group pairs ours
- * and theirs line for line, every pair is identical once version tokens are masked, and every
- * differing token pair is <em>orderable</em>: the same qualifier (or none on both), numerically
- * different. Anything else — a comment changed beside the bump, {@code ^} against {@code ~}, a
- * {@code -SNAPSHOT} against a release, {@code 1.2} against {@code 1.2.0}, a file that is not a
- * {@code pom.xml} or {@code package.json} — answers {@code null}, and the path stays a conflict the
- * caller has to fix in its own repository. When in doubt, it is a conflict.
+ * <p><b>Narrow on purpose.</b> A file is decided only if exactly one format reads its path, every
+ * conflicting chunk group pairs ours and theirs line for line, every pair is identical once that
+ * format's tokens are masked, and every differing token pair is one the format can order. Anything
+ * else — a comment changed beside the bump, {@code ^} against {@code ~}, a {@code -SNAPSHOT}
+ * against a release, {@code 1.2} against {@code 1.2.0}, a digest, a file no format reads — answers
+ * {@code null}, and the path stays a conflict the caller has to fix in its own repository. When in
+ * doubt, it is a conflict. Those structural checks live here and not in the formats, so no format
+ * can loosen them.
  *
  * <p><b>Bytes, not characters.</b> Lines are read with {@link RawText#writeLine}, which copies the
  * raw bytes without the trailing LF, and are only ever looked at through ISO-8859-1 — a one-to-one
@@ -42,19 +43,6 @@ import org.eclipse.jgit.merge.MergeResult;
  * the round trip byte for byte. The tokens themselves are ASCII.
  */
 final class VersionPinRule {
-
-  /** The only basenames the rule applies to. {@code package-lock.json} is deliberately not one. */
-  private static final Set<String> MANIFESTS = Set.of("pom.xml", "package.json");
-
-  /**
-   * A version token: dotted numbers with an optional {@code -QUALIFIER}, standing alone — not glued
-   * to a letter, digit, underscore, dot or dash on either side. So {@code jdk1.8}, {@code
-   * foo-1.2.jar} and {@code 1.2.3-rc.1} are plain text and never a token; that only ever leaves a
-   * conflict standing, which is the safe way to be wrong.
-   */
-  private static final Pattern TOKEN =
-      Pattern.compile(
-          "(?<![A-Za-z0-9_.-])(\\d+(?:\\.\\d+)+)(?:-([A-Za-z][A-Za-z0-9]*))?(?![A-Za-z0-9_.-])");
 
   /** What a token is replaced with when two lines are compared. A line holding one is refused. */
   private static final String MASK = "\u0000";
@@ -64,22 +52,28 @@ final class VersionPinRule {
 
   private VersionPinRule() {}
 
-  /** Whether the rule applies to this path at all: its basename is a manifest it knows. */
-  static boolean applies(String path) {
-    return MANIFESTS.contains(path.substring(path.lastIndexOf('/') + 1));
+  /** {@link #decide(String, MergeResult, List)} over the registered formats. */
+  static Decision decide(String path, MergeResult<? extends Sequence> result) throws IOException {
+    return decide(path, result, PinFormats.REGISTERED);
   }
 
   /**
    * Decides one path's text conflict from the merger's own result for it, or {@code null} when the
    * rule does not decide it.
    *
+   * <p>{@code formats} is the registry to pick from: the one format whose {@link
+   * PinFormat#appliesTo} matches {@code path}, or nothing decided.
+   *
    * <p>The caller has already established it is a TEXT conflict — a file on both sides, not a
    * gitlink, not a delete/modify. A binary or symlink conflict carries no sequences at all and is
    * refused here as well.
    */
   @SuppressWarnings("unchecked")
-  static Decision decide(String path, MergeResult<? extends Sequence> result) throws IOException {
-    if (!applies(path) || result == null || !result.containsConflicts()) {
+  static Decision decide(
+      String path, MergeResult<? extends Sequence> result, List<PinFormat> formats)
+      throws IOException {
+    PinFormat format = PinFormats.forPath(path, formats).orElse(null);
+    if (format == null || result == null || !result.containsConflicts()) {
       return null;
     }
     List<? extends Sequence> sequences = result.getSequences();
@@ -153,6 +147,7 @@ final class VersionPinRule {
         int lineNumber = written + 1;
         String chosen =
             choose(
+                format,
                 path,
                 lineNumber,
                 latin1(line(ours, ourChunk.getBegin() + k)),
@@ -182,18 +177,25 @@ final class VersionPinRule {
 
   /**
    * One conflicting line pair, decided: the ours line with every differing token replaced by the
-   * newer one, or {@code null} when the pair is not a pure version bump. Adds a {@link
-   * ResolvedVersion} per differing pair.
+   * newer one, or {@code null} when the pair is not a pure version bump in {@code format}'s terms.
+   * Adds a {@link ResolvedVersion} per differing pair.
    */
   private static String choose(
-      String path, int lineNumber, String ours, String theirs, List<ResolvedVersion> versions) {
+      PinFormat format,
+      String path,
+      int lineNumber,
+      String ours,
+      String theirs,
+      List<ResolvedVersion> versions) {
     if (ours.contains(MASK) || theirs.contains(MASK)) {
       // RawText already calls a NUL binary; refusing it here keeps the mask unambiguous regardless.
       return null;
     }
-    List<MatchResult> ourTokens = tokens(ours);
-    List<MatchResult> theirTokens = tokens(theirs);
-    if (ourTokens.size() != theirTokens.size()
+    List<Token> ourTokens = format.tokens(ours);
+    List<Token> theirTokens = format.tokens(theirs);
+    if (!wellFormed(ours, ourTokens)
+        || !wellFormed(theirs, theirTokens)
+        || ourTokens.size() != theirTokens.size()
         || !mask(ours, ourTokens).equals(mask(theirs, theirTokens))) {
       return null;
     }
@@ -201,19 +203,17 @@ final class VersionPinRule {
     int from = 0;
     List<ResolvedVersion> found = new ArrayList<>();
     for (int i = 0; i < ourTokens.size(); i++) {
-      MatchResult mine = ourTokens.get(i);
-      MatchResult other = theirTokens.get(i);
+      Token mine = ourTokens.get(i);
+      Token other = theirTokens.get(i);
       String pick = mine.text();
       if (!mine.text().equals(other.text())) {
-        if (!Objects.equals(mine.qualifier(), other.qualifier())) {
+        OptionalInt order = format.compare(mine, other);
+        if (order.isEmpty() || order.getAsInt() == 0) {
+          // Unorderable: different qualifiers, one value spelled two ways, or a pair the format
+          // will not vouch for. There is no newer side.
           return null;
         }
-        int order = compare(mine.number(), other.number());
-        if (order == 0) {
-          // Equal values spelled differently (1.2 vs 1.2.0, 01 vs 1): there is no newer one.
-          return null;
-        }
-        pick = order > 0 ? mine.text() : other.text();
+        pick = order.getAsInt() > 0 ? mine.text() : other.text();
         found.add(new ResolvedVersion(path, lineNumber, mine.text(), other.text(), pick));
       }
       chosen.append(ours, from, mine.start()).append(pick);
@@ -224,55 +224,35 @@ final class VersionPinRule {
     return chosen.toString();
   }
 
-  /** One token on a line: where it is, what it says, its numeric part and its qualifier. */
-  private record MatchResult(int start, int end, String text, String number, String qualifier) {}
-
-  private static List<MatchResult> tokens(String line) {
-    List<MatchResult> tokens = new ArrayList<>();
-    Matcher matcher = TOKEN.matcher(line);
-    while (matcher.find()) {
-      tokens.add(
-          new MatchResult(
-              matcher.start(), matcher.end(), matcher.group(), matcher.group(1), matcher.group(2)));
+  /**
+   * Whether a format's tokens are what the contract promises: in order, not overlapping, inside the
+   * line, and each {@code text} the span it claims. A format that breaks it leaves the conflict
+   * standing rather than steering a rewrite.
+   */
+  private static boolean wellFormed(String line, List<Token> tokens) {
+    int from = 0;
+    for (Token token : tokens) {
+      if (token.start() < from
+          || token.end() <= token.start()
+          || token.end() > line.length()
+          || !line.substring(token.start(), token.end()).equals(token.text())
+          || token.value() == null) {
+        return false;
+      }
+      from = token.end();
     }
-    return tokens;
+    return true;
   }
 
-  private static String mask(String line, List<MatchResult> tokens) {
+  /** The line with each (well-formed) token replaced by {@link #MASK}. */
+  private static String mask(String line, List<Token> tokens) {
     StringBuilder masked = new StringBuilder();
     int from = 0;
-    for (MatchResult token : tokens) {
+    for (Token token : tokens) {
       masked.append(line, from, token.start()).append(MASK);
       from = token.end();
     }
     return masked.append(line, from, line.length()).toString();
-  }
-
-  /**
-   * Component by component, numerically, the shorter padded with zeros. Arbitrary length: a
-   * component is compared without its leading zeros, by length and then by digits, so no parse can
-   * overflow.
-   */
-  static int compare(String left, String right) {
-    String[] a = left.split("\\.");
-    String[] b = right.split("\\.");
-    for (int i = 0; i < Math.max(a.length, b.length); i++) {
-      String x = i < a.length ? stripZeros(a[i]) : "";
-      String y = i < b.length ? stripZeros(b[i]) : "";
-      int order = x.length() != y.length() ? Integer.compare(x.length(), y.length()) : x.compareTo(y);
-      if (order != 0) {
-        return order;
-      }
-    }
-    return 0;
-  }
-
-  private static String stripZeros(String digits) {
-    int i = 0;
-    while (i < digits.length() && digits.charAt(i) == '0') {
-      i++;
-    }
-    return digits.substring(i);
   }
 
   private static byte[] line(RawText sequence, int index) throws IOException {
