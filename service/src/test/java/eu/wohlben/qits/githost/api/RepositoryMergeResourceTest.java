@@ -516,6 +516,59 @@ public class RepositoryMergeResourceTest {
     assertThat(
         blob(clone, merged.getString("sha"), "pom.xml"),
         is(pom("demo-app", "2026.1006.64435", "1.4.10")));
+    // And the decision is in the history, not only in the answer: one trailer per decided pair, in
+    // resolvedVersions order, a blank line after the message the fold composed.
+    assertThat(
+        message(clone, merged.getString("sha")),
+        is(
+            "Merge feature/right into refs/heads/release/v1\n"
+                + "\n"
+                + "Resolved-Version: pom.xml:5 ours=2026.1006.55511 theirs=2026.1006.64435"
+                + " -> 2026.1006.64435\n"
+                + "Resolved-Version: pom.xml:8 ours=1.4.10 theirs=1.4.2 -> 1.4.10\n"));
+  }
+
+  @Test
+  public void versionTrailersJoinACallersOwnTrailerBlock() throws Exception {
+    String repo =
+        seedFileConflict(
+            "pom.xml",
+            pom("demo", "1.0.0", "1.4.0"),
+            pom("demo", "1.1.0", "1.4.0"),
+            pom("demo", "1.0.1", "1.4.0"));
+    Map<String, Object> body =
+        pinned(request("refs/heads/release/v10", "feature/left", "feature/right"));
+    body.put("message", "Release request 17\n\nfolds two sources\n\nRelease-Request: 17\n");
+    String sha =
+        merge(repo, body).then().statusCode(200).extract().path("sha");
+    assertThat(
+        message(clone(repo), sha),
+        is(
+            "Release request 17\n\nfolds two sources\n\nRelease-Request: 17\n"
+                + "Resolved-Version: pom.xml:5 ours=1.1.0 theirs=1.0.1 -> 1.1.0\n"));
+
+    // A subject alone is not a trailer block, even when it looks like one.
+    Map<String, Object> subject =
+        pinned(request("refs/heads/release/v11", "feature/left", "feature/right"));
+    subject.put("message", "fix: fold");
+    String other = merge(repo, subject).then().statusCode(200).extract().path("sha");
+    assertThat(
+        message(clone(repo), other),
+        is("fix: fold\n\nResolved-Version: pom.xml:5 ours=1.1.0 theirs=1.0.1 -> 1.1.0\n"));
+  }
+
+  @Test
+  public void aFoldThatDecidedNoVersionWritesTheMessageUntouched() throws Exception {
+    String repo = seedThreeBranches();
+    Map<String, Object> body = pinned(request("refs/heads/release/v12", "feature/a", "feature/b"));
+    body.put("message", "Plain fold\n\nRelease-Request: 18");
+    String sha = merge(repo, body).then().statusCode(200).extract().path("sha");
+    assertThat(message(clone(repo), sha), is("Plain fold\n\nRelease-Request: 18\n"));
+  }
+
+  /** A commit's raw message, as git stores it. */
+  private static String message(Path clone, String sha) throws Exception {
+    return git(clone, "cat-file", "commit", sha).split("\n\n", 2)[1];
   }
 
   @Test

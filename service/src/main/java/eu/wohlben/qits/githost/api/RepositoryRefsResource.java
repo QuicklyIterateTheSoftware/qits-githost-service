@@ -228,7 +228,8 @@ public class RepositoryRefsResource {
    * PinFormats#REGISTERED} — whose every conflicting line pair differs only in version tokens is
    * decided for the newer version, out of the three blobs the merge was already comparing (see
    * {@link VersionPinRule}). The flag applies every registered format; the caller sends no content
-   * and names no path, it only asks for the rule. It exists because two release
+   * and names no path, it only asks for the rule. Each decision is also recorded in the merge commit itself, as a
+   * {@code Resolved-Version} trailer ({@link #withVersionTrailers}). It exists because two release
    * sources bumping the same dependency version is the text conflict a fold meets most, and it is
    * decidable without a person — the newer release is the answer every time.
    *
@@ -821,7 +822,12 @@ public class RepositoryRefsResource {
       // be a forgery, and would name a commit the discarded inserter never flushed.
       List<ObjectId> parents = effective.stream().map(head -> (ObjectId) head.commit()).toList();
       ObjectId merged =
-          insertCommit(inserter, resultTree, parents, person, mergeMessage(request, effective));
+          insertCommit(
+              inserter,
+              resultTree,
+              parents,
+              person,
+              withVersionTrailers(mergeMessage(request, effective), resolvedVersions));
       inserter.flush();
 
       Response moved = moveRef(repo, origin, target, targetOld, merged, "octopus merge");
@@ -1632,6 +1638,57 @@ public class RepositoryRefsResource {
     }
     List<String> names = heads.stream().skip(1).map(Head::spelling).toList();
     return "Merge " + String.join(", ", names) + " into " + request.target();
+  }
+
+  /** A git trailer line, {@code Token: value} — what git interpret-trailers reads as one. */
+  private static final Pattern TRAILER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*: .*");
+
+  /**
+   * The merge commit's message with one {@code Resolved-Version} trailer per version the rule
+   * decided, in {@code resolvedVersions} order, or the message untouched when it decided none.
+   *
+   * <p>The decision belongs in the history and not only in the caller's log: whoever reads the
+   * merge with {@code git log} should see that a pin was chosen by a rule, which one, and over
+   * what. It is this host's to write because only this host knows the outcome, and the caller
+   * composed its message before asking.
+   *
+   * <p>Spelled the way git spells trailers: separated from the message by a blank line, or — when
+   * the message already ends in a trailer block (a last paragraph, not the subject, whose every
+   * line is {@code Token: value}) — appended to that block, so {@code git interpret-trailers} still
+   * reads one block.
+   */
+  static String withVersionTrailers(String message, List<ResolvedVersion> versions) {
+    if (versions.isEmpty()) {
+      return message;
+    }
+    String body = message.replaceAll("[\\r\\n]+$", "");
+    List<String> lines = body.lines().toList();
+    int lastBlank = -1;
+    for (int i = 0; i < lines.size(); i++) {
+      if (lines.get(i).isBlank()) {
+        lastBlank = i;
+      }
+    }
+    boolean trailerBlock =
+        lastBlank > 0
+            && lastBlank < lines.size() - 1
+            && lines.subList(lastBlank + 1, lines.size()).stream()
+                .allMatch(line -> TRAILER.matcher(line).matches());
+    StringBuilder out = new StringBuilder(body).append(trailerBlock ? "\n" : "\n\n");
+    for (ResolvedVersion version : versions) {
+      out.append("Resolved-Version: ")
+          .append(version.path())
+          .append(':')
+          .append(version.line())
+          .append(" ours=")
+          .append(version.ours())
+          .append(" theirs=")
+          .append(version.theirs())
+          .append(" -> ")
+          .append(version.chosen())
+          .append('\n');
+    }
+    return out.toString();
   }
 
   private PersonIdent authorOf(Author author) {
