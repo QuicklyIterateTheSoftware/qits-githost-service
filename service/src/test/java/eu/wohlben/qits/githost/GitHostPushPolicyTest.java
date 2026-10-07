@@ -48,6 +48,15 @@ public class GitHostPushPolicyTest {
   static final List<String> AGENT_WITHOUT_LIST =
       TestTokenMechanism.token("{\"sub\":\"dyn-agent-container-1\",\"groups\":[\"qits:agent\"]}");
 
+  /**
+   * qits-628 follow-up: an ADMIN workspace's coding agent's credential, carrying {@code
+   * qits:admin-agent} and NOT {@code qits:admin} — the role must open the door on its own, the same
+   * way {@code qits:agent}'s does above.
+   */
+  static final List<String> ADMIN_AGENT_WITHOUT_LIST =
+      TestTokenMechanism.token(
+          "{\"sub\":\"dyn-admin-workspace-1\",\"groups\":[\"qits:admin-agent\"]}");
+
   static final String OUTSIDER = "{\"sub\":\"someone\",\"groups\":[\"qits:reader\"]}";
 
   @Inject GitRepositoryProvider repositories;
@@ -114,6 +123,38 @@ public class GitHostPushPolicyTest {
         .get("/git/" + repoId + "/info/refs?service=git-upload-pack")
         .then()
         .statusCode(200);
+  }
+
+  /**
+   * qits-628 follow-up: {@code qits:admin-agent} is admitted wherever {@code qits:admin} is, so it
+   * has to open this door exactly as {@code qits:admin}, {@code qits:system} and {@code qits:agent}
+   * already do — and a role the policy still does not name (the same {@link #OUTSIDER} the case
+   * above refuses) stays refused. This repository's {@code git} and {@code githost-browse} policies
+   * admit {@code qits:agent} wherever they admit {@code qits:admin} (commissioned agents keep read
+   * and push access, user ruling), so there is no door here that admits {@code qits:admin} and
+   * refuses {@code qits:agent} to pair against; the refused counterpart is the same
+   * policy-outsider role {@code aRoleOutsideThePolicyIsRefusedAtTheDoor} already pins.
+   */
+  @Test
+  public void anAdminAgentRoleOpensTheDoorAndAnOutsiderRoleStillCannot() throws Exception {
+    String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
+
+    given()
+        .header(
+            TestTokenMechanism.HEADER,
+            ADMIN_AGENT_WITHOUT_LIST
+                .get(0)
+                .substring((TestTokenMechanism.HEADER + ": ").length()))
+        .when()
+        .get("/git/" + repoId + "/info/refs?service=git-upload-pack")
+        .then()
+        .statusCode(200);
+    given()
+        .header(TestTokenMechanism.HEADER, OUTSIDER)
+        .when()
+        .get("/git/" + repoId + "/info/refs?service=git-upload-pack")
+        .then()
+        .statusCode(403);
   }
 
   private Path cloneAs(List<String> headers, String repoId) throws Exception {
