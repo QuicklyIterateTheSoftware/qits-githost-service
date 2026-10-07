@@ -345,6 +345,7 @@ paths:
       security:
       - SecurityScheme:
         - qits:admin
+        - qits:admin-agent
         - qits:system
         - qits:agent
   /githost/api/repositories/{repoId}/commits:

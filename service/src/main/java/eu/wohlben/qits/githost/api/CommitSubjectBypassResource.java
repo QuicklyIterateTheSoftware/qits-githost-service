@@ -22,10 +22,13 @@ import org.jboss.logging.Logger;
  * the commit-subject break-glass ({@code -o qits.subject-bypass=<reason>}) on one repository,
  * newest first. See {@code CommitSubjectHook}.
  *
- * <p>Readable by {@code qits:admin}, {@code qits:system} and {@code qits:agent} — the {@code
- * githost-browse} path policy's roles, restated on the method so the door does not depend on the
- * policy alone. A repository with no recorded use, or one this host does not hold, answers an empty
- * list: the record outlives the repository on purpose. A failed read is a 500, never an empty list.
+ * <p>Readable by {@code qits:admin}, {@code qits:admin-agent}, {@code qits:system} and {@code
+ * qits:agent} — the {@code githost-browse} path policy's roles, restated on the method so the door
+ * does not depend on the policy alone. {@code qits:admin-agent} is admitted too (qits-628
+ * follow-up): an ADMIN workspace's coding agent carries it alongside {@code qits:agent}, and for now
+ * it may use everything {@code qits:admin} may use. A repository with no recorded use, or one this
+ * host does not hold, answers an empty list: the record outlives the repository on purpose. A failed
+ * read is a 500, never an empty list.
  */
 @Path("/repositories/{repoId}/commit-subject-bypasses")
 @Produces(MediaType.APPLICATION_JSON)
@@ -52,7 +55,7 @@ public class CommitSubjectBypassResource {
   public record BypassesResponse(List<BypassRecord> bypasses) {}
 
   @GET
-  @RolesAllowed({"qits:admin", "qits:system", "qits:agent"})
+  @RolesAllowed({"qits:admin", "qits:admin-agent", "qits:system", "qits:agent"})
   public BypassesResponse list(@PathParam("repoId") String repoId) {
     if (repoId == null || !repoId.matches(REPO_ID_PATTERN)) {
       throw new BadRequestException("repoId must match " + REPO_ID_PATTERN);

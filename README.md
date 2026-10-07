@@ -104,9 +104,11 @@ had been deleted (the `fe26a6c` lesson).
 
 ### Who may push what
 
-The path policy opens `/git/**` to five roles: `qits:admin` (a browser session), `qits:system` (a
-platform service), `qits:git:external` (a workstation token), and `qits:agent` / `qits:ci-run` (a
-commissioned agent or CI run). A role only opens the door. **Which refs a push may touch comes from
+The path policy opens `/git/**` to six roles: `qits:admin` (a browser session), `qits:admin-agent`
+(an ADMIN workspace's coding agent — admitted wherever `qits:admin` is, qits-628 follow-up, and for
+now it may use everything `qits:admin` may use), `qits:system` (a platform service),
+`qits:git:external` (a workstation token), and `qits:agent` / `qits:ci-run` (a commissioned agent or
+CI run). A role only opens the door. **Which refs a push may touch comes from
 the credential's scope, never from its roles** — `RefScopeHook`, contract C3 of
 `principal-bound-git-refs-plan.md` in the superproject. The first row that fits decides:
 
@@ -118,7 +120,7 @@ the credential's scope, never from its roles** — `RefScopeHook`, contract C3 o
 | 4 | is a client token with none of those claims that holds `qits:system` — a platform service, or a commission that still inherits its owner's roles | anything. The default branch's seatbelt still applies. |
 | 4 | is a client token with none of those claims, without `qits:system` — a `qits:agent` or `qits:ci-run` commission with no list | nothing |
 
-`qits:admin` and `qits:system` widen none of rows 1 to 3. A push with no verified identity pushes
+`qits:admin`, `qits:admin-agent` and `qits:system` widen none of rows 1 to 3. A push with no verified identity pushes
 nothing. The bootstrap ingress keeps row 2's check with the pattern it is configured with.
 
 - **A push is refused whole.** If one ref is outside the scope, every ref in the push is refused and
@@ -183,7 +185,7 @@ qits-projects.
 |---|---|
 | `GET /githost/api/repositories` | `{"repositories":[{"id", "protectDefaultBranch"}, …]}` — every repository this host serves, sorted, as records. |
 | `GET /githost/api/loc[?repositoryId=…]` | `{"entries":[{"repositoryId", "commitSha", "status", "languages":[{"language", "mainLines", "testLines"}]}, …]}` — the lines of code of every repository's default branch, in one request, sorted by id. `repositoryId` (repeatable) narrows it; a named id this host does not hold is left out, an invalid one is a 400. Answered from the stored counts only: `COUNTED` carries the numbers, `PENDING` means the tip is not counted yet and this call queued its count, `EMPTY` means no commit yet. Same roles as the per-repository `/loc`. |
-| `GET /githost/api/repositories/{repoId}/commit-subject-bypasses` | `{"bypasses":[{"id", "repositoryId", "pusher", "reason", "refs", "commits", "usedAt"}, …]}` — every recorded use of the commit-subject break-glass on one repository, newest first. `qits:admin`, `qits:system` or `qits:agent`; an unknown repository answers an empty list. |
+| `GET /githost/api/repositories/{repoId}/commit-subject-bypasses` | `{"bypasses":[{"id", "repositoryId", "pusher", "reason", "refs", "commits", "usedAt"}, …]}` — every recorded use of the commit-subject break-glass on one repository, newest first. `qits:admin`, `qits:admin-agent`, `qits:system` or `qits:agent`; an unknown repository answers an empty list. |
 
 It answers the same question as `GET /git` and is not a duplicate of it: that one is a wire the
 platform's machines read and its shape is fixed by them, this one is the browser's and may grow a
