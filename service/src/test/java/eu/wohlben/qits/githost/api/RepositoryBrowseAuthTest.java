@@ -42,6 +42,8 @@ public class RepositoryBrowseAuthTest {
         .statusCode(Response.Status.UNAUTHORIZED.getStatusCode());
     given().when().get("/githost/api/repositories/" + repo + "/file?path=README.md").then()
         .statusCode(Response.Status.UNAUTHORIZED.getStatusCode());
+    given().when().get("/githost/api/repositories/" + repo + "/raw?path=logo.png").then()
+        .statusCode(Response.Status.UNAUTHORIZED.getStatusCode());
     given().when().get("/githost/api/repositories/" + repo + "/loc").then()
         .statusCode(Response.Status.UNAUTHORIZED.getStatusCode());
     given().when().get("/githost/api/loc").then()

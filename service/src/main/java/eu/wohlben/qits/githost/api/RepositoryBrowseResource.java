@@ -11,19 +11,24 @@ import eu.wohlben.qits.githost.persistence.RepositoryLocStore;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.ServerErrorException;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import org.eclipse.jgit.diff.RawText;
 import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.MissingObjectException;
@@ -47,8 +52,9 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.jboss.logging.Logger;
 
 /**
- * {@code GET /githost/api/repositories/{repoId}[/tags|/tree|/file|/loc]} — the browser plane's
- * content reads, for qits-spa-githost's per-repository Code pages.
+ * {@code GET /githost/api/repositories/{repoId}[/tags|/tree|/file|/raw|/loc]} — the browser plane's
+ * content reads, for qits-spa-githost's per-repository Code pages and for any SPA that needs one
+ * file's bytes.
  *
  * <p><b>Why this exists beside {@code /git/…/tree|blob}.</b> Those live on the git wire's storage
  * scheme, which {@code qits.githost.storage-client} is slated to close to qits-projects' own client
@@ -58,6 +64,14 @@ import org.jboss.logging.Logger;
  * daemon serves), and file content as a record that says {@code binary} instead of failing with a
  * 413. Unlike the anonymous catalogue beside it, these paths carry file contents and are therefore
  * role-gated — see the {@code githost-browse} policy in {@code application.properties}.
+ *
+ * <p><b>{@code /raw} answers bytes to the SPAs.</b> {@code /file} is JSON and says {@code binary}
+ * rather than carrying a binary blob; {@code /raw} is the one read on this host that hands a
+ * browser a file's bytes as they are — the qits-762 screenshots view paints both revisions of an
+ * image from it. {@code /git/…/blob} would answer the same bytes but sits on the storage scheme,
+ * closed to sessions, so it is no door for a page. Being a browser-facing byte door it is
+ * deliberately conservative: a closed content-type map (anything not a raster image, SVG included,
+ * is an attachment), {@code nosniff} and a sandboxing CSP on every answer.
  *
  * <p><b>Addressing is the storage id</b>, the UUID qits-projects mints: the SPA resolves the public
  * {@code (project, repoName)} spelling to it client-side, and this host still holds no name for
@@ -95,6 +109,31 @@ public class RepositoryBrowseResource {
    * error. The value matches the daemon's {@code FILE_CONTENT_CAP_BYTES}.
    */
   static final int MAX_CONTENT_BYTES = 2 * 1024 * 1024;
+
+  /**
+   * The largest blob {@code /raw} answers. Past it the answer is a 413 naming the real size, decided
+   * from the object header before a byte is read — a raw read hands the bytes over whole, so there
+   * is no soft degrade to fall back on as {@code /file} has.
+   */
+  static final long MAX_RAW_BYTES = 16L * 1024 * 1024;
+
+  /** Exactly a full commit sha: an answer at it can never change, so it may be cached for good. */
+  private static final String COMMIT_SHA_PATTERN = "[0-9a-f]{40}";
+
+  /**
+   * The closed map {@code /raw} serves an inline type from, keyed by lower-cased extension. Raster
+   * images only: anything else — SVG included, because SVG is script — goes out as an
+   * {@code application/octet-stream} attachment.
+   */
+  private static final Map<String, String> RAW_CONTENT_TYPES =
+      Map.of(
+          "png", "image/png",
+          "jpg", "image/jpeg",
+          "jpeg", "image/jpeg",
+          "gif", "image/gif",
+          "webp", "image/webp");
+
+  private static final String RAW_CSP = "default-src 'none'; sandbox";
 
   @Inject GitRepositoryProvider repositories;
   @Inject RepositoryLocStore locStore;
@@ -158,6 +197,10 @@ public class RepositoryBrowseResource {
 
   @RegisterForReflection
   public record ErrorBody(String error) {}
+
+  /** {@code /raw}'s refusal of a blob past {@link #MAX_RAW_BYTES}, with its real size. */
+  @RegisterForReflection
+  public record TooLargeBody(String error, long size) {}
 
   @GET
   public Response describe(@PathParam("repoId") String repoId) {
@@ -321,6 +364,106 @@ public class RepositoryBrowseResource {
   }
 
   /**
+   * One file's bytes at one revision, for a browser to show — the read {@code /file} cannot be for
+   * a binary blob. Validation and absence are {@code /file}'s, answer for answer.
+   *
+   * <p>The {@code ETag} is the blob id, so the same image at two commits is one cache entry's worth
+   * of revalidation, and {@code If-None-Match} answers a 304 without opening the blob at all.
+   * {@code rev} spelled as a full commit sha names an answer that can never change and is cached
+   * {@code immutable}; a branch or tag moves, so it is revalidated every time.
+   */
+  @GET
+  @Path("/raw")
+  @Produces(MediaType.WILDCARD)
+  @Operation(
+      operationId = "getRaw",
+      summary =
+          "One file's raw bytes at one revision (default: the default branch); raster images"
+              + " inline, anything else an attachment")
+  @APIResponse(
+      responseCode = "200",
+      description = "The blob's bytes",
+      content = {
+        @Content(mediaType = "image/png"),
+        @Content(mediaType = "image/jpeg"),
+        @Content(mediaType = "image/gif"),
+        @Content(mediaType = "image/webp"),
+        @Content(mediaType = MediaType.APPLICATION_OCTET_STREAM)
+      })
+  @APIResponse(responseCode = "304", description = "If-None-Match carried the blob's ETag")
+  @APIResponse(
+      responseCode = "404",
+      description = "No such repository, revision or path",
+      content =
+          @Content(
+              mediaType = MediaType.APPLICATION_JSON,
+              schema = @Schema(implementation = ErrorBody.class)))
+  @APIResponse(
+      responseCode = "413",
+      description = "The blob is past the raw read's size cap",
+      content =
+          @Content(
+              mediaType = MediaType.APPLICATION_JSON,
+              schema = @Schema(implementation = TooLargeBody.class)))
+  public Response raw(
+      @PathParam("repoId") String repoId,
+      @QueryParam("rev") String rev,
+      @QueryParam("path") String path,
+      @HeaderParam(HttpHeaders.IF_NONE_MATCH) String ifNoneMatch) {
+    if (!isValidRepoId(repoId)) {
+      return badRequest("repoId must match " + REPO_ID_PATTERN);
+    }
+    if (rev != null && !rev.isEmpty() && !isValidRev(rev)) {
+      return badRequest("rev must match " + REV_PATTERN);
+    }
+    if (path == null || path.isEmpty() || !isValidPath(path)) {
+      return badRequest("path must be a repository-relative file path");
+    }
+    try (Repository repo = openOrNull(repoId)) {
+      if (repo == null) {
+        return notFound("no-such-repository");
+      }
+      String effectiveRev = rev == null || rev.isEmpty() ? defaultBranchOf(repo) : rev;
+      try (RevWalk walk = new RevWalk(repo)) {
+        RevCommit commit = resolveCommit(repo, walk, effectiveRev);
+        if (commit == null) {
+          return notFound("no-such-rev");
+        }
+        try (TreeWalk found = TreeWalk.forPath(repo, path, commit.getTree())) {
+          if (found == null || !isReadable(found.getFileMode(0))) {
+            return notFound("no-such-path");
+          }
+          ObjectId blob = found.getObjectId(0);
+          String etag = "\"" + blob.name() + "\"";
+          if (matchesETag(ifNoneMatch, etag)) {
+            return rawHeaders(Response.notModified(), etag, rev).build();
+          }
+          ObjectLoader loader = repo.open(blob, Constants.OBJ_BLOB);
+          long size = loader.getSize();
+          if (size > MAX_RAW_BYTES) {
+            return Response.status(Response.Status.REQUEST_ENTITY_TOO_LARGE)
+                .type(MediaType.APPLICATION_JSON_TYPE)
+                .entity(new TooLargeBody("too-large", size))
+                .build();
+          }
+          byte[] bytes = loader.getBytes((int) MAX_RAW_BYTES);
+          String type = RAW_CONTENT_TYPES.get(extensionOf(path));
+          Response.ResponseBuilder answer =
+              Response.ok(bytes, type == null ? MediaType.APPLICATION_OCTET_STREAM : type);
+          if (type == null) {
+            answer.header("Content-Disposition", attachment(path));
+          }
+          return rawHeaders(answer, etag, rev).build();
+        }
+      }
+    } catch (MissingObjectException | IncorrectObjectTypeException e) {
+      return notFound("no-such-rev");
+    } catch (Exception e) {
+      throw unavailable("could not read the raw bytes of a file of repository " + repoId, e);
+    }
+  }
+
+  /**
    * The lines-of-code summary at one commit, memoized. The memo is consulted first and written
    * after a scan, both fail-soft — a database that cannot answer costs a rescan, never a 5xx of its
    * own. The scan failing is this endpoint failing, and that follows the house rule: a failed read
@@ -449,6 +592,66 @@ public class RepositoryBrowseResource {
         : full;
   }
 
+  /**
+   * The headers every {@code /raw} 200 and 304 carries. The cache rule reads the rev AS SPELLED: a
+   * full commit sha is immutable, while a branch that happens to resolve to the same commit today
+   * will not tomorrow.
+   */
+  private static Response.ResponseBuilder rawHeaders(
+      Response.ResponseBuilder answer, String etag, String rev) {
+    boolean immutable = rev != null && rev.matches(COMMIT_SHA_PATTERN);
+    return answer
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Content-Security-Policy", RAW_CSP)
+        .header(HttpHeaders.ETAG, etag)
+        .header(
+            HttpHeaders.CACHE_CONTROL,
+            immutable ? "private, max-age=31536000, immutable" : "private, no-cache");
+  }
+
+  /** {@code If-None-Match} names this ETag (weak or strong, in a list) or is {@code *}. */
+  private static boolean matchesETag(String ifNoneMatch, String etag) {
+    if (ifNoneMatch == null || ifNoneMatch.isBlank()) {
+      return false;
+    }
+    for (String candidate : ifNoneMatch.split(",")) {
+      String tag = candidate.trim();
+      if (tag.startsWith("W/")) {
+        tag = tag.substring(2);
+      }
+      if ("*".equals(tag) || etag.equals(tag)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** The lower-cased extension of the path's last segment, or empty when it has none. */
+  private static String extensionOf(String path) {
+    String name = path.substring(path.lastIndexOf('/') + 1);
+    int dot = name.lastIndexOf('.');
+    return dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
+  }
+
+  /**
+   * {@code attachment; filename="<basename>"}. The quoted name is kept to printable ASCII with
+   * quotes and backslashes replaced, so no path can break out of the header; a name that needed
+   * replacing also carries its exact spelling as an RFC 5987 {@code filename*}.
+   */
+  private static String attachment(String path) {
+    String name = path.substring(path.lastIndexOf('/') + 1);
+    StringBuilder safe = new StringBuilder(name.length());
+    name.chars()
+        .forEach(c -> safe.append(c < 0x20 || c > 0x7e || c == '"' || c == '\\' ? '_' : (char) c));
+    String header = "attachment; filename=\"" + safe + "\"";
+    if (!safe.toString().equals(name)) {
+      header +=
+          "; filename*=UTF-8''"
+              + URLEncoder.encode(name, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+    return header;
+  }
+
   /** A file the viewer can show: a regular blob, an executable one, or a symlink's target. */
   private static boolean isReadable(FileMode mode) {
     return FileMode.REGULAR_FILE.equals(mode)
@@ -479,12 +682,22 @@ public class RepositoryBrowseResource {
     return true;
   }
 
+  /**
+   * Typed explicitly, because {@code /raw} produces a wildcard and an error body there must still go
+   * out as JSON whatever the caller's {@code Accept} named.
+   */
   private static Response badRequest(String message) {
-    return Response.status(Response.Status.BAD_REQUEST).entity(new ErrorBody(message)).build();
+    return Response.status(Response.Status.BAD_REQUEST)
+        .type(MediaType.APPLICATION_JSON_TYPE)
+        .entity(new ErrorBody(message))
+        .build();
   }
 
   private static Response notFound(String code) {
-    return Response.status(Response.Status.NOT_FOUND).entity(new ErrorBody(code)).build();
+    return Response.status(Response.Status.NOT_FOUND)
+        .type(MediaType.APPLICATION_JSON_TYPE)
+        .entity(new ErrorBody(code))
+        .build();
   }
 
   private ServerErrorException unavailable(String what, Exception cause) {
