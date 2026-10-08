@@ -188,6 +188,14 @@ components:
           type: string
         repoName:
           type: string
+    TooLargeBody:
+      type: object
+      properties:
+        error:
+          type: string
+        size:
+          type: integer
+          format: int64
     UUID:
       type: string
       format: uuid
@@ -499,6 +507,54 @@ paths:
       security:
       - SecurityScheme:
         - qits:system
+  /githost/api/repositories/{repoId}/raw:
+    get:
+      summary: "One file's raw bytes at one revision (default: the default branch);\
+        \ raster images inline, anything else an attachment"
+      operationId: getRaw
+      parameters:
+      - name: repoId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: path
+        in: query
+        schema:
+          type: string
+      - name: rev
+        in: query
+        schema:
+          type: string
+      - name: If-None-Match
+        in: header
+        schema:
+          type: string
+      responses:
+        "200":
+          description: The blob's bytes
+          content:
+            image/png: {}
+            image/jpeg: {}
+            image/gif: {}
+            image/webp: {}
+            application/octet-stream: {}
+        "304":
+          description: If-None-Match carried the blob's ETag
+        "404":
+          description: "No such repository, revision or path"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+        "413":
+          description: The blob is past the raw read's size cap
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TooLargeBody"
+      tags:
+      - Repository Browse Resource
   /githost/api/repositories/{repoId}/tags:
     get:
       parameters:

@@ -20,13 +20,16 @@ import jakarta.ws.rs.core.Response;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.ObjectInserter;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@code GET /githost/api/repositories/{repoId}[/tags|/tree|/file]} — the browser plane's content
- * reads.
+ * {@code GET /githost/api/repositories/{repoId}[/tags|/tree|/file|/raw|/loc]} — the browser plane's
+ * content reads.
  *
  * <p>Seeded through the served git endpoint, like the rest of the suite: receive-pack is the only
  * door this storage has, and a DFS repository has no directory to build a fixture in. The helpers
@@ -60,6 +63,12 @@ public class RepositoryBrowseResourceTest {
   private static volatile String annotatedCommit;
 
   private static volatile String lightweightCommit;
+
+  /** A 1x1 transparent PNG, byte for byte. */
+  private static final byte[] PNG =
+      Base64.getDecoder()
+          .decode(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
 
   private String seededRepo() throws Exception {
     String repo = seeded;
@@ -106,6 +115,16 @@ public class RepositoryBrowseResourceTest {
     Files.write(work.resolve("art.css"), new byte[] {0x00, 0x01, 0x02, (byte) 0xff, 0x00});
     // A symlink spelled like Markdown: its blob is a target string and counts nothing.
     Files.createSymbolicLink(work.resolve("link.md"), Path.of("README.md"));
+    // The raw read's fixture: an image served inline (once lower-, once upper-case), an SVG that
+    // must not be, and a blob one byte past the raw cap — zeros, so the push stays tiny.
+    Files.createDirectories(work.resolve("shots"));
+    Files.write(work.resolve("shots/logo.png"), PNG);
+    Files.write(work.resolve("shots/LOGO.JPEG"), PNG);
+    Files.writeString(
+        work.resolve("shots/icon.svg"),
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>\n");
+    Files.write(
+        work.resolve("huge.bin"), new byte[(int) RepositoryBrowseResource.MAX_RAW_BYTES + 1]);
     git(work, "add", ".");
     commit(work, "seed");
     // A gitlink at `vendored`, pointing at this repository's own tip — receive-pack does not chase
@@ -376,6 +395,138 @@ public class RepositoryBrowseResourceTest {
         .then().statusCode(404).body("error", is("no-such-rev"));
     given().queryParam("rev", "-not-a-rev").when().get(API + seededRepo() + "/loc")
         .then().statusCode(400);
+  }
+
+  @Test
+  public void rawAnswersAnImageByteIdenticalWithItsSafetyHeaders() throws Exception {
+    String blob = "\"" + blobId(PNG) + "\"";
+    io.restassured.response.Response answer =
+        given()
+            .queryParam("path", "shots/logo.png")
+            .when()
+            .get(API + seededRepo() + "/raw")
+            .then()
+            .statusCode(200)
+            .extract()
+            .response();
+    assertThat(answer.asByteArray(), is(PNG));
+    assertThat(answer.contentType(), is("image/png"));
+    assertThat(answer.header("X-Content-Type-Options"), is("nosniff"));
+    assertThat(answer.header("Content-Security-Policy"), is("default-src 'none'; sandbox"));
+    assertThat(answer.header("ETag"), is(blob));
+    assertThat(answer.header("Content-Disposition"), nullValue());
+    // A branch moves, so its answer is revalidated every time.
+    assertThat(answer.header("Cache-Control"), is("private, no-cache"));
+  }
+
+  @Test
+  public void rawTheExtensionMapIsCaseInsensitive() throws Exception {
+    given().queryParam("path", "shots/LOGO.JPEG").when().get(API + seededRepo() + "/raw")
+        .then().statusCode(200).contentType("image/jpeg");
+  }
+
+  @Test
+  public void rawAtAFullCommitShaIsImmutableAndAtABranchIsNot() throws Exception {
+    String sha =
+        given().when().get(API + seededRepo() + "/tree").then().statusCode(200)
+            .extract().jsonPath().getString("commitSha");
+    given()
+        .queryParam("rev", sha)
+        .queryParam("path", "shots/logo.png")
+        .when()
+        .get(API + seededRepo() + "/raw")
+        .then()
+        .statusCode(200)
+        .header("Cache-Control", is("private, max-age=31536000, immutable"));
+    given()
+        .queryParam("rev", "feature/slashy")
+        .queryParam("path", "shots/logo.png")
+        .when()
+        .get(API + seededRepo() + "/raw")
+        .then()
+        .statusCode(200)
+        .header("Cache-Control", is("private, no-cache"));
+  }
+
+  @Test
+  public void rawIfNoneMatchWithTheBlobETagAnswers304WithNoBody() throws Exception {
+    String blob = "\"" + blobId(PNG) + "\"";
+    io.restassured.response.Response answer =
+        given()
+            .header("If-None-Match", blob)
+            .queryParam("path", "shots/logo.png")
+            .when()
+            .get(API + seededRepo() + "/raw")
+            .then()
+            .statusCode(304)
+            .extract()
+            .response();
+    assertThat(answer.asByteArray().length, is(0));
+    assertThat(answer.header("ETag"), is(blob));
+    assertThat(answer.header("X-Content-Type-Options"), is("nosniff"));
+    assertThat(answer.header("Content-Security-Policy"), is("default-src 'none'; sandbox"));
+    // A different tag is no match: the bytes come back.
+    given()
+        .header("If-None-Match", "\"" + "0".repeat(40) + "\"")
+        .queryParam("path", "shots/logo.png")
+        .when()
+        .get(API + seededRepo() + "/raw")
+        .then()
+        .statusCode(200);
+  }
+
+  @Test
+  public void rawServesAnythingButARasterImageAsAnAttachment() throws Exception {
+    for (String path : List.of("shots/icon.svg", "logo.bin")) {
+      given()
+          .queryParam("path", path)
+          .when()
+          .get(API + seededRepo() + "/raw")
+          .then()
+          .statusCode(200)
+          .contentType("application/octet-stream")
+          .header(
+              "Content-Disposition",
+              is("attachment; filename=\"" + path.substring(path.lastIndexOf('/') + 1) + "\""))
+          .header("X-Content-Type-Options", is("nosniff"));
+    }
+  }
+
+  @Test
+  public void rawNamesWhatIsAbsentExactlyAsFileDoes() throws Exception {
+    given().queryParam("path", "README.md").when().get(API + UUID.randomUUID() + "/raw")
+        .then().statusCode(404).body("error", is("no-such-repository"));
+    given().queryParam("rev", "no-such-branch").queryParam("path", "README.md")
+        .when().get(API + seededRepo() + "/raw")
+        .then().statusCode(404).body("error", is("no-such-rev"));
+    // A missing file, a directory and a gitlink are all no file to hand over — and the body is
+    // JSON even to a caller that asked for an image.
+    for (String path : List.of("no/such/file.png", "shots", "vendored")) {
+      given().accept("image/*").queryParam("path", path).when().get(API + seededRepo() + "/raw")
+          .then().statusCode(404).contentType("application/json")
+          .body("error", is("no-such-path"));
+    }
+    given().queryParam("path", "../x").when().get(API + seededRepo() + "/raw")
+        .then().statusCode(400);
+    given().when().get(API + seededRepo() + "/raw").then().statusCode(400);
+  }
+
+  @Test
+  public void rawRefusesABlobPastTheCapWithItsSize() throws Exception {
+    given()
+        .queryParam("path", "huge.bin")
+        .when()
+        .get(API + seededRepo() + "/raw")
+        .then()
+        .statusCode(413)
+        .body("error", is("too-large"))
+        .body("size", is((int) RepositoryBrowseResource.MAX_RAW_BYTES + 1));
+  }
+
+  private static String blobId(byte[] bytes) {
+    try (ObjectInserter.Formatter formatter = new ObjectInserter.Formatter()) {
+      return formatter.idFor(Constants.OBJ_BLOB, bytes).name();
+    }
   }
 
   private static void commit(Path work, String message) throws Exception {
