@@ -152,6 +152,8 @@ components:
           type: string
         versionPins:
           type: boolean
+        rebuild:
+          type: boolean
     RepositoriesResponse:
       type: object
       properties:

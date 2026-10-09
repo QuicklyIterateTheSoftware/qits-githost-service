@@ -951,6 +951,106 @@ public class RepositoryMergeResourceTest {
         .statusCode(403);
   }
 
+  // --- rebuild: the target's tip is no head ----------------------------------------------
+
+  @Test
+  public void aRebuildFoldsTheSourcesAloneWithTheirParentsInRequestOrder() throws Exception {
+    String repo = seedThreeBranches();
+    JsonPath first =
+        merge(repo, rebuild(request("refs/heads/release/r1", "feature/a", "feature/b")))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(first.getString("outcome"), is("merged"));
+    assertThat(
+        first.getList("parents", String.class),
+        is(List.of(remoteSha(repo, "refs/heads/feature/a"), remoteSha(repo, "refs/heads/feature/b"))));
+
+    // feature/b moves. The old fold is NOT a head: the new fold has the same two parents' shapes,
+    // the new tip of b, and the old fold is not among them — no chain of merges.
+    Path work = Files.createTempDirectory("qits-merge-rebuild");
+    git(work, "clone", "-q", gitBase + "/" + repo, ".");
+    git(work, "checkout", "-q", "-B", "feature/b", "origin/feature/b");
+    write(work, "b-more.txt", "b\n");
+    commit(work, "b again");
+    push(work, repo, "feature/b");
+
+    JsonPath second =
+        merge(repo, rebuild(request("refs/heads/release/r1", "feature/a", "feature/b")))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(second.getString("outcome"), is("merged"));
+    assertThat(
+        second.getList("parents", String.class),
+        is(List.of(remoteSha(repo, "refs/heads/feature/a"), remoteSha(repo, "refs/heads/feature/b"))));
+    assertThat(second.getList("parents", String.class), not(hasItem(first.getString("sha"))));
+    assertThat(remoteSha(repo, "refs/heads/release/r1"), is(second.getString("sha")));
+    // The old fold is gone from the branch's history: the branch was rebuilt, not extended.
+    Path clone = clone(repo);
+    assertThat(
+        git(clone, "rev-list", "--count", "origin/main..origin/release/r1").trim(), is("4"));
+  }
+
+  @Test
+  public void aRebuildOfTheSameHeadsInTheSameOrderIsUnchanged() throws Exception {
+    String repo = seedThreeBranches();
+    Map<String, Object> body = rebuild(request("refs/heads/release/r2", "feature/a", "feature/b"));
+    String first = merge(repo, body).then().statusCode(200).extract().path("sha");
+
+    JsonPath again = merge(repo, body).then().statusCode(200).extract().jsonPath();
+    assertThat(again.getString("outcome"), is("unchanged"));
+    assertThat(again.getString("sha"), is(first));
+
+    // The order is part of the answer: reversed sources are a different fold, rebuilt.
+    JsonPath reversed =
+        merge(repo, rebuild(request("refs/heads/release/r2", "feature/b", "feature/a")))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(reversed.getString("outcome"), is("merged"));
+    assertThat(
+        reversed.getList("parents", String.class),
+        is(List.of(remoteSha(repo, "refs/heads/feature/b"), remoteSha(repo, "refs/heads/feature/a"))));
+  }
+
+  @Test
+  public void aRebuildWithOneEffectiveHeadMovesTheTargetOntoItEvenBackwards() throws Exception {
+    String repo = seedThreeBranches();
+    // First an octopus of a and b ...
+    merge(repo, rebuild(request("refs/heads/release/r3", "feature/a", "feature/b")))
+        .then()
+        .statusCode(200);
+    // ... then b leaves the request: main is contained in a, so a is the one head left, and the
+    // target lands on it although it is an ancestor of the old fold, not a descendant.
+    JsonPath answer =
+        merge(repo, rebuild(request("refs/heads/release/r3", "refs/heads/main", "feature/a")))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(answer.getString("outcome"), is("fast-forward"));
+    assertThat(answer.getList("skipped", String.class), contains("refs/heads/main"));
+    assertThat(answer.getString("sha"), is(remoteSha(repo, "refs/heads/feature/a")));
+    assertThat(remoteSha(repo, "refs/heads/release/r3"), is(remoteSha(repo, "refs/heads/feature/a")));
+
+    JsonPath again =
+        merge(repo, rebuild(request("refs/heads/release/r3", "refs/heads/main", "feature/a")))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(again.getString("outcome"), is("unchanged"));
+  }
+
+  private static Map<String, Object> rebuild(Map<String, Object> body) {
+    body.put("rebuild", true);
+    return body;
+  }
+
   // --- the plumbing -------------------------------------------------------------------------
 
   private io.restassured.response.Response merge(String repoId, Map<String, Object> body) {

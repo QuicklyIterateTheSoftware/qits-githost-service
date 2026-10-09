@@ -235,6 +235,16 @@ public class RepositoryRefsResource {
    *
    * <p>{@code projectId} and {@code repoName} are optional: the public address the move is
    * announced under (see "Every write is announced" above).
+   *
+   * <p>{@code rebuild} is optional and opt-in: absent or {@code false}, the target's own tip is the
+   * first head, as always. {@code true} leaves the target's tip <b>out</b> of the fold: the result
+   * is built from the sources alone and the target is moved onto it with a lease on the tip this
+   * call read, whether or not the old tip is an ancestor of the new one. It exists for a branch
+   * whose every state is a pure function of its sources, such as a release request's backing
+   * branch: folding onto the previous fold piles one merge per source move onto the branch for
+   * ever. The parents of a rebuilt merge commit are the effective sources in request order, so a
+   * reader can tell which parent is which source. A target whose tip already has exactly those
+   * parents, in that order, is {@code unchanged}: re-asking is still free.
    */
   @RegisterForReflection
   public record MergeRequest(
@@ -245,7 +255,21 @@ public class RepositoryRefsResource {
       List<Resolution> resolutions,
       String projectId,
       String repoName,
-      Boolean versionPins) {
+      Boolean versionPins,
+      Boolean rebuild) {
+    /** The form before the rebuild mode existed: the target's tip is always the first head. */
+    public MergeRequest(
+        String target,
+        List<String> sources,
+        String message,
+        Author author,
+        List<Resolution> resolutions,
+        String projectId,
+        String repoName,
+        Boolean versionPins) {
+      this(target, sources, message, author, resolutions, projectId, repoName, versionPins, null);
+    }
+
     /** The form before the version-pin rule existed: every text conflict is the caller's. */
     public MergeRequest(
         String target,
@@ -479,6 +503,12 @@ public class RepositoryRefsResource {
    * what makes the first call on a fresh {@code release/<id>} produce a plain N-parent octopus of
    * the sources alone.
    *
+   * <p><b>A rebuild leaves the target's tip out</b> ({@link MergeRequest#rebuild()}): every call is
+   * then that first call again — the sources alone — and the target is moved onto the result with
+   * the same lease as any other move, ancestor or not. Its idempotency is a parent comparison
+   * instead of containment: a tip whose parents are already the effective heads, in order, is
+   * {@code unchanged}.
+   *
    * <p><b>A head another head already contains is dropped</b>, exactly as {@code git merge} answers
    * "Already up to date" for one. Two consequences fall out of that single rule, and they are the
    * whole of this endpoint's idempotency:
@@ -608,10 +638,12 @@ public class RepositoryRefsResource {
       Ref targetRef = repo.getRefDatabase().exactRef(target);
       ObjectId targetOld = targetRef == null ? null : targetRef.getObjectId();
 
-      // HEAD first, exactly as git octopus orders its parents.
+      // HEAD first, exactly as git octopus orders its parents — unless the caller asked for a
+      // rebuild, where the target's tip is what is being replaced and is no head at all.
+      boolean rebuild = Boolean.TRUE.equals(request.rebuild());
       List<Head> heads = new ArrayList<>();
       Set<ObjectId> seen = new LinkedHashSet<>();
-      if (targetOld != null) {
+      if (targetOld != null && !rebuild) {
         heads.add(new Head(target, walk.parseCommit(targetOld)));
         seen.add(targetOld.toObjectId());
       }
@@ -684,6 +716,20 @@ public class RepositoryRefsResource {
                         skipped,
                         List.of()))
                 .build();
+      }
+
+      if (rebuild && targetOld != null) {
+        // A rebuild of the same heads in the same order is the fold the target already holds.
+        // Answered before any merging, so a re-ask costs a parent comparison and writes nothing.
+        RevCommit current = walk.parseCommit(targetOld);
+        List<String> currentParents = parentNames(current);
+        List<String> wanted = effective.stream().map(head -> head.commit().name()).toList();
+        if (currentParents.equals(wanted)) {
+          return Response.ok(
+                  new MergeResponse(
+                      target, current.name(), "unchanged", currentParents, skipped, List.of()))
+              .build();
+        }
       }
 
       boolean versionPins = Boolean.TRUE.equals(request.versionPins());
@@ -830,7 +876,14 @@ public class RepositoryRefsResource {
               withVersionTrailers(mergeMessage(request, effective), resolvedVersions));
       inserter.flush();
 
-      Response moved = moveRef(repo, origin, target, targetOld, merged, "octopus merge");
+      Response moved =
+          moveRef(
+              repo,
+              origin,
+              target,
+              targetOld,
+              merged,
+              rebuild ? "octopus merge (rebuilt from the sources)" : "octopus merge");
       if (moved != null) {
         return moved;
       }
