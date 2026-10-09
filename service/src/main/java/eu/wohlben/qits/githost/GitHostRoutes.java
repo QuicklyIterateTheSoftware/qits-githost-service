@@ -71,8 +71,12 @@ import org.jboss.logging.Logger;
  *   <li>{@link RefScopeHook}: which refs this credential may push. A credential with a {@code
  *       git_refs} list pushes only those refs; a workstation token and a person push only {@code
  *       refs/heads/external/*}; a client token without a scope pushes nothing unless it holds
- *       {@code qits:system}, and then it is not restricted. Roles do not widen a scope. The scope
- *       is captured on the event loop ({@link #snapshotPushScope}).
+ *       {@code qits:system}, and then it is not restricted. Roles do not widen a scope. Before all
+ *       of that, {@code refs/heads/maintenance/*} belongs to qits-maintenance: only its bump runs (a
+ *       {@code qits:ci-run} JWT with {@code context_kind} {@code ci-run} whose list names the branch
+ *       exactly) may create, update or delete one, and every other credential is refused there,
+ *       {@code qits:system} included. The scope is captured on the event loop ({@link
+ *       #snapshotPushScope}).
  *   <li>{@link ProtectedRefHook}, the default branch's seatbelt. It is not an authorization system
  *       — it guards exactly one ref per repo (the bare's {@code HEAD}) against a reflex {@code git
  *       push … main}, and it ships inert. See that class for the mechanism, the two push-option

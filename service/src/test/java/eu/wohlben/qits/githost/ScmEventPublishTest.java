@@ -425,7 +425,17 @@ public class ScmEventPublishTest {
     GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "maintenance/dependencies");
     GitHostFixture.commitFile(clone, "bump.txt", "bumped\n", "bump");
     String tip = GitHostFixture.head(clone);
-    GitHostFixture.git(clone, "git", "push", "-q", "origin", "maintenance/dependencies");
+    // Only a bump run may push a maintenance branch (RefScopeHook); the REST delete is not a push.
+    GitHostFixture.gitAs(
+        TestTokenMechanism.token(
+            "{\"sub\":\"dyn-ci-run-1\",\"groups\":[\"qits:ci-run\"],\"context_kind\":\"ci-run\","
+                + "\"git_refs\":[\"refs/heads/maintenance/dependencies\"]}"),
+        clone,
+        "git",
+        "push",
+        "-q",
+        "origin",
+        "maintenance/dependencies");
     forgetPreviousPublishes();
 
     given()

@@ -123,6 +123,19 @@ the credential's scope, never from its roles** — `RefScopeHook`, contract C3 o
 `qits:admin`, `qits:admin-agent` and `qits:system` widen none of rows 1 to 3. A push with no verified identity pushes
 nothing. The bootstrap ingress keeps row 2's check with the pattern it is configured with.
 
+**`refs/heads/maintenance/*` belongs to qits-maintenance**, and that check comes before every row
+above, row 4 included. Its bump runs (`MaintenanceBump`, `ReleaseRequestAutomation`) rebuild those
+branches and may force them, so a create, update, force-update or delete there is admitted only
+when the credential is a JWT that holds `qits:ci-run`, carries `context_kind: ci-run` (a
+`bootstrap-publish` commission shares the role and is refused), and lists that ref in `git_refs` as
+an **exact** entry — `refs/heads/maintenance/*` or `refs/heads/*` does not count. Everyone else — a
+platform service client with `qits:system`, an agent or workspace commission, a person, a
+workstation, the bootstrap ingress — is refused there, whole push and all:
+`refs/heads/maintenance/x is managed by qits-maintenance and may be pushed only by its bump runs:
+push your own branch and join the release request (qits release-request join)`. Work meant for the
+same release request goes on the pusher's own branch, which then joins it. The `qits:system` REST
+branch delete (below) is not a push and is not affected.
+
 - **A push is refused whole.** If one ref is outside the scope, every ref in the push is refused and
   nothing lands. Git prints the reason per ref — the ref and what the credential may push:
   `refs/heads/main is outside the push scope: a person's credential may push only refs/heads/external/*`.

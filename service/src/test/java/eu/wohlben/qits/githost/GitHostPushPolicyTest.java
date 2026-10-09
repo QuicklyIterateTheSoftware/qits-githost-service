@@ -42,7 +42,7 @@ public class GitHostPushPolicyTest {
 
   static final List<String> CI_RUN =
       TestTokenMechanism.token(
-          "{\"sub\":\"dyn-ci-run-1\",\"groups\":[\"qits:ci-run\"],"
+          "{\"sub\":\"dyn-ci-run-1\",\"groups\":[\"qits:ci-run\"],\"context_kind\":\"ci-run\","
               + "\"git_refs\":[\"refs/heads/maintenance/libs\"]}");
 
   static final List<String> AGENT_WITHOUT_LIST =

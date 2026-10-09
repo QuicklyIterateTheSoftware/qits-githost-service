@@ -35,6 +35,15 @@ import org.junit.jupiter.params.provider.MethodSource;
 class RefScopeHookTest {
 
   private static final String TICKET = "refs/heads/ticket/t-1";
+  private static final String MAINTENANCE = "refs/heads/maintenance/bump-1";
+  private static final String MAINTENANCE_REFUSAL =
+      MAINTENANCE
+          + " is managed by qits-maintenance and may be pushed only by its bump runs: push your own"
+          + " branch and join the release request (qits release-request join)";
+  private static final String MAINTENANCE_REFUSAL_OTHER =
+      "refs/heads/maintenance/other is managed by qits-maintenance and may be pushed only by its"
+          + " bump runs: push your own branch and join the release request (qits release-request"
+          + " join)";
   private static final String PERSON_REFUSAL =
       "refs/heads/main is outside the push scope: a person's credential may push only "
           + EXTERNAL_BRANCH_PATTERN;
@@ -353,6 +362,150 @@ class RefScopeHookTest {
     }
   }
 
+  // --- maintenance branches -------------------------------------------------------------------
+
+  @Test
+  void aBumpRunWithAnExactEntryMayCreateUpdateForceAndDeleteItsBranch() {
+    Scope scope = scopeOf(bumpRun(List.of(MAINTENANCE, TICKET)));
+
+    assertEquals(Rule.GIT_REFS, scope.rule());
+    assertEquals(List.of(MAINTENANCE), scope.maintenanceRefs());
+    for (ReceiveCommand command :
+        List.of(
+            create(MAINTENANCE), update(MAINTENANCE), forceUpdate(MAINTENANCE), delete(MAINTENANCE))) {
+      assertFalse(rejectOutsideScope(List.of(command), scope), command.getType().toString());
+      assertEquals(ReceiveCommand.Result.NOT_ATTEMPTED, command.getResult());
+    }
+    // Its list still bounds it everywhere else.
+    ReceiveCommand other = create("refs/heads/maintenance/other");
+    assertTrue(rejectOutsideScope(List.of(other), scope));
+    assertEquals(MAINTENANCE_REFUSAL_OTHER, other.getMessage());
+  }
+
+  @Test
+  void aBumpRunReadsContextKindAsQuarkusOidcHandsItOver() {
+    Scope scope =
+        scopeOf(
+            TestTokenMechanism.identity(
+                new JsonObject(
+                    "{\"sub\":\"run-1\",\"groups\":[\"qits:ci-run\"],\"context_kind\":\"ci-run\","
+                        + "\"git_refs\":[\"" + MAINTENANCE + "\"]}")));
+    assertTrue(scope.admitsMaintenance(MAINTENANCE));
+
+    Scope jsonString =
+        scopeOf(
+            jwt(
+                List.of("qits:ci-run"),
+                Map.of(
+                    "context_kind", Json.createValue("ci-run"),
+                    "git_refs", List.of(MAINTENANCE))));
+    assertTrue(jsonString.admitsMaintenance(MAINTENANCE));
+  }
+
+  @ParameterizedTest
+  @MethodSource("maintenancePrefixEntries")
+  void aPrefixEntryDoesNotCoverAMaintenanceBranch(String entry) {
+    Scope scope = scopeOf(bumpRun(List.of(entry)));
+
+    assertTrue(scope.maintenanceRefs().isEmpty());
+    assertMaintenanceRefused(scope);
+  }
+
+  static Stream<String> maintenancePrefixEntries() {
+    return Stream.of("refs/heads/maintenance/*", "refs/heads/*");
+  }
+
+  @Test
+  void aCiRunRoleWithoutTheCiRunContextKindIsRefused() {
+    for (Map<String, Object> claims :
+        List.<Map<String, Object>>of(
+            Map.of("git_refs", List.of(MAINTENANCE)),
+            Map.of("git_refs", List.of(MAINTENANCE), "context_kind", "bootstrap-publish"),
+            Map.of("git_refs", List.of(MAINTENANCE), "context_kind", List.of("ci-run")))) {
+      Scope scope = scopeOf(jwt(List.of("qits:ci-run"), claims));
+
+      assertTrue(scope.maintenanceRefs().isEmpty(), claims.toString());
+      assertMaintenanceRefused(scope);
+    }
+  }
+
+  @Test
+  void anAgentWhoseListNamesAMaintenanceBranchIsRefused() {
+    // An agent or workspace commission, roles inherited or not: the list alone is not enough.
+    for (List<String> roles :
+        List.<List<String>>of(
+            List.of("qits:agent"), List.of("qits:admin", "qits:system"), List.of())) {
+      Scope scope =
+          scopeOf(
+              jwt(roles, Map.of("context_kind", "ci-run", "git_refs", List.of(MAINTENANCE, TICKET))));
+
+      assertTrue(scope.maintenanceRefs().isEmpty(), roles.toString());
+      assertMaintenanceRefused(scope);
+      assertTrue(scope.permits(TICKET));
+    }
+  }
+
+  @Test
+  void aServiceClientIsRefusedAMaintenanceBranchButUnrestrictedElsewhere() {
+    Scope scope = scopeOf(jwt(List.of("qits:system", "qits:ci-run"), Map.of("context_kind", "ci-run")));
+
+    assertEquals(Rule.SERVICE_CLIENT, scope.rule());
+    assertTrue(scope.unrestricted());
+    assertMaintenanceRefused(scope);
+
+    ReceiveCommand main = forceUpdate("refs/heads/main");
+    ReceiveCommand tag = create("refs/tags/v1");
+    assertFalse(rejectOutsideScope(List.of(main, tag), scope));
+    assertEquals(ReceiveCommand.Result.NOT_ATTEMPTED, main.getResult());
+    assertEquals(ReceiveCommand.Result.NOT_ATTEMPTED, tag.getResult());
+  }
+
+  @Test
+  void noOtherScopeMayTouchAMaintenanceBranch() {
+    for (Scope scope :
+        List.of(
+            scopeOf(forwarded(List.of("qits:admin", "qits:system"))),
+            scopeOf(jwt(List.of("qits:ci-run"), Map.of("credential_type", "cli", "context_kind", "ci-run"))),
+            scopeOf(jwt(List.of("qits:git:external"), Map.of("git_ref_pattern", EXTERNAL_BRANCH_PATTERN))),
+            RefScopeHook.external(EXTERNAL_BRANCH_PATTERN),
+            RefScopeHook.nothing())) {
+      assertTrue(scope.maintenanceRefs().isEmpty(), scope.toString());
+      assertMaintenanceRefused(scope);
+    }
+  }
+
+  @Test
+  void aPushWithOneMaintenanceBranchIsRefusedWhole() {
+    ReceiveCommand allowed = create(TICKET);
+    ReceiveCommand maintenance = update(MAINTENANCE);
+
+    assertTrue(
+        rejectOutsideScope(
+            List.of(allowed, maintenance),
+            scopeOf(jwt(List.of("qits:agent"), Map.of("git_refs", List.of("refs/heads/*"))))));
+
+    assertEquals(ReceiveCommand.Result.REJECTED_OTHER_REASON, allowed.getResult());
+    assertEquals(
+        "refused with the whole push, because " + MAINTENANCE_REFUSAL, allowed.getMessage());
+    assertEquals(ReceiveCommand.Result.REJECTED_OTHER_REASON, maintenance.getResult());
+    assertEquals(MAINTENANCE_REFUSAL, maintenance.getMessage());
+  }
+
+  @Test
+  void refsOutsideTheMaintenanceBranchesAreUnchanged() {
+    // Only the refs/heads/maintenance/ prefix is owned: look-alikes keep their old answers.
+    Scope agent = scopeOf(jwt(List.of("qits:agent"), Map.of("git_refs", List.of("refs/heads/*"))));
+    for (String ref :
+        List.of("refs/heads/maintenance", "refs/heads/maintenance-x/a", "refs/heads/x/maintenance/a")) {
+      assertTrue(agent.admitsMaintenance(ref), ref);
+      assertFalse(rejectOutsideScope(List.of(create(ref)), agent), ref);
+    }
+    assertPersonScope(scopeOf(forwarded(List.of())));
+    assertFalse(
+        rejectOutsideScope(
+            List.of(create("refs/tags/maintenance/v1")), scopeOf(jwt(List.of("qits:system"), Map.of()))));
+  }
+
   // --- the whole push ---------------------------------------------------------------------------
 
   @Test
@@ -394,6 +547,18 @@ class RefScopeHookTest {
 
   // --- helpers ----------------------------------------------------------------------------------
 
+  /** Every kind of command on {@link #MAINTENANCE} is refused with the maintenance message. */
+  private static void assertMaintenanceRefused(Scope scope) {
+    assertFalse(scope.admitsMaintenance(MAINTENANCE));
+    for (ReceiveCommand command :
+        List.of(
+            create(MAINTENANCE), update(MAINTENANCE), forceUpdate(MAINTENANCE), delete(MAINTENANCE))) {
+      assertTrue(rejectOutsideScope(List.of(command), scope), command.getType().toString());
+      assertEquals(ReceiveCommand.Result.REJECTED_OTHER_REASON, command.getResult());
+      assertEquals(MAINTENANCE_REFUSAL, command.getMessage());
+    }
+  }
+
   private static void assertPersonScope(Scope scope) {
     assertFalse(rejectOutsideScope(List.of(create("refs/heads/external/alice/topic")), scope));
     ReceiveCommand main = create("refs/heads/main");
@@ -404,6 +569,26 @@ class RefScopeHookTest {
   private static ReceiveCommand create(String ref) {
     return new ReceiveCommand(
         ObjectId.zeroId(), ObjectId.fromString("1111111111111111111111111111111111111111"), ref);
+  }
+
+  private static ReceiveCommand update(String ref) {
+    return new ReceiveCommand(
+        ObjectId.fromString("1111111111111111111111111111111111111111"),
+        ObjectId.fromString("2222222222222222222222222222222222222222"),
+        ref);
+  }
+
+  private static ReceiveCommand forceUpdate(String ref) {
+    return new ReceiveCommand(
+        ObjectId.fromString("1111111111111111111111111111111111111111"),
+        ObjectId.fromString("2222222222222222222222222222222222222222"),
+        ref,
+        ReceiveCommand.Type.UPDATE_NONFASTFORWARD);
+  }
+
+  /** A bump run's credential: qits:ci-run, context_kind ci-run, and this list. */
+  private static SecurityIdentity bumpRun(List<String> gitRefs) {
+    return jwt(List.of("qits:ci-run"), Map.of("context_kind", "ci-run", "git_refs", gitRefs));
   }
 
   private static ReceiveCommand delete(String ref) {

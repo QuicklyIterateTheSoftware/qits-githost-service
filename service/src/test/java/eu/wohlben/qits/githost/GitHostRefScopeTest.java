@@ -58,6 +58,24 @@ public class GitHostRefScopeTest {
   static final List<String> STATIC_CLIENT =
       TestTokenMechanism.token("{\"sub\":\"qits-projects\",\"groups\":[\"qits:system\"]}");
 
+  /** The maintenance branch the bump run below owns. */
+  static final String MAINTENANCE = "refs/heads/maintenance/bump-1";
+
+  /** A qits-maintenance bump run: qits:ci-run, a ci-run commission, its branch named exactly. */
+  static final List<String> BUMP_RUN =
+      TestTokenMechanism.token(
+          "{\"sub\":\"dyn-ci-run-1\",\"groups\":[\"qits:ci-run\"],\"context_kind\":\"ci-run\","
+              + "\"git_refs\":[\"" + MAINTENANCE + "\"]}");
+
+  /** An agent whose list covers every branch, qits:system inherited from its owner. */
+  static final List<String> EVERY_BRANCH_AGENT =
+      TestTokenMechanism.token(
+          "{\"sub\":\"dyn-workspace-t-2\",\"groups\":[\"qits:agent\",\"qits:system\"],"
+              + "\"context_kind\":\"workspace\",\"git_refs\":[\"refs/heads/*\"]}");
+
+  private static final String MAINTENANCE_REFUSAL =
+      MAINTENANCE + " is managed by qits-maintenance and may be pushed only by its bump runs";
+
   private static final String PERSON_SCOPE =
       "a person's credential may push only refs/heads/external/*";
 
@@ -230,6 +248,95 @@ public class GitHostRefScopeTest {
     }
     assertEquals(main, sha(repoId, "refs/heads/main"));
     assertNull(sha(repoId, "refs/heads/external/alice/topic"));
+  }
+
+  @Test
+  public void aBumpRunCreatesFastForwardsForcesAndDeletesItsMaintenanceBranch() throws Exception {
+    String repoId = seed();
+    Path clone = cloneWithACommit(repoId);
+
+    GitHostFixture.gitAs(BUMP_RUN, clone, "git", "push", "origin", "HEAD:" + MAINTENANCE);
+    assertEquals(GitHostFixture.head(clone), sha(repoId, MAINTENANCE));
+
+    GitHostFixture.commitFile(clone, "more.txt", "more\n", "more");
+    GitHostFixture.gitAs(BUMP_RUN, clone, "git", "push", "origin", "HEAD:" + MAINTENANCE);
+    String fastForwarded = GitHostFixture.head(clone);
+    assertEquals(fastForwarded, sha(repoId, MAINTENANCE));
+
+    // A rebuild: the tip is rewritten and pushed with a lease, as the bump runs do.
+    GitHostFixture.rewriteTip(clone, "rebuilt");
+    String rebuilt = GitHostFixture.head(clone);
+    GitHostFixture.gitAs(
+        BUMP_RUN,
+        clone,
+        "git",
+        "push",
+        "--force-with-lease=" + MAINTENANCE + ":" + fastForwarded,
+        "origin",
+        "HEAD:" + MAINTENANCE);
+    assertEquals(rebuilt, sha(repoId, MAINTENANCE));
+
+    GitHostFixture.gitAs(BUMP_RUN, clone, "git", "push", "origin", ":" + MAINTENANCE);
+    assertNull(sha(repoId, MAINTENANCE));
+  }
+
+  @Test
+  public void aServiceClientIsRefusedAMaintenanceBranch() throws Exception {
+    String repoId = seed();
+    Path clone = cloneWithACommit(repoId);
+
+    String refusal =
+        GitHostFixture.gitExpectingFailureAs(
+            STATIC_CLIENT, clone, "git", "push", "origin", "HEAD:" + MAINTENANCE);
+
+    assertTrue(refusal.contains(MAINTENANCE_REFUSAL), refusal);
+    assertTrue(
+        refusal.contains("push your own branch and join the release request (qits release-request"
+            + " join)"),
+        refusal);
+    assertNull(sha(repoId, MAINTENANCE));
+  }
+
+  @Test
+  public void anAgentListingEveryBranchIsRefusedAMaintenanceBranchAndTheWholePush()
+      throws Exception {
+    String repoId = seed();
+    Path clone = cloneWithACommit(repoId);
+
+    String refusal =
+        GitHostFixture.gitExpectingFailureAs(
+            EVERY_BRANCH_AGENT,
+            clone,
+            "git",
+            "push",
+            "origin",
+            "HEAD:refs/heads/ticket/t-2",
+            "HEAD:" + MAINTENANCE);
+
+    assertTrue(refusal.contains(MAINTENANCE_REFUSAL), refusal);
+    assertTrue(
+        refusal.contains("refused with the whole push, because " + MAINTENANCE_REFUSAL), refusal);
+    assertNull(sha(repoId, MAINTENANCE));
+    assertNull(sha(repoId, "refs/heads/ticket/t-2"), "the allowed ref must not land either");
+
+    GitHostFixture.gitAs(EVERY_BRANCH_AGENT, clone, "git", "push", "origin", "HEAD:refs/heads/ticket/t-2");
+    assertEquals(GitHostFixture.head(clone), sha(repoId, "refs/heads/ticket/t-2"));
+  }
+
+  @Test
+  public void nobodyButTheBumpRunMayDeleteAMaintenanceBranch() throws Exception {
+    String repoId = seed();
+    Path clone = cloneWithACommit(repoId);
+    GitHostFixture.gitAs(BUMP_RUN, clone, "git", "push", "origin", "HEAD:" + MAINTENANCE);
+    String tip = sha(repoId, MAINTENANCE);
+
+    for (List<String> other :
+        List.of(STATIC_CLIENT, EVERY_BRANCH_AGENT, CLI_PERSON, BROWSER_SESSION, WORKSTATION)) {
+      String refusal =
+          GitHostFixture.gitExpectingFailureAs(other, clone, "git", "push", "origin", ":" + MAINTENANCE);
+      assertTrue(refusal.contains(MAINTENANCE_REFUSAL), refusal);
+      assertEquals(tip, sha(repoId, MAINTENANCE));
+    }
   }
 
   private void assertPersonPushesOnlyExternalBranches(List<String> person) throws Exception {

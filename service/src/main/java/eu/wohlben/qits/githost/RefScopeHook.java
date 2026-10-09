@@ -37,6 +37,19 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
  *       unrestricted just because it lost the owner's roles.
  * </ol>
  *
+ * <p>Before all four, one ref family has an owner: {@value #MAINTENANCE_BRANCH_PREFIX}{@code *}
+ * belongs to qits-maintenance, whose bump runs ({@code MaintenanceBump}, {@code
+ * ReleaseRequestAutomation}) rebuild those branches and may force them. A create, update or delete
+ * of such a ref is admitted only from a maintenance-flow pusher: a JWT holding {@value
+ * #CI_RUN_ROLE}, whose {@value #CONTEXT_KIND_CLAIM} is {@value #CI_RUN_CONTEXT_KIND} (so not a
+ * {@code bootstrap-publish} commission, which shares the role), and whose {@value #GIT_REFS_CLAIM}
+ * list names that ref as an exact entry. A prefix entry such as {@code refs/heads/maintenance/*} or
+ * {@code refs/heads/*} does not count. Everyone else is refused there, rule 4's unrestricted
+ * service clients included: work meant for the same release request goes on the pusher's own
+ * branch, which then joins the request ({@code qits release-request join}), so a bump run's
+ * rebuild never has to overwrite anybody's commits. The decision is captured into {@link
+ * Scope#maintenanceRefs()} with the rest of the scope.
+ *
  * <p>Only rule 4 with {@value #SYSTEM_ROLE} may use {@code -o qits.token=} ({@link
  * Scope#tokenBypassAllowed()}); see {@link ProtectedRefHook}. A push with no verified identity, or
  * with no scope captured at all, may push nothing.
@@ -63,6 +76,18 @@ final class RefScopeHook {
 
   /** What makes a client token without a scope a platform service client (rule 4). */
   static final String SYSTEM_ROLE = "qits:system";
+
+  /** The branches qits-maintenance owns; only its bump runs may push them. */
+  static final String MAINTENANCE_BRANCH_PREFIX = "refs/heads/maintenance/";
+
+  /** The role every CI run's credential holds, bump runs among them. */
+  static final String CI_RUN_ROLE = "qits:ci-run";
+
+  /** What the idp stamps a commission's kind as (idp's {@code ClaimNames.CONTEXT_KIND}). */
+  static final String CONTEXT_KIND_CLAIM = "context_kind";
+
+  /** A CI run's kind. {@code bootstrap-publish} holds {@link #CI_RUN_ROLE} too, but not this. */
+  static final String CI_RUN_CONTEXT_KIND = "ci-run";
 
   /** Every entry of a {@link #GIT_REFS_CLAIM} list starts with this. Anything else matches nothing. */
   private static final String BRANCH_PREFIX = "refs/heads/";
@@ -103,11 +128,28 @@ final class RefScopeHook {
    * @param refs the entries a ref must match; empty means no ref. Unused for {@link
    *     Rule#SERVICE_CLIENT}.
    * @param problem a refusal for every command whatever its ref, or {@code null}
+   * @param maintenanceRefs the refs under {@value #MAINTENANCE_BRANCH_PREFIX} this push may touch:
+   *     the exact entries of a maintenance-flow pusher's list, otherwise empty. Checked before
+   *     every rule, {@link Rule#SERVICE_CLIENT} included.
    */
-  record Scope(Rule rule, String holder, List<String> refs, String problem) {
+  record Scope(
+      Rule rule, String holder, List<String> refs, String problem, List<String> maintenanceRefs) {
 
     Scope {
       refs = List.copyOf(refs);
+      maintenanceRefs = List.copyOf(maintenanceRefs);
+    }
+
+    /** A scope that may touch no maintenance branch. */
+    Scope(Rule rule, String holder, List<String> refs, String problem) {
+      this(rule, holder, refs, problem, List.of());
+    }
+
+    /** Whether this push may touch {@code ref} as far as the maintenance branches go. */
+    boolean admitsMaintenance(String ref) {
+      return ref == null
+          || !ref.startsWith(MAINTENANCE_BRANCH_PREFIX)
+          || maintenanceRefs.contains(ref);
     }
 
     /** Whether nothing here restricts the push (rule 4). */
@@ -174,7 +216,17 @@ final class RefScopeHook {
       return person();
     }
     if (jwt.containsClaim(GIT_REFS_CLAIM)) {
-      return gitRefs(jwt.getClaim(GIT_REFS_CLAIM));
+      Scope scope = gitRefs(jwt.getClaim(GIT_REFS_CLAIM));
+      return maintenancePusher(identity, jwt)
+          ? new Scope(
+              scope.rule(),
+              scope.holder(),
+              scope.refs(),
+              scope.problem(),
+              scope.refs().stream()
+                  .filter(ref -> ref.startsWith(MAINTENANCE_BRANCH_PREFIX) && ref.indexOf('*') < 0)
+                  .toList())
+          : scope;
     }
     Optional<Object> pattern = jwt.claim(GIT_REF_PATTERN_CLAIM);
     if (pattern.isPresent() || identity.hasRole(EXTERNAL_GIT_ROLE)) {
@@ -188,6 +240,16 @@ final class RefScopeHook {
     }
     return new Scope(
         Rule.UNSCOPED_CLIENT, "this credential", List.of(), UNSCOPED_CLIENT_REFUSAL);
+  }
+
+  /**
+   * Whether this identity is one of qits-maintenance's bump runs: {@value #CI_RUN_ROLE} and a
+   * {@value #CONTEXT_KIND_CLAIM} of {@value #CI_RUN_CONTEXT_KIND}. Which maintenance branches it
+   * may touch is still its list's exact entries.
+   */
+  private static boolean maintenancePusher(SecurityIdentity identity, JsonWebToken jwt) {
+    String contextKind = jwt.claim(CONTEXT_KIND_CLAIM).map(RefScopeHook::text).orElse(null);
+    return identity.hasRole(CI_RUN_ROLE) && CI_RUN_CONTEXT_KIND.equals(contextKind);
   }
 
   private static Scope person() {
@@ -252,6 +314,9 @@ final class RefScopeHook {
    * @return {@code true} when every command was rejected, so the caller must not run further hooks
    */
   static boolean rejectOutsideScope(Collection<ReceiveCommand> commands, Scope scope) {
+    if (rejectMaintenance(commands, scope)) {
+      return true;
+    }
     if (scope.unrestricted()) {
       return false;
     }
@@ -281,5 +346,37 @@ final class RefScopeHook {
               : ref + " is outside the push scope: " + allowance);
     }
     return true;
+  }
+
+  /**
+   * Rejects every command when one touches a maintenance branch the scope does not admit. Runs
+   * before every rule, so even an unrestricted service client cannot write there.
+   */
+  private static boolean rejectMaintenance(Collection<ReceiveCommand> commands, Scope scope) {
+    String firstRefused =
+        commands.stream()
+            .map(ReceiveCommand::getRefName)
+            .filter(ref -> !scope.admitsMaintenance(ref))
+            .findFirst()
+            .orElse(null);
+    if (firstRefused == null) {
+      return false;
+    }
+    for (ReceiveCommand command : commands) {
+      String ref = command.getRefName();
+      command.setResult(
+          ReceiveCommand.Result.REJECTED_OTHER_REASON,
+          scope.admitsMaintenance(ref)
+              ? "refused with the whole push, because " + maintenanceRefusal(firstRefused)
+              : maintenanceRefusal(ref));
+    }
+    return true;
+  }
+
+  /** Why {@code ref} is refused, and what to do instead. */
+  static String maintenanceRefusal(String ref) {
+    return ref
+        + " is managed by qits-maintenance and may be pushed only by its bump runs: push your own"
+        + " branch and join the release request (qits release-request join)";
   }
 }
