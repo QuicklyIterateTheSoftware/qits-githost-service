@@ -1,0 +1,6 @@
+{
+  "path": ".config/qits/release.yml",
+  "binary": false,
+  "size": 24,
+  "content": "archetype: java-service\n"
+}

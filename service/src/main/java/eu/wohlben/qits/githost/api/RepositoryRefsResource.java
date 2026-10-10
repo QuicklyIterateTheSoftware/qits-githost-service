@@ -57,6 +57,7 @@ import org.eclipse.jgit.transport.ReceiveCommand;
 import org.eclipse.jgit.treewalk.EmptyTreeIterator;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilterGroup;
+import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.jboss.logging.Logger;
 
 /**
@@ -553,6 +554,7 @@ public class RepositoryRefsResource {
    * deployed, and it reaches it through here). {@code ProtectedRefHook} guards the <i>push</i> door
    * against reflex; this door is only reachable by a machine that was asked for by name.
    */
+  @Operation(operationId = "mergeBranches", summary = "Fold branches into a target branch")
   @POST
   @Path("/merges")
   @Consumes(MediaType.APPLICATION_JSON)
@@ -920,6 +922,7 @@ public class RepositoryRefsResource {
    * version carries who made it and when. A lightweight tag would be a ref this endpoint could not
    * tell from a branch tip.
    */
+  @Operation(operationId = "createTag", summary = "Create an annotated tag")
   @POST
   @Path("/tags")
   @Consumes(MediaType.APPLICATION_JSON)
@@ -1011,6 +1014,7 @@ public class RepositoryRefsResource {
    * <p>The ref moves as a compare-and-swap against the tip this request read, so a branch that moved
    * underneath a slow caller is a 409 rather than a lost commit.
    */
+  @Operation(operationId = "commitFiles", summary = "Commit file changes onto a branch")
   @POST
   @Path("/commits")
   @Consumes(MediaType.APPLICATION_JSON)
@@ -1165,6 +1169,7 @@ public class RepositoryRefsResource {
    * not opened to {@code qits:agent}: an agent that may read a ref may fetch it and answer this
    * itself, and every door here is one a machine was asked for by name.
    */
+  @Operation(operationId = "containsCommit", summary = "Whether one commit is an ancestor of another")
   @GET
   @Path("/contains")
   public Response contains(
@@ -1254,6 +1259,7 @@ public class RepositoryRefsResource {
    * carries no body — naming the address the deletion is announced under as {@code
    * SCMDeleteBranch}.
    */
+  @Operation(operationId = "deleteBranch", summary = "Delete a branch")
   @DELETE
   @Path("/branches/{name:.+}")
   public Response deleteBranch(

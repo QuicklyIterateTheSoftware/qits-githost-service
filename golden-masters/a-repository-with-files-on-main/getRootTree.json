@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "name": ".config",
+      "type": "tree"
+    },
+    {
+      "name": "README.md",
+      "type": "blob"
+    },
+    {
+      "name": "package.json",
+      "type": "blob"
+    },
+    {
+      "name": "pom.xml",
+      "type": "blob"
+    }
+  ]
+}

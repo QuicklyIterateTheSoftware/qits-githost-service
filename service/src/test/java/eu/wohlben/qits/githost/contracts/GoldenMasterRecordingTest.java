@@ -11,6 +11,8 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.Response;
 import jakarta.inject.Inject;
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -51,12 +53,20 @@ class GoldenMasterRecordingTest {
   /**
    * One recorded interaction.
    *
+   * @param path the route, a {@code ?query} after it recorded apart as the index's {@code query}
    * @param listFilteredTo the array (a {@code $.a.b} path) reduced to the entries the state created,
    *     or null — the index's {@code frozen.listFilteredTo}
    * @param sortedBy for an array the provider answers in no guaranteed order: {@code
    *     <$.path-to-array>:<field.path in each entry>}, sorted by that field's (seed-fixed) value
    *     before freezing, so ids are numbered in a stable order. Null when the order is the
    *     provider's own.
+   * @param requestBody the JSON a write sends, recorded into the index as the operation's {@code
+   *     body}; null for an operation that takes none (the served openapi says which, and the
+   *     recording fails on a mismatch). A quoted {@code "{param}"} in it is expanded from the
+   *     state's params and recorded unexpanded.
+   * @param headers the response headers consumers read, recorded (frozen) into the index's {@code
+   *     headers}
+   * @param rawBody the answer is bytes, not JSON: no file is recorded and the body stays unbound
    */
   record Interaction(
       String state,
@@ -65,7 +75,50 @@ class GoldenMasterRecordingTest {
       String path,
       int status,
       String listFilteredTo,
-      String sortedBy) {}
+      String sortedBy,
+      String requestBody,
+      List<String> headers,
+      boolean rawBody) {
+
+    /** A read: no request body, no header recorded, a JSON answer (or none). */
+    Interaction(
+        String state,
+        String operationId,
+        String method,
+        String path,
+        int status,
+        String listFilteredTo,
+        String sortedBy) {
+      this(state, operationId, method, path, status, listFilteredTo, sortedBy, null, List.of(), false);
+    }
+  }
+
+  /** The one response header the raw content reads carry: the commit the revision resolved to. */
+  static final String COMMIT_SHA_HEADER = "Git-Commit-Sha";
+
+  /** Who the release writes are made by, as qits-projects sends it. */
+  private static final String AUTHOR =
+      "\"author\":{\"name\":\"qits-projects\",\"email\":\"qits-projects@qits.internal\"}";
+
+  private static final String COMMIT_BODY =
+      "{\"ref\":\"refs/heads/main\",\"message\":\"release(2026.101.120000): stamp the version\","
+          + "\"files\":{\"pom.xml\":\"<project>\\n  <version>2026.101.120000</version>\\n</project>\\n\"},"
+          + AUTHOR
+          + ",\"projectId\":\"{projectId}\",\"repoName\":\"{repoName}\"}";
+
+  private static final String TAG_BODY =
+      "{\"name\":\"2026.101.120000\",\"sha\":\"{sha}\",\"message\":\"release 2026.101.120000\","
+          + AUTHOR
+          + ",\"projectId\":\"{projectId}\",\"repoName\":\"{repoName}\"}";
+
+  private static final String MERGE_BODY =
+      "{\"target\":\"{target}\",\"sources\":[\"{source}\"],\"message\":\"fold the branch\","
+          + AUTHOR
+          + ",\"projectId\":\"{projectId}\",\"repoName\":\"{repoName}\",\"versionPins\":true}";
+
+  private static final String NAMED = "/git/{projectId}/{repoName}";
+
+  private static final String BY_ID = "/githost/api/repositories/{repositoryId}";
 
   static final List<Interaction> INTERACTIONS =
       List.of(
@@ -113,7 +166,7 @@ class GoldenMasterRecordingTest {
               ProviderStates.A_REPOSITORY_WITH_COUNTED_LINES,
               "getLoc",
               "GET",
-              "/githost/api/repositories/{repositoryId}/loc",
+              BY_ID + "/loc",
               200,
               null,
               null),
@@ -121,13 +174,214 @@ class GoldenMasterRecordingTest {
               ProviderStates.NO_REPOSITORY_WITH_THE_GIVEN_ID,
               "getLoc",
               "GET",
-              "/githost/api/repositories/{repositoryId}/loc",
+              BY_ID + "/loc",
               404,
               null,
-              null));
+              null),
+          // --- the repository lifecycle, id-addressed (qits-projects, qits-bootstrap-cli) -------
+          write(
+              ProviderStates.NO_REPOSITORY_WITH_THE_GIVEN_ID,
+              "createRepository",
+              "PUT",
+              "/git/{repositoryId}",
+              201,
+              "{\"defaultBranch\":\"main\"}"),
+          write(
+              ProviderStates.A_REPOSITORY_EXISTS,
+              "createRepository",
+              "PUT",
+              "/git/{repositoryId}",
+              200,
+              "{\"defaultBranch\":\"main\"}"),
+          new Interaction(
+              ProviderStates.A_REPOSITORY_EXISTS,
+              "describeRepository",
+              "GET",
+              "/git/{repositoryId}",
+              200,
+              null,
+              null),
+          new Interaction(
+              ProviderStates.NO_REPOSITORY_WITH_THE_GIVEN_ID,
+              "describeRepository",
+              "GET",
+              "/git/{repositoryId}",
+              404,
+              null,
+              null),
+          write(
+              ProviderStates.A_REPOSITORY_EXISTS,
+              "deleteRepository",
+              "DELETE",
+              "/git/{repositoryId}",
+              204,
+              null),
+          write(
+              ProviderStates.NO_REPOSITORY_WITH_THE_GIVEN_ID,
+              "deleteRepository",
+              "DELETE",
+              "/git/{repositoryId}",
+              404,
+              null),
+          new Interaction(
+              ProviderStates.TWO_REPOSITORIES,
+              "listGitRepositories",
+              "GET",
+              "/git",
+              200,
+              "$.repositories",
+              null),
+          // --- the raw content reads, name-addressed (qits-ci, qits-maintenance, qits-projects,
+          // qits-deployments): status and Git-Commit-Sha, plus the entries where the answer is JSON
+          raw(
+              ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN,
+              "getRootTree",
+              NAMED + "/tree/{sha}",
+              200,
+              false),
+          raw(
+              ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN,
+              "getTree",
+              NAMED + "/tree/{rev}/{directory}",
+              200,
+              false),
+          raw(
+              ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN,
+              "getBlob",
+              NAMED + "/blob/{rev}/{path}",
+              200,
+              true),
+          raw(
+              ProviderStates.A_WRAPPER_REPOSITORY_WITH_A_SUBMODULE,
+              "getTree",
+              NAMED + "/tree/{rev}/{directory}",
+              200,
+              false),
+          raw(
+              ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_COMMIT,
+              "getRootTree",
+              NAMED + "/tree/{sha}",
+              404,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_PATH,
+              "getTree",
+              NAMED + "/tree/{rev}/{directory}",
+              404,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_PATH,
+              "getBlob",
+              NAMED + "/blob/{rev}/{path}",
+              404,
+              true),
+          // --- the REST reads and ref writes (qits-projects, qits-maintenance) ------------------
+          new Interaction(
+              ProviderStates.A_REPOSITORY_WITH_A_SIDE_BRANCH,
+              "getRepository",
+              "GET",
+              BY_ID,
+              200,
+              null,
+              null),
+          new Interaction(
+              ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN,
+              "getRepositoryTree",
+              "GET",
+              BY_ID + "/tree?rev={rev}",
+              200,
+              null,
+              null),
+          new Interaction(
+              ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN,
+              "getRepositoryFile",
+              "GET",
+              BY_ID + "/file?rev={rev}&path={path}",
+              200,
+              null,
+              null),
+          new Interaction(
+              ProviderStates.A_REPOSITORY_WHOSE_MAIN_CONTAINS_A_COMMIT,
+              "containsCommit",
+              "GET",
+              BY_ID + "/contains?commit={commit}&in={in}",
+              200,
+              null,
+              null),
+          write(
+              ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN,
+              "commitFiles",
+              "POST",
+              BY_ID + "/commits",
+              200,
+              COMMIT_BODY),
+          write(
+              ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN,
+              "createTag",
+              "POST",
+              BY_ID + "/tags",
+              201,
+              TAG_BODY),
+          write(
+              ProviderStates.A_REPOSITORY_WITH_A_SIDE_BRANCH,
+              "deleteBranch",
+              "DELETE",
+              BY_ID + "/branches/{branch}?projectId={projectId}&repoName={repoName}",
+              204,
+              null),
+          write(
+              ProviderStates.A_REPOSITORY_WITHOUT_THE_GIVEN_BRANCH,
+              "deleteBranch",
+              "DELETE",
+              BY_ID + "/branches/{branch}?projectId={projectId}&repoName={repoName}",
+              404,
+              null),
+          write(
+              ProviderStates.A_REPOSITORY_WITH_A_BRANCH_TO_FOLD,
+              "mergeBranches",
+              "POST",
+              BY_ID + "/merges",
+              200,
+              MERGE_BODY),
+          write(
+              ProviderStates.A_REPOSITORY_WITH_A_BRANCH_THAT_CONFLICTS_WITH_MAIN,
+              "mergeBranches",
+              "POST",
+              BY_ID + "/merges",
+              409,
+              MERGE_BODY));
+
+  /** A write: {@code body} null for one that takes none. */
+  private static Interaction write(
+      String state, String operationId, String method, String path, int status, String body) {
+    return new Interaction(
+        state, operationId, method, path, status, null, null, body, List.of(), false);
+  }
+
+  /**
+   * A raw content read. A 200 records {@value #COMMIT_SHA_HEADER}; {@code rawBody} for an answer
+   * that is not JSON (the blob's bytes, an error's empty body).
+   */
+  private static Interaction raw(
+      String state, String operationId, String path, int status, boolean rawBody) {
+    return new Interaction(
+        state,
+        operationId,
+        "GET",
+        path,
+        status,
+        null,
+        null,
+        null,
+        status == 200 ? List.of(COMMIT_SHA_HEADER) : List.of(),
+        rawBody);
+  }
 
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final Pattern TEMPLATE_PARAM = Pattern.compile("\\{([^}]+)}");
+
+  /** A param in a request body: a quoted {@code "{name}"}, so the JSON's own braces never match. */
+  private static final Pattern BODY_PARAM = Pattern.compile("\"\\{([A-Za-z][A-Za-z0-9]*)}\"");
 
   @Inject ProviderStates states;
 
@@ -142,7 +396,15 @@ class GoldenMasterRecordingTest {
     Map<String, ObjectNode> indexStates = new TreeMap<>();
     Map<String, Map<String, ObjectNode>> indexOperations = new TreeMap<>();
 
+    Set<String> takesBody = operationsTakingABody();
     for (Interaction interaction : INTERACTIONS) {
+      if ((interaction.requestBody() != null) != takesBody.contains(interaction.operationId())) {
+        failures.add(
+            interaction.operationId()
+                + (interaction.requestBody() != null
+                    ? " takes no request body, but the recording sends one: record null."
+                    : " takes a request body, but the recording sends none."));
+      }
       Recorded recorded = record(interaction);
       String slug = ProviderStates.slug(interaction.state());
       String file = slug + "/" + interaction.operationId() + ".json";
@@ -162,13 +424,42 @@ class GoldenMasterRecordingTest {
       ObjectNode operation = JsonNodeFactory.instance.objectNode();
       operation.put("operationId", interaction.operationId());
       operation.put("method", interaction.method());
-      operation.put("path", interaction.path());
+      // The path is the route alone and the query its own object, as the consumers' pacts send it.
+      int at = interaction.path().indexOf('?');
+      operation.put("path", at < 0 ? interaction.path() : interaction.path().substring(0, at));
+      if (at >= 0) {
+        ObjectNode query = operation.putObject("query");
+        for (String pair : interaction.path().substring(at + 1).split("&")) {
+          int eq = pair.indexOf('=');
+          query.put(
+              URLDecoder.decode(eq < 0 ? pair : pair.substring(0, eq), StandardCharsets.UTF_8),
+              eq < 0 ? "" : URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8));
+        }
+      }
+      if (interaction.requestBody() != null) {
+        operation.set("body", JSON.readTree(interaction.requestBody()));
+      }
       operation.put("status", interaction.status());
-      operation.put("file", file);
+      if (!recorded.headers().isEmpty()) {
+        operation.set("headers", recorded.headers());
+      }
+      // No file for an answer with no JSON body: a 204, an empty error, a blob's bytes.
+      if (recorded.body() == null) {
+        operation.putNull("file");
+      } else {
+        operation.put("file", file);
+      }
       ObjectNode frozen = operation.putObject("frozen");
       frozen.set("ids", strings(recorded.freezer().idPaths()));
       frozen.set("instants", strings(recorded.freezer().instantPaths()));
       frozen.set("strings", strings(recorded.freezer().stringPaths()));
+      if (!recorded.freezer().shaPaths().isEmpty()) {
+        // Additive, and only where a sha was frozen: every other entry stays as it was.
+        frozen.set("shas", strings(recorded.freezer().shaPaths()));
+      }
+      if (!recorded.headers().isEmpty()) {
+        frozen.set("headers", strings(new ArrayList<>(interaction.headers())));
+      }
       if (interaction.listFilteredTo() == null) {
         frozen.putNull("listFilteredTo");
       } else {
@@ -181,8 +472,10 @@ class GoldenMasterRecordingTest {
         failures.add("Duplicate interaction " + file);
       }
 
-      written.add(file);
-      check(dir.resolve(file), GoldenJson.render(recorded.body()), update, failures);
+      if (recorded.body() != null) {
+        written.add(file);
+        check(dir.resolve(file), GoldenJson.render(recorded.body()), update, failures);
+      }
     }
 
     ObjectNode index = JsonNodeFactory.instance.objectNode();
@@ -225,14 +518,24 @@ class GoldenMasterRecordingTest {
   }
 
   /** One interaction's frozen answer, its frozen params and what was frozen where. */
-  record Recorded(JsonNode body, ObjectNode params, Freezer freezer) {}
+  record Recorded(JsonNode body, ObjectNode headers, ObjectNode params, Freezer freezer) {}
 
   private Recorded record(Interaction interaction) throws IOException {
     ProviderStates.Setup setup = states.setUp(interaction.state());
     Map<String, String> params = setup.params();
 
+    var request = given();
+    if (interaction.requestBody() != null) {
+      request =
+          request
+              .contentType("application/json")
+              .body(expand(interaction.requestBody(), params, BODY_PARAM));
+    } else {
+      // As a body-less call is sent: RestAssured would otherwise add a form content type.
+      request = request.noContentType();
+    }
     Response response =
-        given().when().request(interaction.method(), expand(interaction.path(), params));
+        request.when().request(interaction.method(), expand(interaction.path(), params));
     String raw = response.asString();
     if (response.statusCode() != interaction.status()) {
       throw new AssertionError(
@@ -248,13 +551,27 @@ class GoldenMasterRecordingTest {
               + ": "
               + raw);
     }
-    JsonNode body = JSON.readTree(raw);
-    body = recordable(body, interaction, params.values(), setup.uniqueTokens());
-
     Freezer freezer = new Freezer().seed(params.values()).uniqueTokens(setup.uniqueTokens());
     ObjectNode frozenParams = JsonNodeFactory.instance.objectNode();
     params.forEach((k, v) -> frozenParams.put(k, freezer.freezeParam(v)));
-    return new Recorded(freezer.freeze(body), frozenParams, freezer);
+
+    JsonNode body = null;
+    if (!interaction.rawBody() && !raw.isBlank()) {
+      body =
+          freezer.freeze(
+              recordable(JSON.readTree(raw), interaction, params.values(), setup.uniqueTokens()));
+    }
+    ObjectNode headers = JsonNodeFactory.instance.objectNode();
+    for (String name : interaction.headers()) {
+      String value = response.header(name);
+      if (value == null) {
+        throw new AssertionError(
+            interaction.operationId() + " in state '" + interaction.state() + "' carries no "
+                + name + " header");
+      }
+      headers.put(name, freezer.freezeHeader(value));
+    }
+    return new Recorded(body, headers, frozenParams, freezer);
   }
 
   /**
@@ -323,7 +640,11 @@ class GoldenMasterRecordingTest {
   }
 
   private static String expand(String template, Map<String, String> params) {
-    Matcher m = TEMPLATE_PARAM.matcher(template);
+    return expand(template, params, TEMPLATE_PARAM);
+  }
+
+  private static String expand(String template, Map<String, String> params, Pattern param) {
+    Matcher m = param.matcher(template);
     StringBuilder out = new StringBuilder();
     while (m.find()) {
       String value = params.get(m.group(1));
@@ -331,10 +652,36 @@ class GoldenMasterRecordingTest {
         throw new IllegalStateException(
             "Path " + template + " names {" + m.group(1) + "}, which the state does not return");
       }
-      m.appendReplacement(out, Matcher.quoteReplacement(value));
+      String replacement =
+          param == BODY_PARAM ? JSON.getNodeFactory().textNode(value).toString() : value;
+      m.appendReplacement(out, Matcher.quoteReplacement(replacement));
     }
     m.appendTail(out);
     return out.toString();
+  }
+
+  /** The operationIds whose operation declares a request body, read off the served openapi. */
+  private static Set<String> operationsTakingABody() throws IOException {
+    JsonNode paths =
+        JSON.readTree(
+                given()
+                    .when()
+                    .get("/githost/q/openapi?format=json")
+                    .then()
+                    .statusCode(200)
+                    .extract()
+                    .asString())
+            .path("paths");
+    Set<String> ids = new TreeSet<>();
+    paths.forEach(
+        path ->
+            path.forEach(
+                operation -> {
+                  if (operation.has("operationId") && operation.has("requestBody")) {
+                    ids.add(operation.get("operationId").asText());
+                  }
+                }));
+    return ids;
   }
 
   private static ArrayNode strings(List<String> values) {

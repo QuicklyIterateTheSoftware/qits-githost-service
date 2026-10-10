@@ -3,7 +3,107 @@
 ---
 openapi: 3.1.0
 components:
+  parameters:
+    repoId:
+      name: repoId
+      in: path
+      required: true
+      schema:
+        type: string
+    projectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+    repoName:
+      name: repoName
+      in: path
+      required: true
+      schema:
+        type: string
+    rev:
+      name: rev
+      in: path
+      required: true
+      description: "A branch, a tag or a full commit sha"
+      schema:
+        type: string
+    path:
+      name: path
+      in: path
+      required: true
+      description: A repository-relative path; it may hold slashes
+      schema:
+        type: string
+  headers:
+    Git-Commit-Sha:
+      description: The commit the revision resolved to
+      schema:
+        type: string
+  responses:
+    Tree:
+      description: "The directory's entries, in the tree's own order"
+      headers:
+        Git-Commit-Sha:
+          $ref: "#/components/headers/Git-Commit-Sha"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GitTree"
+    Blob:
+      description: The file's bytes
+      headers:
+        Git-Commit-Sha:
+          $ref: "#/components/headers/Git-Commit-Sha"
+      content:
+        application/octet-stream:
+          schema:
+            type: string
+            format: binary
   schemas:
+    GitRepositoryList:
+      type: object
+      properties:
+        repositories:
+          type: array
+          items:
+            type: string
+    CreateGitRepository:
+      type: object
+      properties:
+        defaultBranch:
+          type: string
+    GitRepository:
+      type: object
+      properties:
+        repoId:
+          type: string
+        defaultBranch:
+          type: string
+    GitTree:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/GitTreeEntry"
+    GitTreeEntry:
+      type: object
+      description: A gitlink (type commit) alone carries sha and mode
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+          - tree
+          - blob
+          - commit
+        sha:
+          type: string
+        mode:
+          type: string
     Author:
       type: object
       properties:
@@ -208,6 +308,143 @@ components:
       openIdConnectUrl: http://dev-qits-platform-idp:8080/idp/.well-known/openid-configuration
       description: Authentication
 paths:
+  /git:
+    get:
+      operationId: listGitRepositories
+      summary: "Every repository this host serves, by storage id, sorted"
+      responses:
+        "200":
+          description: The storage ids
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitRepositoryList"
+  /git/{repoId}:
+    parameters:
+    - $ref: "#/components/parameters/repoId"
+    put:
+      operationId: createRepository
+      summary: "Create the repository, idempotently"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGitRepository"
+      responses:
+        "201":
+          description: Created by this call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitRepository"
+        "200":
+          description: Already there
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitRepository"
+        "400":
+          description: An invalid id or default branch
+    get:
+      operationId: describeRepository
+      summary: The repository's id and default branch
+      responses:
+        "200":
+          description: The repository exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitRepository"
+        "404":
+          description: No such repository
+    delete:
+      operationId: deleteRepository
+      summary: Delete the repository
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: No such repository
+  /git/{projectId}/{repoName}/tree/{rev}:
+    parameters:
+    - $ref: "#/components/parameters/projectId"
+    - $ref: "#/components/parameters/repoName"
+    - $ref: "#/components/parameters/rev"
+    get:
+      operationId: getRootTree
+      summary: The root directory's entries at a revision
+      responses:
+        "200":
+          $ref: "#/components/responses/Tree"
+        "404":
+          description: No such repository or revision
+  /git/{projectId}/{repoName}/tree/{rev}/{path}:
+    parameters:
+    - $ref: "#/components/parameters/projectId"
+    - $ref: "#/components/parameters/repoName"
+    - $ref: "#/components/parameters/rev"
+    - $ref: "#/components/parameters/path"
+    get:
+      operationId: getTree
+      summary: A directory's entries at a revision
+      responses:
+        "200":
+          $ref: "#/components/responses/Tree"
+        "404":
+          description: "No such repository, revision or directory"
+  /git/{projectId}/{repoName}/blob/{rev}/{path}:
+    parameters:
+    - $ref: "#/components/parameters/projectId"
+    - $ref: "#/components/parameters/repoName"
+    - $ref: "#/components/parameters/rev"
+    - $ref: "#/components/parameters/path"
+    get:
+      operationId: getBlob
+      summary: A file's raw bytes at a revision
+      responses:
+        "200":
+          $ref: "#/components/responses/Blob"
+        "404":
+          description: "No such repository, revision or file"
+  /git/{repoId}/tree/{rev}:
+    parameters:
+    - $ref: "#/components/parameters/repoId"
+    - $ref: "#/components/parameters/rev"
+    get:
+      operationId: getRootTreeById
+      summary: "getRootTree, addressed by storage id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Tree"
+        "404":
+          description: No such repository or revision
+  /git/{repoId}/tree/{rev}/{path}:
+    parameters:
+    - $ref: "#/components/parameters/repoId"
+    - $ref: "#/components/parameters/rev"
+    - $ref: "#/components/parameters/path"
+    get:
+      operationId: getTreeById
+      summary: "getTree, addressed by storage id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Tree"
+        "404":
+          description: "No such repository, revision or directory"
+  /git/{repoId}/blob/{rev}/{path}:
+    parameters:
+    - $ref: "#/components/parameters/repoId"
+    - $ref: "#/components/parameters/rev"
+    - $ref: "#/components/parameters/path"
+    get:
+      operationId: getBlobById
+      summary: "getBlob, addressed by storage id"
+      responses:
+        "200":
+          $ref: "#/components/responses/Blob"
+        "404":
+          description: "No such repository, revision or file"
   /githost/api/loc:
     get:
       summary: Lines of code of every repository's default branch
@@ -247,6 +484,8 @@ paths:
       - Repositories Resource
   /githost/api/repositories/{repoId}:
     get:
+      summary: The repository's default branch and branches
+      operationId: getRepository
       parameters:
       - name: repoId
         in: path
@@ -259,11 +498,12 @@ paths:
           content:
             application/json:
               schema: {}
-      summary: Describe
       tags:
       - Repository Browse Resource
   /githost/api/repositories/{repoId}/branches/{name}:
     delete:
+      summary: Delete a branch
+      operationId: deleteBranch
       parameters:
       - name: name
         in: path
@@ -294,7 +534,6 @@ paths:
           description: Not Authorized
         "403":
           description: Not Allowed
-      summary: Delete Branch
       tags:
       - Repository Refs Resource
       security:
@@ -360,6 +599,8 @@ paths:
         - qits:agent
   /githost/api/repositories/{repoId}/commits:
     post:
+      summary: Commit file changes onto a branch
+      operationId: commitFiles
       parameters:
       - name: repoId
         in: path
@@ -384,7 +625,6 @@ paths:
           description: Not Allowed
         "400":
           description: Bad Request
-      summary: Commit
       tags:
       - Repository Refs Resource
       security:
@@ -392,6 +632,8 @@ paths:
         - qits:system
   /githost/api/repositories/{repoId}/contains:
     get:
+      summary: Whether one commit is an ancestor of another
+      operationId: containsCommit
       parameters:
       - name: repoId
         in: path
@@ -416,7 +658,6 @@ paths:
           description: Not Authorized
         "403":
           description: Not Allowed
-      summary: Contains
       tags:
       - Repository Refs Resource
       security:
@@ -424,6 +665,8 @@ paths:
         - qits:system
   /githost/api/repositories/{repoId}/file:
     get:
+      summary: "One file's content at a revision, as text"
+      operationId: getRepositoryFile
       parameters:
       - name: repoId
         in: path
@@ -444,7 +687,6 @@ paths:
           content:
             application/json:
               schema: {}
-      summary: File
       tags:
       - Repository Browse Resource
   /githost/api/repositories/{repoId}/loc:
@@ -479,6 +721,8 @@ paths:
       - Repository Browse Resource
   /githost/api/repositories/{repoId}/merges:
     post:
+      summary: Fold branches into a target branch
+      operationId: mergeBranches
       parameters:
       - name: repoId
         in: path
@@ -503,7 +747,6 @@ paths:
           description: Not Allowed
         "400":
           description: Bad Request
-      summary: Merge
       tags:
       - Repository Refs Resource
       security:
@@ -580,6 +823,8 @@ paths:
       tags:
       - Repository Browse Resource
     post:
+      summary: Create an annotated tag
+      operationId: createTag
       parameters:
       - name: repoId
         in: path
@@ -604,7 +849,6 @@ paths:
           description: Not Allowed
         "400":
           description: Bad Request
-      summary: Tag
       tags:
       - Repository Refs Resource
       security:
@@ -612,6 +856,8 @@ paths:
         - qits:system
   /githost/api/repositories/{repoId}/tree:
     get:
+      summary: Every file path at a revision
+      operationId: getRepositoryTree
       parameters:
       - name: repoId
         in: path
@@ -628,7 +874,6 @@ paths:
           content:
             application/json:
               schema: {}
-      summary: Tree
       tags:
       - Repository Browse Resource
 info:
