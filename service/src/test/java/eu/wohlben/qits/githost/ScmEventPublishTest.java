@@ -420,35 +420,38 @@ public class ScmEventPublishTest {
   public void aBranchDeletedThroughTheDoorAnnouncesTheDeletion() throws Exception {
     // A release deletes the branches it consumed through this door; qits-maintenance ends a bump's
     // branch row on hearing it. The address rides the query string, because a DELETE has no body.
+    // The branch is one of qits-maintenance's own automation branches (qits-1133): that is the one
+    // shape left reachable by a push at all, and this test is about the REST delete door, not
+    // about which maintenance branches RefScopeHook admits.
+    String branch = "maintenance/automations/dependency-bump/req-1";
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     Path clone = GitHostFixture.clone(gitBase, repoId);
-    GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "maintenance/dependencies");
+    GitHostFixture.git(clone, "git", "checkout", "-q", "-b", branch);
     GitHostFixture.commitFile(clone, "bump.txt", "bumped\n", "bump");
     String tip = GitHostFixture.head(clone);
     // Only a bump run may push a maintenance branch (RefScopeHook); the REST delete is not a push.
     GitHostFixture.gitAs(
         TestTokenMechanism.token(
             "{\"sub\":\"dyn-ci-run-1\",\"groups\":[\"qits:ci-run\"],\"context_kind\":\"ci-run\","
-                + "\"git_refs\":[\"refs/heads/maintenance/dependencies\"]}"),
+                + "\"git_refs\":[\"refs/heads/" + branch + "\"]}"),
         clone,
         "git",
         "push",
         "-q",
         "origin",
-        "maintenance/dependencies");
+        branch);
     forgetPreviousPublishes();
 
     given()
         .queryParam("projectId", "p")
         .queryParam("repoName", "n")
         .when()
-        .delete(API + repoId + "/branches/maintenance/dependencies")
+        .delete(API + repoId + "/branches/" + branch)
         .then()
         .statusCode(204);
 
     OutboxEvent deleted = only("SCMDeleteBranch");
-    assertTrue(
-        deleted.payload.contains("\"branch\":\"maintenance/dependencies\""), deleted.payload);
+    assertTrue(deleted.payload.contains("\"branch\":\"" + branch + "\""), deleted.payload);
     assertTrue(deleted.payload.contains("\"sha\":\"" + tip + "\""), deleted.payload);
     assertTrue(deleted.payload.contains("\"projectId\":\"p\""), deleted.payload);
     assertTrue(deleted.payload.contains("\"repoName\":\"n\""), deleted.payload);

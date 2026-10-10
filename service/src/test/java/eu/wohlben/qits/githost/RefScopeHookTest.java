@@ -35,15 +35,29 @@ import org.junit.jupiter.params.provider.MethodSource;
 class RefScopeHookTest {
 
   private static final String TICKET = "refs/heads/ticket/t-1";
-  private static final String MAINTENANCE = "refs/heads/maintenance/bump-1";
+
+  /** A qits-maintenance automation branch: the one shape (qits-1133) reachable at all. */
+  private static final String MAINTENANCE = "refs/heads/maintenance/automations/dependency-bump/req-1";
+
+  /** Another automation branch, same kind, not in any bump run's list below. */
+  private static final String MAINTENANCE_OTHER =
+      "refs/heads/maintenance/automations/dependency-bump/other";
+
+  /** A legacy group-bump branch: retired in qits-1133, refused for every credential. */
+  private static final String GROUP_BRANCH = "refs/heads/maintenance/dependencies";
+
   private static final String MAINTENANCE_REFUSAL =
       MAINTENANCE
           + " is managed by qits-maintenance and may be pushed only by its bump runs: push your own"
           + " branch and join the release request (qits release-request join)";
   private static final String MAINTENANCE_REFUSAL_OTHER =
-      "refs/heads/maintenance/other is managed by qits-maintenance and may be pushed only by its"
-          + " bump runs: push your own branch and join the release request (qits release-request"
-          + " join)";
+      MAINTENANCE_OTHER
+          + " is managed by qits-maintenance and may be pushed only by its bump runs: push your own"
+          + " branch and join the release request (qits release-request join)";
+  private static final String GROUP_BRANCH_REFUSAL =
+      GROUP_BRANCH
+          + " is a maintenance/<group> branch; group branches were retired in qits-1133 and no"
+          + " credential may push, update or delete one";
   private static final String PERSON_REFUSAL =
       "refs/heads/main is outside the push scope: a person's credential may push only "
           + EXTERNAL_BRANCH_PATTERN;
@@ -389,10 +403,43 @@ class RefScopeHookTest {
       assertFalse(rejectOutsideScope(List.of(command), scope), command.getType().toString());
       assertEquals(ReceiveCommand.Result.NOT_ATTEMPTED, command.getResult());
     }
-    // Its list still bounds it everywhere else.
-    ReceiveCommand other = create("refs/heads/maintenance/other");
+    // Its list still bounds it everywhere else, even another branch of the same kind.
+    ReceiveCommand other = create(MAINTENANCE_OTHER);
     assertTrue(rejectOutsideScope(List.of(other), scope));
     assertEquals(MAINTENANCE_REFUSAL_OTHER, other.getMessage());
+  }
+
+  @Test
+  void aBumpRunNamingAGroupBranchExactlyIsStillRefused() {
+    // qits-1133: a maintenance-flow pusher's list is filtered to the automations prefix before it
+    // ever reaches admitsMaintenance, so naming a legacy group branch exactly buys it nothing.
+    Scope scope = scopeOf(bumpRun(List.of(GROUP_BRANCH, MAINTENANCE)));
+
+    assertEquals(List.of(MAINTENANCE), scope.maintenanceRefs());
+    for (ReceiveCommand command :
+        List.of(
+            create(GROUP_BRANCH), update(GROUP_BRANCH), forceUpdate(GROUP_BRANCH),
+            delete(GROUP_BRANCH))) {
+      assertTrue(rejectOutsideScope(List.of(command), scope), command.getType().toString());
+      assertEquals(ReceiveCommand.Result.REJECTED_OTHER_REASON, command.getResult());
+      assertEquals(GROUP_BRANCH_REFUSAL, command.getMessage());
+    }
+    // The automation branch it does name exactly is unaffected.
+    assertFalse(rejectOutsideScope(List.of(create(MAINTENANCE)), scope));
+  }
+
+  @Test
+  void aGroupBranchRefusalNamesTheRetirement() {
+    for (Scope scope :
+        List.of(
+            scopeOf(bumpRun(List.of(GROUP_BRANCH))),
+            scopeOf(jwt(List.of("qits:system", "qits:ci-run"), Map.of("context_kind", "ci-run"))),
+            scopeOf(forwarded(List.of("qits:admin", "qits:system"))))) {
+      ReceiveCommand command = create(GROUP_BRANCH);
+      assertTrue(rejectOutsideScope(List.of(command), scope), scope.toString());
+      assertEquals(GROUP_BRANCH_REFUSAL, command.getMessage());
+      assertTrue(command.getMessage().contains("qits-1133"), command.getMessage());
+    }
   }
 
   @Test
@@ -425,7 +472,8 @@ class RefScopeHookTest {
   }
 
   static Stream<String> maintenancePrefixEntries() {
-    return Stream.of("refs/heads/maintenance/*", "refs/heads/*");
+    return Stream.of(
+        "refs/heads/maintenance/*", "refs/heads/maintenance/automations/*", "refs/heads/*");
   }
 
   @Test

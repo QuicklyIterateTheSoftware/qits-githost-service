@@ -28,6 +28,9 @@ import java.util.regex.Pattern;
  *       how a state's first {@code repositoryId} is {@code …0001}.
  *   <li><b>Instants.</b> Every string value that is an ISO-8601 instant becomes {@value
  *       #FROZEN_INSTANT} — by shape, not by a list of field names.
+ *   <li><b>Commit shas.</b> Every distinct 40-hex git object id becomes {@code 0…0N} (40 hex
+ *       digits), numbered by first appearance after the params — a commit the provider writes has
+ *       its clock in its sha, so only a frozen one records the same on every run.
  *   <li><b>Unique tokens.</b> A random token a state had to put into a name to keep it unique becomes the same-length hex counter {@code 0…0N},
  *       numbered by first appearance.
  * </ul>
@@ -46,11 +49,15 @@ public final class Freezer {
   static final Pattern INSTANT =
       Pattern.compile("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})");
 
+  static final Pattern SHA = Pattern.compile("(?<![0-9a-fA-F])[0-9a-f]{40}(?![0-9a-fA-F])");
+
   static final String FROZEN_INSTANT = "2026-01-01T00:00:00Z";
 
   private static final Pattern PLAIN_KEY = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
   private final Map<String, String> ids = new HashMap<>();
+  private final Map<String, String> shas = new HashMap<>();
+  private final Set<String> shaPaths = new LinkedHashSet<>();
   private final Map<String, String> tokens = new LinkedHashMap<>();
   private int tokenCount;
   private final Set<String> idPaths = new LinkedHashSet<>();
@@ -60,7 +67,7 @@ public final class Freezer {
   /** Numbers each UUID in {@code values}, in order, ahead of anything the answer holds. */
   public Freezer seed(Collection<String> values) {
     for (String value : values) {
-      freezeIds(value);
+      freezeShas(freezeIds(value));
     }
     return this;
   }
@@ -81,7 +88,17 @@ public final class Freezer {
 
   /** The frozen form of a param value: its UUIDs through the same mapping as the answer. */
   public String freezeParam(String value) {
-    return freezeIds(value);
+    return freezeShas(freezeIds(value));
+  }
+
+  /** A response header's value, frozen as a param is: its UUIDs and its shas. */
+  public String freezeHeader(String value) {
+    return freezeShas(freezeIds(value));
+  }
+
+  /** The paths whose whole value was a commit sha — the index's {@code frozen.shas}. */
+  public List<String> shaPaths() {
+    return new ArrayList<>(shaPaths);
   }
 
   public JsonNode freeze(JsonNode node) {
@@ -142,8 +159,12 @@ public final class Freezer {
       instantPaths.add(path);
       return FROZEN_INSTANT;
     }
-    String result = freezeTokens(freezeIds(value));
+    String result = freezeTokens(freezeShas(freezeIds(value)));
     if (result.equals(value)) {
+      return result;
+    }
+    if (SHA.matcher(value).matches()) {
+      shaPaths.add(path);
       return result;
     }
     // A consumer puts a uuid matcher on every frozen.ids path, so only a value that IS a UUID goes
@@ -169,6 +190,25 @@ public final class Freezer {
     }
     m.appendTail(out);
     return out.toString();
+  }
+
+  private String freezeShas(String value) {
+    if (value == null) {
+      return null;
+    }
+    Matcher m = SHA.matcher(value);
+    StringBuilder out = new StringBuilder();
+    while (m.find()) {
+      String frozen = shas.computeIfAbsent(m.group(), k -> frozenSha(shas.size() + 1));
+      m.appendReplacement(out, Matcher.quoteReplacement(frozen));
+    }
+    m.appendTail(out);
+    return out.toString();
+  }
+
+  /** {@code n} as 40 hex digits: a sha no repository will ever hold by chance. */
+  public static String frozenSha(int n) {
+    return String.format("%040x", n);
   }
 
   private String freezeTokens(String value) {

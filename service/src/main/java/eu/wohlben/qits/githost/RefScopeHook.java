@@ -38,17 +38,30 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
  * </ol>
  *
  * <p>Before all four, one ref family has an owner: {@value #MAINTENANCE_BRANCH_PREFIX}{@code *}
- * belongs to qits-maintenance, whose bump runs ({@code MaintenanceBump}, {@code
- * ReleaseRequestAutomation}) rebuild those branches and may force them. A create, update or delete
- * of such a ref is admitted only from a maintenance-flow pusher: a JWT holding {@value
- * #CI_RUN_ROLE}, whose {@value #CONTEXT_KIND_CLAIM} is {@value #CI_RUN_CONTEXT_KIND} (so not a
- * {@code bootstrap-publish} commission, which shares the role), and whose {@value #GIT_REFS_CLAIM}
- * list names that ref as an exact entry. A prefix entry such as {@code refs/heads/maintenance/*} or
- * {@code refs/heads/*} does not count. Everyone else is refused there, rule 4's unrestricted
- * service clients included: work meant for the same release request goes on the pusher's own
- * branch, which then joins the request ({@code qits release-request join}), so a bump run's
- * rebuild never has to overwrite anybody's commits. The decision is captured into {@link
- * Scope#maintenanceRefs()} with the rest of the scope.
+ * belongs to qits-maintenance. Only the {@value #MAINTENANCE_AUTOMATIONS_PREFIX}{@code *} slice of
+ * it is reachable at all now (qits-1133): qits-maintenance's own branches are {@code
+ * ReleaseRequestAutomation} runs' {@code maintenance/automations/<kind>/<requestId>}, pushed on its
+ * behalf by a qits-ci automation run, and a create, update or delete of one of THOSE is admitted
+ * only from a maintenance-flow pusher — a JWT holding {@value #CI_RUN_ROLE}, whose {@value
+ * #CONTEXT_KIND_CLAIM} is {@value #CI_RUN_CONTEXT_KIND} (so not a {@code bootstrap-publish}
+ * commission, which shares the role), and whose {@value #GIT_REFS_CLAIM} list names that ref as an
+ * exact entry. A prefix entry such as {@code refs/heads/maintenance/automations/*} or {@code
+ * refs/heads/*} does not count. Everyone else is refused there, rule 4's unrestricted service
+ * clients included: work meant for the same release request goes on the pusher's own branch, which
+ * then joins the request ({@code qits release-request join}), so a bump run's rebuild never has to
+ * overwrite anybody's commits. The decision is captured into {@link Scope#maintenanceRefs()} with
+ * the rest of the scope — and {@link Scope#maintenanceRefs()} is filtered to that one prefix on the
+ * way in, so a {@code git_refs} entry naming anything else under {@value #MAINTENANCE_BRANCH_PREFIX}
+ * — a {@code maintenance/<group>} branch, the shape qits-maintenance pushed before qits-1133 — is
+ * never admitted, whoever names it and however it is phrased, because nothing composes such an
+ * entry any more and this hook does not take one on trust. Every such ref is refused outright, for
+ * every credential: qits-maintenance retired the group-branch shape, and the retirement is
+ * enforced here rather than merely followed. A legacy {@code maintenance/<group>} branch already on
+ * a repository is not pushed to again; whoever may delete branches today keeps that ability through
+ * a door this hook does not sit in front of (qits-githost's {@code DELETE
+ * /githost/api/repositories/{repoId}/branches/{name}}, which qits-maintenance's {@code
+ * AutomationBranchSweep} calls with its own {@code qits:system} bearer and which this receive-pack
+ * hook never sees).
  *
  * <p>Only rule 4 with {@value #SYSTEM_ROLE} may use {@code -o qits.token=} ({@link
  * Scope#tokenBypassAllowed()}); see {@link ProtectedRefHook}. A push with no verified identity, or
@@ -77,8 +90,25 @@ final class RefScopeHook {
   /** What makes a client token without a scope a platform service client (rule 4). */
   static final String SYSTEM_ROLE = "qits:system";
 
-  /** The branches qits-maintenance owns; only its bump runs may push them. */
+  /**
+   * The namespace qits-maintenance owns. Owning it is not the same as every ref under it being
+   * reachable: only {@value #MAINTENANCE_AUTOMATIONS_PREFIX}{@code *} is (qits-1133). A {@code
+   * maintenance/<group>} branch — directly under this prefix, the shape qits-maintenance pushed
+   * before qits-1133 — is refused for every credential now, bump runs included; see {@link
+   * #maintenanceRefusal}.
+   */
   static final String MAINTENANCE_BRANCH_PREFIX = "refs/heads/maintenance/";
+
+  /**
+   * The one slice of {@value #MAINTENANCE_BRANCH_PREFIX}{@code *} a maintenance-flow pusher may
+   * still be admitted to (qits-1133): qits-maintenance's {@code ReleaseRequestAutomation} runs push
+   * {@code maintenance/automations/<kind>/<requestId>}, named exactly in the run's {@value
+   * #GIT_REFS_CLAIM} list. Nothing composes a {@value #GIT_REFS_CLAIM} entry under {@value
+   * #MAINTENANCE_BRANCH_PREFIX} that is NOT under this one any more — the old group-bump branch,
+   * {@code maintenance/<group>}, is retired — and {@link #scopeOf} filters {@link
+   * Scope#maintenanceRefs()} to this prefix so that an entry naming one anyway is never admitted.
+   */
+  static final String MAINTENANCE_AUTOMATIONS_PREFIX = MAINTENANCE_BRANCH_PREFIX + "automations/";
 
   /** The role every CI run's credential holds, bump runs among them. */
   static final String CI_RUN_ROLE = "qits:ci-run";
@@ -128,9 +158,11 @@ final class RefScopeHook {
    * @param refs the entries a ref must match; empty means no ref. Unused for {@link
    *     Rule#SERVICE_CLIENT}.
    * @param problem a refusal for every command whatever its ref, or {@code null}
-   * @param maintenanceRefs the refs under {@value #MAINTENANCE_BRANCH_PREFIX} this push may touch:
-   *     the exact entries of a maintenance-flow pusher's list, otherwise empty. Checked before
-   *     every rule, {@link Rule#SERVICE_CLIENT} included.
+   * @param maintenanceRefs the refs under {@value #MAINTENANCE_AUTOMATIONS_PREFIX} this push may
+   *     touch: the exact entries of a maintenance-flow pusher's list that fall under that one
+   *     prefix, otherwise empty. Never anything under {@value #MAINTENANCE_BRANCH_PREFIX} outside
+   *     it (qits-1133) — a {@code maintenance/<group>} entry is dropped by {@link #scopeOf} before
+   *     it ever reaches here. Checked before every rule, {@link Rule#SERVICE_CLIENT} included.
    */
   record Scope(
       Rule rule, String holder, List<String> refs, String problem, List<String> maintenanceRefs) {
@@ -145,7 +177,15 @@ final class RefScopeHook {
       this(rule, holder, refs, problem, List.of());
     }
 
-    /** Whether this push may touch {@code ref} as far as the maintenance branches go. */
+    /**
+     * Whether this push may touch {@code ref} as far as the maintenance branches go. A ref outside
+     * {@value #MAINTENANCE_BRANCH_PREFIX} is not this rule's business and answers {@code true}
+     * unconditionally; one inside it — {@code maintenance/automations/...} or a retired {@code
+     * maintenance/<group>} alike — answers {@code true} only when it is one of {@link
+     * #maintenanceRefs}' exact entries, which (qits-1133) are never anything outside {@value
+     * #MAINTENANCE_AUTOMATIONS_PREFIX}. So a {@code maintenance/<group>} ref answers {@code false}
+     * here whatever the pusher, because no entry here could ever name one.
+     */
     boolean admitsMaintenance(String ref) {
       return ref == null
           || !ref.startsWith(MAINTENANCE_BRANCH_PREFIX)
@@ -224,7 +264,8 @@ final class RefScopeHook {
               scope.refs(),
               scope.problem(),
               scope.refs().stream()
-                  .filter(ref -> ref.startsWith(MAINTENANCE_BRANCH_PREFIX) && ref.indexOf('*') < 0)
+                  .filter(
+                      ref -> ref.startsWith(MAINTENANCE_AUTOMATIONS_PREFIX) && ref.indexOf('*') < 0)
                   .toList())
           : scope;
     }
@@ -245,7 +286,8 @@ final class RefScopeHook {
   /**
    * Whether this identity is one of qits-maintenance's bump runs: {@value #CI_RUN_ROLE} and a
    * {@value #CONTEXT_KIND_CLAIM} of {@value #CI_RUN_CONTEXT_KIND}. Which maintenance branches it
-   * may touch is still its list's exact entries.
+   * may touch is still its list's exact entries, narrowed (qits-1133) to those under {@value
+   * #MAINTENANCE_AUTOMATIONS_PREFIX} by {@link #scopeOf}.
    */
   private static boolean maintenancePusher(SecurityIdentity identity, JsonWebToken jwt) {
     String contextKind = jwt.claim(CONTEXT_KIND_CLAIM).map(RefScopeHook::text).orElse(null);
@@ -375,10 +417,22 @@ final class RefScopeHook {
     return true;
   }
 
-  /** Why {@code ref} is refused, and what to do instead. */
+  /**
+   * Why {@code ref} is refused, and what to do instead. {@code ref} is somewhere under {@value
+   * #MAINTENANCE_BRANCH_PREFIX} — {@link #rejectMaintenance} is the only caller — and the two
+   * shapes under it get two different sentences: a {@code maintenance/automations/...} branch is
+   * qits-maintenance's own, reachable only through its bump runs, where the ordinary "push your own
+   * and join the request" applies; anything else under {@value #MAINTENANCE_BRANCH_PREFIX} is a
+   * {@code maintenance/<group>} branch, the group-bump shape retired in qits-1133, and no sentence
+   * about joining a request applies to a ref nothing composes any more.
+   */
   static String maintenanceRefusal(String ref) {
-    return ref
-        + " is managed by qits-maintenance and may be pushed only by its bump runs: push your own"
-        + " branch and join the release request (qits release-request join)";
+    return ref.startsWith(MAINTENANCE_AUTOMATIONS_PREFIX)
+        ? ref
+            + " is managed by qits-maintenance and may be pushed only by its bump runs: push your"
+            + " own branch and join the release request (qits release-request join)"
+        : ref
+            + " is a maintenance/<group> branch; group branches were retired in qits-1133 and no"
+            + " credential may push, update or delete one";
   }
 }

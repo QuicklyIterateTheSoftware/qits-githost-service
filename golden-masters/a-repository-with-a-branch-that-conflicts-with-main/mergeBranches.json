@@ -1,0 +1,16 @@
+{
+  "error": "merge-conflict",
+  "target": "refs/heads/main",
+  "conflicts": [
+    {
+      "path": "README.md",
+      "head": "feature/contract",
+      "headSha": "0000000000000000000000000000000000000001",
+      "reason": "content",
+      "kind": "file",
+      "base": "0000000000000000000000000000000000000002",
+      "ours": "0000000000000000000000000000000000000003",
+      "theirs": "0000000000000000000000000000000000000004"
+    }
+  ]
+}

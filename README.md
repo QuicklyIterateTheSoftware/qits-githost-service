@@ -261,6 +261,7 @@ POST /githost/api/repositories/<repoId>/merges
  "author": {"name": "…", "email": "…"},           // optional
  "resolutions": [{"path": "components/x", "gitlink": "<sha>"}],   // optional, see below
  "versionPins": true,                             // optional, see below
+ "rebuild": true,                                 // optional, see below
  "projectId": "…", "repoName": "…"}               // optional: the address the move is announced under
 
 200 {"target": "refs/heads/release/17", "sha": "<commit>", "outcome": "merged",
@@ -282,6 +283,24 @@ the two properties that matter fall out of that one rule:
   `unchanged`, the same sha as last time. Re-merging is free and leaves no garbage.
 - **one effective head → no empty octopus.** The ref is created at it or fast-forwarded onto it
   (`outcome` `fast-forward`); a one-parent "merge" is never written.
+
+**`rebuild` leaves the target's tip out of the fold.** With it `true` the result is built from the
+sources alone, as if the target did not exist, and the target is moved onto it with a lease on the
+tip this call read (a concurrent move is the usual `409 ref-moved`), whether or not the old tip is
+an ancestor of the new one. It is for a branch that is a pure function of its sources — a release
+request's `release/<id>`: folding each new source tip onto the previous fold piled one two-parent
+merge per source move onto the branch (51 commits on one request, measured 2026-10-09), where a
+rebuild keeps `main..target` to the sources' own commits plus one merge. Guarantees:
+
+- **the merge commit's parents are the effective sources in request order** — every source minus
+  duplicates and minus those another source contains (listed in `skipped`) — so a reader can tell
+  which parent is which source;
+- **same parents, same order → `unchanged`**: a target whose tip already has exactly those parents
+  is not touched, so re-asking stays free. With one effective head the target is moved onto it
+  (`fast-forward`, even when that is not a fast-forward in git's sense) or left alone if it is
+  already there.
+
+Absent or `false`, the fold is exactly the old one.
 
 `outcome` is therefore one of `merged`, `fast-forward` and `unchanged`. **A conflict moves no ref**
 and is reported, never resolved: the paths, and for each the head that was being folded in when it

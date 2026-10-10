@@ -33,7 +33,7 @@
          no monorepo and no parent to inherit from. -->
     <groupId>eu.wohlben.qits</groupId>
     <artifactId>qits-githost</artifactId>
-    <version>2026.1010.104051</version>
+    <version>2026.1010.133955</version>
     <packaging>pom</packaging>
     <name>qits-githost</name>
 
@@ -110,6 +110,11 @@
              qits-projects-service verifies with, so a consumer's pact is read the same way at
              both providers. -->
         <pact.version>4.6.21</pact.version>
+        <!-- qits-projects' recorded answers (test scope), read by contracts/ProviderGoldenMasters for
+             this repository's consumer pact against qits-projects (HttpRepositoryNameResolver's
+             by-name lookup, ticket qits-1149). Moves like every internal pin: a qits-maintenance
+             bump, never a hand edit to chase a release. -->
+        <qits.projects-golden-masters.version>2026.1010.101501</qits.projects-golden-masters.version>
 
         <!-- Quinoa is a Quarkiverse extension: not in quarkus-bom either, and its version does NOT
              track the platform's. 2.8.2 is built against Quarkus 3.27.3 LTS — older than the 3.34.6
@@ -164,6 +169,19 @@
                 <groupId>au.com.dius.pact.provider</groupId>
                 <artifactId>junit5</artifactId>
                 <version>${pact.version}</version>
+            </dependency>
+            <dependency>
+                <!-- The consumer half, on the same version: ProjectsConsumerPactTest writes this
+                     repository's pact against qits-projects. Test scope at every declaration site. -->
+                <groupId>au.com.dius.pact.consumer</groupId>
+                <artifactId>junit5</artifactId>
+                <version>${pact.version}</version>
+            </dependency>
+            <dependency>
+                <!-- Test scope at every declaration site: recordings a test reads, never code. -->
+                <groupId>${project.groupId}</groupId>
+                <artifactId>qits-projects-golden-masters</artifactId>
+                <version>${qits.projects-golden-masters.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.quarkiverse.quinoa</groupId>
