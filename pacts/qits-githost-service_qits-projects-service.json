@@ -1,0 +1,221 @@
+{
+  "consumer": {
+    "name": "qits-githost-service"
+  },
+  "interactions": [
+    {
+      "comments": {
+        "references": {
+          "qits-call": {
+            "app": "qits-projects-service",
+            "operationId": "resolveRepositoryName"
+          },
+          "qits-trigger": {
+            "app": "qits-githost-service",
+            "kind": "operation",
+            "operationId": "GET /git/{projectId}/{repoName}/blob/{rev}/{path}"
+          }
+        }
+      },
+      "description": "GET /git/{projectId}/{repoName}/blob/{rev}/{path}: resolveRepositoryName",
+      "key": "8793efe5",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "no project with the given id",
+          "params": {
+            "projectId": "00000000-0000-4000-8000-000000000001"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "dataType": "RAW",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/no-such-repository",
+            "type": "ProviderState"
+          }
+        },
+        "method": "GET",
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/no-such-repository"
+      },
+      "response": {
+        "status": 404
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "comments": {
+        "references": {
+          "qits-call": {
+            "app": "qits-projects-service",
+            "operationId": "resolveRepositoryName"
+          },
+          "qits-trigger": {
+            "app": "qits-githost-service",
+            "kind": "operation",
+            "operationId": "GET /git/{projectId}/{repoName}/info/refs"
+          }
+        }
+      },
+      "description": "GET /git/{projectId}/{repoName}/info/refs: resolveRepositoryName",
+      "key": "8d27ba1d",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "no project with the given id",
+          "params": {
+            "projectId": "00000000-0000-4000-8000-000000000001"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "dataType": "RAW",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/no-such-repository",
+            "type": "ProviderState"
+          }
+        },
+        "method": "GET",
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/no-such-repository"
+      },
+      "response": {
+        "status": 404
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "comments": {
+        "references": {
+          "qits-call": {
+            "app": "qits-projects-service",
+            "operationId": "resolveRepositoryName"
+          },
+          "qits-trigger": {
+            "app": "qits-githost-service",
+            "kind": "operation",
+            "operationId": "GET /git/{projectId}/{repoName}/tree/{rev}/{path}"
+          }
+        }
+      },
+      "description": "GET /git/{projectId}/{repoName}/tree/{rev}/{path}: resolveRepositoryName",
+      "key": "721ef270",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "no project with the given id",
+          "params": {
+            "projectId": "00000000-0000-4000-8000-000000000001"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "dataType": "RAW",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/no-such-repository",
+            "type": "ProviderState"
+          }
+        },
+        "method": "GET",
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/no-such-repository"
+      },
+      "response": {
+        "status": 404
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "comments": {
+        "references": {
+          "qits-call": {
+            "app": "qits-projects-service",
+            "operationId": "resolveRepositoryName"
+          },
+          "qits-trigger": {
+            "app": "qits-githost-service",
+            "kind": "operation",
+            "operationId": "POST /git/{projectId}/{repoName}/git-receive-pack"
+          }
+        }
+      },
+      "description": "POST /git/{projectId}/{repoName}/git-receive-pack: resolveRepositoryName",
+      "key": "f10d316e",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "no project with the given id",
+          "params": {
+            "projectId": "00000000-0000-4000-8000-000000000001"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "dataType": "RAW",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/no-such-repository",
+            "type": "ProviderState"
+          }
+        },
+        "method": "GET",
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/no-such-repository"
+      },
+      "response": {
+        "status": 404
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "comments": {
+        "references": {
+          "qits-call": {
+            "app": "qits-projects-service",
+            "operationId": "resolveRepositoryName"
+          },
+          "qits-trigger": {
+            "app": "qits-githost-service",
+            "kind": "operation",
+            "operationId": "POST /git/{projectId}/{repoName}/git-upload-pack"
+          }
+        }
+      },
+      "description": "POST /git/{projectId}/{repoName}/git-upload-pack: resolveRepositoryName",
+      "key": "a9ec502c",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "no project with the given id",
+          "params": {
+            "projectId": "00000000-0000-4000-8000-000000000001"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "dataType": "RAW",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/no-such-repository",
+            "type": "ProviderState"
+          }
+        },
+        "method": "GET",
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/no-such-repository"
+      },
+      "response": {
+        "status": 404
+      },
+      "type": "Synchronous/HTTP"
+    }
+  ],
+  "metadata": {
+    "pactSpecification": {
+      "version": "4.0"
+    },
+    "plugins": []
+  },
+  "provider": {
+    "name": "qits-projects-service"
+  }
+}
