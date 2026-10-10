@@ -12,7 +12,15 @@ artifacts:
 # The provider golden masters: the platform packages `golden-masters/` as
 # `eu.wohlben.qits:qits-githost-golden-masters` and `@qits/githost-golden-masters`, each published
 # only when its content changed, plus the `@contracts/qits-githost` docs bundle.
+# THE PACTS (ticket qits-1149): qits-githost's own consumer pact against qits-projects, keyed by
+# the provider's repository name, as qits-maintenance-service declares its. It sits flat in
+# `pacts/` as `qits-githost-service_qits-projects-service.json`; qits-ci packs only
+# `pacts/*_<provider>.json` into that provider's maven jar,
+# eu.wohlben.qits:qits-githost-service-pacts-<provider>, and publishes it only when those files
+# changed.
 contracts:
   application: qits-githost
   golden-masters: { from: golden-masters/, packages: [maven, npm] }
+  pacts:
+    qits-projects-service: { packages: [maven] }
 userflows: qits-githost
