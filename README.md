@@ -169,10 +169,13 @@ qits-projects.
   or an unborn `HEAD` is off — so every repository ships off, and a repository turns the guard on
   (or off) with an ordinary commit, which is itself checked by the state before it.
 - **The grammar** is the first line of the message:
-  `^[A-Za-z][A-Za-z0-9_/.-]*\(([A-Za-z0-9][A-Za-z0-9-]*)-([0-9]{1,18})\)!?: \S.*$` — that is
-  `term(<project>-<n>): message`, for example `feat(qits-1337): refuse malformed commit subjects`.
+  `^[A-Za-z][A-Za-z0-9_/.-]*\((ID(?:, *ID)*)\)!?: \S.*$`, where `ID` is
+  `[A-Za-z0-9][A-Za-z0-9-]*-[0-9]{1,18}` — that is `term(<project>-<n>): message`, for example
+  `feat(qits-1337): refuse malformed commit subjects`, or several ids separated by a comma and an
+  optional space, for example `chore(qits-731, qits-882): bump(dependencies): 2 dependencies`.
   `<project>-<n>` is the qualified id of the ticket, epic or task. It is a strict subset of what
-  qits-projects' `CommitSubjectEntities` reads, so every accepted subject names an entity there.
+  qits-projects' `CommitSubjectEntities` reads — the reader splits the parenthesised group on `,`
+  and strips each part, and every accepted subject's parts each name an entity there.
 - **Which commits**: every commit reachable from a pushed (non-delete) ref, branch or tag, and from
   no ref the repository already has. Annotated tags are peeled to their commit. A merge commit's own
   subject is not checked; the commits it brings in are. More than 10 000 new commits in one push is
@@ -183,9 +186,10 @@ qits-projects.
   what maintenance bumps run as). The first two stay exempt whatever the list says. `qits:agent`
   and people are not exempt.
 - **A refusal is whole**, like the scope's: every ref is rejected with
-  `commit subject must be term(<project>-<n>): message`, and the pusher gets `remote:` lines naming
-  each offending commit (short sha and subject, up to ten), the required form, an example, how to
-  rewrite (`git commit --amend`, `git rebase -i`) and the break-glass.
+  `commit subject must be term(<project>-<n>): message, or term(<project>-<n>, <project>-<n>):
+  message`, and the pusher gets `remote:` lines naming each offending commit (short sha and
+  subject, up to ten), the required form, an example, how to rewrite (`git commit --amend`,
+  `git rebase -i`) and the break-glass.
 - **The break-glass is `git push -o qits.subject-bypass="<why>"`.** A non-blank reason lets a refused
   push through; a blank one does not count and the refusal says so. A use is recorded only when the
   guard would actually have refused — in `commit_subject_bypass` (pusher, reason, refs, the

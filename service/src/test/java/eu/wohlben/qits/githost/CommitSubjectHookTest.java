@@ -28,14 +28,20 @@ class CommitSubjectHookTest {
         "fix(my-proj-2)!: y",
         "chore/x(qits-1): z",
         "feat(qits-1337): refuse malformed commit subjects\n\nbody line",
-        "refactor(other-2-7): split on the last hyphen"
+        "refactor(other-2-7): split on the last hyphen",
+        "chore(qits-731, qits-882): bump(dependencies): 2 dependencies",
+        "chore(qits-1,qits-2): x",
+        "chore(qits-1, other-project-12, qits-3): x",
+        "chore(qits-1, qits-1): x"
       })
   void accepts(String message) {
     assertTrue(CommitSubjectHook.complies(message), message);
     String first = CommitSubjectHook.firstLine(message).trim();
     Matcher head = READER_HEAD.matcher(first);
     assertTrue(head.find(), "the qits-projects reader must parse " + first);
-    assertTrue(READER_SCOPE.matcher(head.group(2).trim()).matches(), first);
+    for (String part : head.group(2).split(",", -1)) {
+      assertTrue(READER_SCOPE.matcher(part.strip()).matches(), first);
+    }
   }
 
   @ParameterizedTest
@@ -52,7 +58,12 @@ class CommitSubjectHookTest {
         "feat(qits-1)",
         "feat (qits-1): x",
         "feat(qits-1234567890123456789): too many digits",
-        " feat(qits-1): leading space"
+        " feat(qits-1): leading space",
+        "chore(qits-1 , qits-2): x",
+        "chore(qits-1,): x",
+        "chore(, qits-1): x",
+        "chore(): x",
+        "chore(qits-1; qits-2): x"
       })
   void refuses(String message) {
     assertFalse(CommitSubjectHook.complies(message), message);
