@@ -58,14 +58,23 @@ public class GitHostRefScopeTest {
   static final List<String> STATIC_CLIENT =
       TestTokenMechanism.token("{\"sub\":\"qits-projects\",\"groups\":[\"qits:system\"]}");
 
-  /** The maintenance branch the bump run below owns. */
-  static final String MAINTENANCE = "refs/heads/maintenance/bump-1";
+  /** The automation branch the bump run below owns — the one shape qits-1133 leaves reachable. */
+  static final String MAINTENANCE = "refs/heads/maintenance/automations/dependency-bump/req-1";
+
+  /** A legacy group-bump branch: retired in qits-1133, refused for every credential. */
+  static final String GROUP_BRANCH = "refs/heads/maintenance/dependencies";
 
   /** A qits-maintenance bump run: qits:ci-run, a ci-run commission, its branch named exactly. */
   static final List<String> BUMP_RUN =
       TestTokenMechanism.token(
           "{\"sub\":\"dyn-ci-run-1\",\"groups\":[\"qits:ci-run\"],\"context_kind\":\"ci-run\","
               + "\"git_refs\":[\"" + MAINTENANCE + "\"]}");
+
+  /** The same run, naming the legacy group branch instead — still refused (qits-1133). */
+  static final List<String> BUMP_RUN_NAMING_GROUP_BRANCH =
+      TestTokenMechanism.token(
+          "{\"sub\":\"dyn-ci-run-2\",\"groups\":[\"qits:ci-run\"],\"context_kind\":\"ci-run\","
+              + "\"git_refs\":[\"" + GROUP_BRANCH + "\"]}");
 
   /** An agent whose list covers every branch, qits:system inherited from its owner. */
   static final List<String> EVERY_BRANCH_AGENT =
@@ -75,6 +84,9 @@ public class GitHostRefScopeTest {
 
   private static final String MAINTENANCE_REFUSAL =
       MAINTENANCE + " is managed by qits-maintenance and may be pushed only by its bump runs";
+
+  private static final String GROUP_BRANCH_REFUSAL =
+      GROUP_BRANCH + " is a maintenance/<group> branch; group branches were retired in qits-1133";
 
   private static final String PERSON_SCOPE =
       "a person's credential may push only refs/heads/external/*";
@@ -295,6 +307,22 @@ public class GitHostRefScopeTest {
             + " join)"),
         refusal);
     assertNull(sha(repoId, MAINTENANCE));
+  }
+
+  @Test
+  public void aBumpRunNamingAGroupBranchExactlyIsStillRefused() throws Exception {
+    // qits-1133: a maintenance-flow pusher's git_refs list is filtered to the automations prefix,
+    // so naming the legacy group branch exactly buys it nothing — over the real wire, not just
+    // against RefScopeHook's pure functions.
+    String repoId = seed();
+    Path clone = cloneWithACommit(repoId);
+
+    String refusal =
+        GitHostFixture.gitExpectingFailureAs(
+            BUMP_RUN_NAMING_GROUP_BRANCH, clone, "git", "push", "origin", "HEAD:" + GROUP_BRANCH);
+
+    assertTrue(refusal.contains(GROUP_BRANCH_REFUSAL), refusal);
+    assertNull(sha(repoId, GROUP_BRANCH));
   }
 
   @Test

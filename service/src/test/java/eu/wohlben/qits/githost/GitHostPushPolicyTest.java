@@ -40,10 +40,17 @@ public class GitHostPushPolicyTest {
           "{\"sub\":\"dyn-workspace-t-1\",\"groups\":[\"qits:agent\"],"
               + "\"git_refs\":[\"refs/heads/ticket/t-1\"]}");
 
+  /**
+   * A maintenance-flow pusher's branch, as the shape qits-1133 leaves reachable: its own
+   * automation branch under {@code refs/heads/maintenance/automations/}. A bare {@code
+   * refs/heads/maintenance/libs} group branch would be refused outright now, whatever the
+   * role — that is {@code RefScopeHook}'s rule, not this policy's, so this class keeps testing
+   * the door the role opens rather than the scope the list grants.
+   */
   static final List<String> CI_RUN =
       TestTokenMechanism.token(
           "{\"sub\":\"dyn-ci-run-1\",\"groups\":[\"qits:ci-run\"],\"context_kind\":\"ci-run\","
-              + "\"git_refs\":[\"refs/heads/maintenance/libs\"]}");
+              + "\"git_refs\":[\"refs/heads/maintenance/automations/dependency-bump/libs\"]}");
 
   static final List<String> AGENT_WITHOUT_LIST =
       TestTokenMechanism.token("{\"sub\":\"dyn-agent-container-1\",\"groups\":[\"qits:agent\"]}");
@@ -87,9 +94,16 @@ public class GitHostPushPolicyTest {
     GitHostFixture.commitFile(clone, "pom.xml", "<bumped/>\n", "bump");
 
     GitHostFixture.gitAs(
-        CI_RUN, clone, "git", "push", "origin", "HEAD:refs/heads/maintenance/libs");
+        CI_RUN,
+        clone,
+        "git",
+        "push",
+        "origin",
+        "HEAD:refs/heads/maintenance/automations/dependency-bump/libs");
 
-    assertEquals(GitHostFixture.head(clone), sha(repoId, "refs/heads/maintenance/libs"));
+    assertEquals(
+        GitHostFixture.head(clone),
+        sha(repoId, "refs/heads/maintenance/automations/dependency-bump/libs"));
   }
 
   @Test
