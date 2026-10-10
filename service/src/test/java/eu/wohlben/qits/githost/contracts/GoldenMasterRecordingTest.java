@@ -65,7 +65,7 @@ class GoldenMasterRecordingTest {
    *     recording fails on a mismatch). A quoted {@code "{param}"} in it is expanded from the
    *     state's params and recorded unexpanded.
    * @param headers the response headers consumers read, recorded (frozen) into the index's {@code
-   *     headers}
+   *     responseHeaders}
    * @param rawBody the answer is bytes, not JSON: no file is recorded and the body stays unbound
    */
   record Interaction(
@@ -441,7 +441,7 @@ class GoldenMasterRecordingTest {
       }
       operation.put("status", interaction.status());
       if (!recorded.headers().isEmpty()) {
-        operation.set("headers", recorded.headers());
+        operation.set("responseHeaders", recorded.headers());
       }
       // No file for an answer with no JSON body: a 204, an empty error, a blob's bytes.
       if (recorded.body() == null) {
@@ -458,7 +458,7 @@ class GoldenMasterRecordingTest {
         frozen.set("shas", strings(recorded.freezer().shaPaths()));
       }
       if (!recorded.headers().isEmpty()) {
-        frozen.set("headers", strings(new ArrayList<>(interaction.headers())));
+        frozen.set("responseHeaders", strings(new ArrayList<>(interaction.headers())));
       }
       if (interaction.listFilteredTo() == null) {
         frozen.putNull("listFilteredTo");

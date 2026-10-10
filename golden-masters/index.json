@@ -476,7 +476,7 @@
           "method": "GET",
           "path": "/git/{projectId}/{repoName}/blob/{rev}/{path}",
           "status": 200,
-          "headers": {
+          "responseHeaders": {
             "Git-Commit-Sha": "0000000000000000000000000000000000000001"
           },
           "file": null,
@@ -484,7 +484,7 @@
             "ids": [],
             "instants": [],
             "strings": [],
-            "headers": [
+            "responseHeaders": [
               "Git-Commit-Sha"
             ],
             "listFilteredTo": null
@@ -531,7 +531,7 @@
           "method": "GET",
           "path": "/git/{projectId}/{repoName}/tree/{sha}",
           "status": 200,
-          "headers": {
+          "responseHeaders": {
             "Git-Commit-Sha": "0000000000000000000000000000000000000001"
           },
           "file": "a-repository-with-files-on-main/getRootTree.json",
@@ -539,7 +539,7 @@
             "ids": [],
             "instants": [],
             "strings": [],
-            "headers": [
+            "responseHeaders": [
               "Git-Commit-Sha"
             ],
             "listFilteredTo": null
@@ -550,7 +550,7 @@
           "method": "GET",
           "path": "/git/{projectId}/{repoName}/tree/{rev}/{directory}",
           "status": 200,
-          "headers": {
+          "responseHeaders": {
             "Git-Commit-Sha": "0000000000000000000000000000000000000001"
           },
           "file": "a-repository-with-files-on-main/getTree.json",
@@ -558,7 +558,7 @@
             "ids": [],
             "instants": [],
             "strings": [],
-            "headers": [
+            "responseHeaders": [
               "Git-Commit-Sha"
             ],
             "listFilteredTo": null
@@ -639,7 +639,7 @@
           "method": "GET",
           "path": "/git/{projectId}/{repoName}/tree/{rev}/{directory}",
           "status": 200,
-          "headers": {
+          "responseHeaders": {
             "Git-Commit-Sha": "0000000000000000000000000000000000000002"
           },
           "file": "a-wrapper-repository-with-a-submodule/getTree.json",
@@ -650,7 +650,7 @@
             "shas": [
               "$.entries[*].sha"
             ],
-            "headers": [
+            "responseHeaders": [
               "Git-Commit-Sha"
             ],
             "listFilteredTo": null
