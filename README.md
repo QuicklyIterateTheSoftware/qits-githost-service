@@ -114,7 +114,7 @@ the credential's scope, never from its roles** — `RefScopeHook`, contract C3 o
 
 | # | The credential | May push |
 |---|---|---|
-| 1 | carries `git_refs` (a JSON array) | only refs that match an entry: the exact ref, or anything under an entry that ends in `/*`. An empty list pushes nothing. |
+| 1 | carries `git_refs` (a JSON array) | only refs that match an entry: the exact ref, or any ref that starts with what precedes the `*` of an entry that ends in `*` (`refs/heads/t-1-*` covers `refs/heads/t-1-fix`, not `refs/heads/t-1`). An empty list pushes nothing. |
 | 2 | carries `git_ref_pattern` (the workstation token), or holds `qits:git:external` | only `refs/heads/external/*`. Any other pattern, or the role without the claim, pushes nothing. |
 | 3 | is a person: a JWT with `credential_type` (the `qits` CLI token), or a browser session from the forwarded `X-Qits-*` headers | only `refs/heads/external/*` |
 | 4 | is a client token with none of those claims that holds `qits:system` — a platform service, or a commission that still inherits its owner's roles | anything. The default branch's seatbelt still applies. |

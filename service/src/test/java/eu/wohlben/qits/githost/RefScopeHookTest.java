@@ -136,10 +136,23 @@ class RefScopeHookTest {
   }
 
   @Test
+  void anEntryEndingInAnyStarIsAPrefix() {
+    String fixes = "refs/heads/ticket/qits-1-*";
+    assertTrue(matches(fixes, "refs/heads/ticket/qits-1-fix"));
+    assertTrue(matches(fixes, "refs/heads/ticket/qits-1-a/b"));
+    // The branch itself is a separate entry: "-*" does not cover it.
+    assertFalse(matches(fixes, "refs/heads/ticket/qits-1"));
+    assertFalse(matches(fixes, "refs/heads/ticket/qits-10"));
+    assertTrue(matches("refs/heads/e*", "refs/heads/e1"));
+    assertTrue(matches("refs/heads/a-*", "refs/heads/a-b"));
+    assertFalse(matches("refs/heads/a-*", "refs/heads/a"));
+  }
+
+  @Test
   void aMalformedEntryMatchesNothing() {
     assertFalse(matches("refs/*", "refs/heads/main"));
     assertFalse(matches("refs/tags/*", "refs/tags/v1"));
-    assertFalse(matches("refs/heads/e*", "refs/heads/e1"));
+    assertFalse(matches("refs/heads/**", "refs/heads/main"));
     assertFalse(matches("refs/heads/*/x", "refs/heads/a/x"));
     assertFalse(matches("refs/heads/a*b", "refs/heads/a*b"));
     assertFalse(matches("heads/main", "heads/main"));

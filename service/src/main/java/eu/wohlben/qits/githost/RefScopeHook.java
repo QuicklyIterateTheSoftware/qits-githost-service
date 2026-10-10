@@ -22,7 +22,7 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
  * <ol>
  *   <li>The identity carries a {@value #GIT_REFS_CLAIM} claim: every ref the push touches must match
  *       an entry of that list, whatever roles the identity has. An entry is an exact ref, or a
- *       prefix pattern that ends in {@code /*}.
+ *       prefix pattern that ends in {@code *}.
  *   <li>Else it carries a {@value #GIT_REF_PATTERN_CLAIM} claim (the workstation token): the pattern
  *       must be {@value #EXTERNAL_BRANCH_PATTERN} and every ref must be under it, whatever roles the
  *       identity has. A JWT with the {@value #EXTERNAL_GIT_ROLE} role and no such claim may push
@@ -290,9 +290,11 @@ final class RefScopeHook {
   }
 
   /**
-   * Whether one scope entry covers {@code ref}. An entry that ends in {@code /*} is a prefix; any
-   * other entry must equal the ref. An entry outside {@code refs/heads/}, or with a {@code *}
-   * anywhere else, matches nothing: the idp refuses such entries, and this host does not guess.
+   * Whether one scope entry covers {@code ref}. An entry that ends in {@code *} covers every ref
+   * that starts with what precedes the {@code *}; any other entry must equal the ref. So {@code
+   * refs/heads/t-1-*} covers {@code refs/heads/t-1-fix} but not {@code refs/heads/t-1}. An entry
+   * outside {@code refs/heads/}, or with a {@code *} anywhere else, matches nothing: the idp refuses
+   * such entries, and this host does not guess.
    */
   static boolean matches(String entry, String ref) {
     if (entry == null || ref == null || !entry.startsWith(BRANCH_PREFIX)) {
@@ -302,7 +304,7 @@ final class RefScopeHook {
     if (star < 0) {
       return entry.equals(ref);
     }
-    if (star != entry.length() - 1 || !entry.endsWith("/*")) {
+    if (star != entry.length() - 1) {
       return false;
     }
     return ref.startsWith(entry.substring(0, star));
