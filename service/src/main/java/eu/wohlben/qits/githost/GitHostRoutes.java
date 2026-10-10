@@ -72,11 +72,18 @@ import org.jboss.logging.Logger;
  *       git_refs} list pushes only those refs; a workstation token and a person push only {@code
  *       refs/heads/external/*}; a client token without a scope pushes nothing unless it holds
  *       {@code qits:system}, and then it is not restricted. Roles do not widen a scope. Before all
- *       of that, {@code refs/heads/maintenance/*} belongs to qits-maintenance: only its bump runs (a
- *       {@code qits:ci-run} JWT with {@code context_kind} {@code ci-run} whose list names the branch
- *       exactly) may create, update or delete one, and every other credential is refused there,
- *       {@code qits:system} included. The scope is captured on the event loop ({@link
- *       #snapshotPushScope}).
+ *       of that, {@code refs/heads/maintenance/*} belongs to qits-maintenance, and only the {@code
+ *       refs/heads/maintenance/automations/*} slice of it is reachable at all (qits-1133): only its
+ *       bump runs (a {@code qits:ci-run} JWT with {@code context_kind} {@code ci-run} whose list
+ *       names the branch exactly) may create, update or delete one of those, and every other
+ *       credential is refused there, {@code qits:system} included. A {@code maintenance/<group>}
+ *       branch — anything else under the owned prefix, the shape qits-maintenance pushed before
+ *       qits-1133 — is refused outright for every credential, bump runs included: nothing composes
+ *       such a push any more, and the retirement is enforced here rather than merely followed.
+ *       Deleting one that already exists goes through a door this hook does not sit in front of —
+ *       qits-githost's {@code DELETE /githost/api/repositories/{repoId}/branches/{name}}, which
+ *       qits-maintenance's {@code AutomationBranchSweep} calls with its own {@code qits:system}
+ *       bearer. The scope is captured on the event loop ({@link #snapshotPushScope}).
  *   <li>{@link ProtectedRefHook}, the default branch's seatbelt. It is not an authorization system
  *       — it guards exactly one ref per repo (the bare's {@code HEAD}) against a reflex {@code git
  *       push … main}, and it ships inert. See that class for the mechanism, the two push-option
