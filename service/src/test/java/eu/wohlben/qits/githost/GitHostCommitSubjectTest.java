@@ -97,6 +97,15 @@ public class GitHostCommitSubjectTest {
   }
 
   @Test
+  public void aComplyingMultiIdSubjectPushes() throws Exception {
+    String repoId = origin(true);
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    GitHostFixture.commitFile(clone, "a.txt", "a\n", "chore(qits-1, qits-2): x");
+    GitHostFixture.gitAs(AGENT, clone, "git", "push", "origin", "main");
+    assertEquals(GitHostFixture.head(clone), main(repoId));
+  }
+
+  @Test
   public void theBreakGlassLetsItThroughAndIsRecorded() throws Exception {
     String repoId = origin(true);
     Path clone = GitHostFixture.clone(gitBase, repoId);

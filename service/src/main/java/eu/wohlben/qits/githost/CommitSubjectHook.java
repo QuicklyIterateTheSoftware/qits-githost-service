@@ -77,15 +77,19 @@ public class CommitSubjectHook {
   /** {@code -o qits.subject-bypass=<reason>}. The bare option, with no {@code =}, is a blank reason. */
   static final String BYPASS_OPTION = "qits.subject-bypass";
 
+  /** One qualified id, {@code <project>-<n>}: the reader's scope grammar. */
+  private static final String ID = "[A-Za-z0-9][A-Za-z0-9-]*-[0-9]{1,18}";
+
   /**
-   * The subject grammar, {@code term(<project>-<n>): message}. A strict subset of qits-projects'
-   * reader ({@code CommitSubjectEntities}: head {@code ^([^()\s:]*)\(([^()]+)\)(!?):}, scope {@code
-   * ^([A-Za-z0-9][A-Za-z0-9-]*)-([0-9]{1,18})$}), so every subject accepted here names an entity
-   * there.
+   * The subject grammar, {@code term(<project>-<n>): message} or {@code term(<project>-<n>,
+   * <project>-<n>, ...): message}. A strict subset of qits-projects' reader ({@code
+   * CommitSubjectEntities}: head {@code ^([^()\s:]*)\(([^()]+)\)(!?):}, which then splits the head's
+   * group 2 on {@code ,} and strips each part; scope {@code
+   * ^([A-Za-z0-9][A-Za-z0-9-]*)-([0-9]{1,18})$}, which every stripped part must match), so every
+   * subject accepted here names only entities the reader would also find.
    */
   static final Pattern SUBJECT =
-      Pattern.compile(
-          "^[A-Za-z][A-Za-z0-9_/.-]*\\(([A-Za-z0-9][A-Za-z0-9-]*)-([0-9]{1,18})\\)!?: \\S.*$");
+      Pattern.compile("^[A-Za-z][A-Za-z0-9_/.-]*\\((" + ID + "(?:, *" + ID + ")*)\\)!?: \\S.*$");
 
   /** How many commits one push may bring before it is refused unchecked. */
   static final int WALK_CAP = 10_000;
@@ -96,7 +100,9 @@ public class CommitSubjectHook {
   /** How much of the opt-in file is read; anything larger is not this format. */
   private static final int CONFIG_LIMIT = 64 * 1024;
 
-  static final String REJECTION = "commit subject must be term(<project>-<n>): message";
+  static final String REJECTION =
+      "commit subject must be term(<project>-<n>): message, or"
+          + " term(<project>-<n>, <project>-<n>): message";
   static final String CAP_REJECTION =
       "push brings more than " + WALK_CAP + " new commits; commit subjects not checked";
   static final String EXAMPLE = "feat(qits-1337): refuse malformed commit subjects";
@@ -403,11 +409,15 @@ public class CommitSubjectHook {
       }
     }
     lines.add("");
-    lines.add("Required form of the first line:  term(<project>-<n>): message");
+    lines.add(
+        "Required form of the first line:  term(<project>-<n>): message, or"
+            + " term(<project>-<n>, <project>-<n>): message");
     lines.add("For example:                      " + EXAMPLE);
     lines.add(
         "<project>-<n> is the qualified id of the ticket, epic or task the work belongs to, as"
-            + " shown in its dispatch prompt and by `qits work`.");
+            + " shown in its dispatch prompt and by `qits work`. Several ids may be given,"
+            + " separated by a comma and an optional space, when a commit belongs to more than"
+            + " one.");
     lines.add(
         "Merge commits are not checked, but the commits they bring in are. Rewrite a subject with"
             + " `git commit --amend` (the last commit) or `git rebase -i` (older ones), then push"
