@@ -132,4 +132,59 @@ class ConsumerPactVerificationTest {
   Map<String, String> aRepositoryCountedAtAnOlderCommit() {
     return states.params(ProviderStates.A_REPOSITORY_COUNTED_AT_AN_OLDER_COMMIT);
   }
+
+  @State(ProviderStates.A_REPOSITORY_EXISTS)
+  Map<String, String> aRepositoryExists() {
+    return states.params(ProviderStates.A_REPOSITORY_EXISTS);
+  }
+
+  @State(ProviderStates.TWO_REPOSITORIES)
+  Map<String, String> twoRepositories() {
+    return states.params(ProviderStates.TWO_REPOSITORIES);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN)
+  Map<String, String> aRepositoryWithFilesOnMain() {
+    return states.params(ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_PATH)
+  Map<String, String> aRepositoryMissingTheRequestedPath() {
+    return states.params(ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_PATH);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_COMMIT)
+  Map<String, String> aRepositoryMissingTheRequestedCommit() {
+    return states.params(ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_COMMIT);
+  }
+
+  @State(ProviderStates.A_WRAPPER_REPOSITORY_WITH_A_SUBMODULE)
+  Map<String, String> aWrapperRepositoryWithASubmodule() {
+    return states.params(ProviderStates.A_WRAPPER_REPOSITORY_WITH_A_SUBMODULE);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_WHOSE_MAIN_CONTAINS_A_COMMIT)
+  Map<String, String> aRepositoryWhoseMainContainsACommit() {
+    return states.params(ProviderStates.A_REPOSITORY_WHOSE_MAIN_CONTAINS_A_COMMIT);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_WITH_A_SIDE_BRANCH)
+  Map<String, String> aRepositoryWithASideBranch() {
+    return states.params(ProviderStates.A_REPOSITORY_WITH_A_SIDE_BRANCH);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_WITHOUT_THE_GIVEN_BRANCH)
+  Map<String, String> aRepositoryWithoutTheGivenBranch() {
+    return states.params(ProviderStates.A_REPOSITORY_WITHOUT_THE_GIVEN_BRANCH);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_WITH_A_BRANCH_TO_FOLD)
+  Map<String, String> aRepositoryWithABranchToFold() {
+    return states.params(ProviderStates.A_REPOSITORY_WITH_A_BRANCH_TO_FOLD);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_WITH_A_BRANCH_THAT_CONFLICTS_WITH_MAIN)
+  Map<String, String> aRepositoryWithABranchThatConflictsWithMain() {
+    return states.params(ProviderStates.A_REPOSITORY_WITH_A_BRANCH_THAT_CONFLICTS_WITH_MAIN);
+  }
 }

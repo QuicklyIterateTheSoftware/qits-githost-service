@@ -202,6 +202,7 @@ public class RepositoryBrowseResource {
   @RegisterForReflection
   public record TooLargeBody(String error, long size) {}
 
+  @Operation(operationId = "getRepository", summary = "The repository's default branch and branches")
   @GET
   public Response describe(@PathParam("repoId") String repoId) {
     if (!isValidRepoId(repoId)) {
@@ -275,6 +276,7 @@ public class RepositoryBrowseResource {
     }
   }
 
+  @Operation(operationId = "getRepositoryTree", summary = "Every file path at a revision")
   @GET
   @Path("/tree")
   public Response tree(@PathParam("repoId") String repoId, @QueryParam("rev") String rev) {
@@ -313,6 +315,7 @@ public class RepositoryBrowseResource {
     }
   }
 
+  @Operation(operationId = "getRepositoryFile", summary = "One file's content at a revision, as text")
   @GET
   @Path("/file")
   public Response file(

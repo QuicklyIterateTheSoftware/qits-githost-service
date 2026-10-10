@@ -1,0 +1,11 @@
+{
+  "rev": "main",
+  "commitSha": "0000000000000000000000000000000000000001",
+  "paths": [
+    ".config/qits/deployments.yml",
+    ".config/qits/release.yml",
+    "README.md",
+    "package.json",
+    "pom.xml"
+  ]
+}

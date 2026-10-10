@@ -190,6 +190,20 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <!-- The consumer half (ticket qits-1149): ProjectsConsumerPactTest and
+                 ProjectsPactFileTest write and check
+                 pacts/qits-githost-service_qits-projects-service.json. -->
+            <groupId>au.com.dius.pact.consumer</groupId>
+            <artifactId>junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- qits-projects' golden masters: the answers the consumer pact is built from. -->
+            <groupId>${project.groupId}</groupId>
+            <artifactId>qits-projects-golden-masters</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <!-- The platform's shared rules. Only the datasource baseline is enabled here (see
                  DatasourceBaselineTest): a datasource that lost a line of the three-line block
                  fails this build rather than a review. -->
