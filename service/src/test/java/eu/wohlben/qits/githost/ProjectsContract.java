@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.wohlben.qits.githost.contracts.ProviderGoldenMasters;
 import eu.wohlben.qits.githost.contracts.ProviderGoldenMasters.Call;
 import eu.wohlben.qits.githost.contracts.ProviderGoldenMasters.Trigger;
+import eu.wohlben.qits.http.QitsHttpClients;
+import io.opentelemetry.api.OpenTelemetry;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -132,6 +134,8 @@ final class ProjectsContract {
     HttpRepositoryNameResolver resolver = new HttpRepositoryNameResolver();
     resolver.resolverUrl = Optional.of(baseUrl + "/projects/api/projects");
     resolver.objectMapper = new ObjectMapper();
+    resolver.clients = QitsHttpClients.of(OpenTelemetry.noop(), null);
+    resolver.buildClient();
     return resolver;
   }
 }

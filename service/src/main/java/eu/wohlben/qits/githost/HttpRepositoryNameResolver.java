@@ -2,7 +2,9 @@ package eu.wohlben.qits.githost;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import eu.wohlben.qits.http.QitsHttpClients;
 import io.quarkus.arc.DefaultBean;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.net.URI;
@@ -64,9 +66,10 @@ public class HttpRepositoryNameResolver implements RepositoryNameResolver {
    * style preference: a static {@code HttpClient} is built by the class initialiser, which under
    * GraalVM runs at image-build time, and native-image then refuses the image over an {@code
    * HttpClientFacade} in its heap. {@code @ApplicationScoped} still means one client per process.
+   * Wrapped through {@link QitsHttpClients} so this lookup opens a CLIENT span and carries {@code
+   * X-Qits-Caller} the way the REST client already does.
    */
-  private final HttpClient client =
-      HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
+  private HttpClient client;
 
   /**
    * Where qits-projects answers the lookup, up to but not including {@code /{projectId}}. The PATH
@@ -82,6 +85,16 @@ public class HttpRepositoryNameResolver implements RepositoryNameResolver {
   Optional<String> resolverUrl;
 
   @Inject ObjectMapper objectMapper;
+  @Inject QitsHttpClients clients;
+
+  /**
+   * Built here rather than at the field: {@link #clients} is itself injected, and a field
+   * initializer runs before CDI populates one.
+   */
+  @PostConstruct
+  void buildClient() {
+    client = clients.wrap(HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build());
+  }
 
   @Override
   public Optional<String> resolveRepositoryId(String projectId, String name) {

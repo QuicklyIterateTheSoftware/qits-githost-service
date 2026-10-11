@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import eu.wohlben.qits.http.QitsHttpClients;
+import io.opentelemetry.api.OpenTelemetry;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -79,6 +81,8 @@ class HttpRepositoryNameResolverTest {
     HttpRepositoryNameResolver resolver = new HttpRepositoryNameResolver();
     resolver.resolverUrl = Optional.ofNullable(url);
     resolver.objectMapper = new ObjectMapper();
+    resolver.clients = QitsHttpClients.of(OpenTelemetry.noop(), null);
+    resolver.buildClient();
     return resolver;
   }
 

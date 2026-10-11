@@ -44,6 +44,15 @@
             <artifactId>qits-auth-core</artifactId>
         </dependency>
         <dependency>
+            <!-- QitsHttpClients: HttpRepositoryNameResolver's java.net.http client to qits-projects
+                 is wrapped through it, so that call opens a CLIENT span and carries X-Qits-Caller
+                 the way the REST client already does. Declared here — this module both builds the
+                 client and serves the JAX-RS resources, so CallerServerFilter/CallerClientFilter
+                 are on the classpath and active. -->
+            <groupId>${project.groupId}</groupId>
+            <artifactId>qits-http-core</artifactId>
+        </dependency>
+        <dependency>
             <!-- /githost/q/health/ready — the readiness endpoint qits-cd's health gate curls. -->
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-smallrye-health</artifactId>
