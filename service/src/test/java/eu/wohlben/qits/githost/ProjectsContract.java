@@ -13,6 +13,7 @@ import eu.wohlben.qits.http.QitsHttpClients;
 import io.opentelemetry.api.OpenTelemetry;
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.function.BiConsumer;
 
@@ -132,6 +133,8 @@ final class ProjectsContract {
   /** The real resolver, pointed at {@code baseUrl} the way production config points it. */
   static HttpRepositoryNameResolver resolverAgainst(String baseUrl) {
     HttpRepositoryNameResolver resolver = new HttpRepositoryNameResolver();
+    // Off: every row must reach the mock server, and a cached id would answer a later row unasked.
+    resolver.cache = new RepositoryNameCache(Duration.ZERO, System::nanoTime);
     resolver.resolverUrl = Optional.of(baseUrl + "/projects/api/projects");
     resolver.objectMapper = new ObjectMapper();
     resolver.clients = QitsHttpClients.of(OpenTelemetry.noop(), null);
