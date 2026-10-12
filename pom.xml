@@ -67,7 +67,7 @@
              repository pins each library released out of libs/qits-integrations-quarkus by its own
              string unless two of them carry an explicit same-string policy (qits-db-core and
              qits-arch-rules, above) — this one carries none. -->
-        <qits.http-core.version>2026.1011.185745</qits.http-core.version>
+        <qits.http-core.version>2026.1012.153509</qits.http-core.version>
         <!-- The platform's datasource resilience, released together out of
              libs/qits-integrations-quarkus, which is why the two versions are the same string:
              qits-db-core carries PatientPgDriver (the pool's connections are opened through it and
