@@ -18,13 +18,14 @@
         }
       },
       "description": "GET /git/{projectId}/{repoName}/blob/{rev}/{path}: resolveRepositoryName",
-      "key": "8793efe5",
+      "key": "f3dbb9cc",
       "pending": false,
       "providerStates": [
         {
           "name": "no project with the given id",
           "params": {
-            "projectId": "00000000-0000-4000-8000-000000000001"
+            "projectId": "00000000-0000-4000-8000-000000000001",
+            "repoName": "contract-service"
           }
         }
       ],
@@ -32,12 +33,12 @@
         "generators": {
           "path": {
             "dataType": "RAW",
-            "expression": "/projects/api/projects/${projectId}/repositories/by-name/no-such-repository",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/${repoName}",
             "type": "ProviderState"
           }
         },
         "method": "GET",
-        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/no-such-repository"
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/contract-service"
       },
       "response": {
         "status": 404
@@ -59,13 +60,14 @@
         }
       },
       "description": "GET /git/{projectId}/{repoName}/info/refs: resolveRepositoryName",
-      "key": "8d27ba1d",
+      "key": "f96f8404",
       "pending": false,
       "providerStates": [
         {
           "name": "no project with the given id",
           "params": {
-            "projectId": "00000000-0000-4000-8000-000000000001"
+            "projectId": "00000000-0000-4000-8000-000000000001",
+            "repoName": "contract-service"
           }
         }
       ],
@@ -73,12 +75,12 @@
         "generators": {
           "path": {
             "dataType": "RAW",
-            "expression": "/projects/api/projects/${projectId}/repositories/by-name/no-such-repository",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/${repoName}",
             "type": "ProviderState"
           }
         },
         "method": "GET",
-        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/no-such-repository"
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/contract-service"
       },
       "response": {
         "status": 404
@@ -100,13 +102,14 @@
         }
       },
       "description": "GET /git/{projectId}/{repoName}/tree/{rev}/{path}: resolveRepositoryName",
-      "key": "721ef270",
+      "key": "de66bc57",
       "pending": false,
       "providerStates": [
         {
           "name": "no project with the given id",
           "params": {
-            "projectId": "00000000-0000-4000-8000-000000000001"
+            "projectId": "00000000-0000-4000-8000-000000000001",
+            "repoName": "contract-service"
           }
         }
       ],
@@ -114,12 +117,12 @@
         "generators": {
           "path": {
             "dataType": "RAW",
-            "expression": "/projects/api/projects/${projectId}/repositories/by-name/no-such-repository",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/${repoName}",
             "type": "ProviderState"
           }
         },
         "method": "GET",
-        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/no-such-repository"
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/contract-service"
       },
       "response": {
         "status": 404
@@ -141,13 +144,14 @@
         }
       },
       "description": "POST /git/{projectId}/{repoName}/git-receive-pack: resolveRepositoryName",
-      "key": "f10d316e",
+      "key": "5d54fb55",
       "pending": false,
       "providerStates": [
         {
           "name": "no project with the given id",
           "params": {
-            "projectId": "00000000-0000-4000-8000-000000000001"
+            "projectId": "00000000-0000-4000-8000-000000000001",
+            "repoName": "contract-service"
           }
         }
       ],
@@ -155,12 +159,12 @@
         "generators": {
           "path": {
             "dataType": "RAW",
-            "expression": "/projects/api/projects/${projectId}/repositories/by-name/no-such-repository",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/${repoName}",
             "type": "ProviderState"
           }
         },
         "method": "GET",
-        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/no-such-repository"
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/contract-service"
       },
       "response": {
         "status": 404
@@ -182,13 +186,14 @@
         }
       },
       "description": "POST /git/{projectId}/{repoName}/git-upload-pack: resolveRepositoryName",
-      "key": "a9ec502c",
+      "key": "16341a13",
       "pending": false,
       "providerStates": [
         {
           "name": "no project with the given id",
           "params": {
-            "projectId": "00000000-0000-4000-8000-000000000001"
+            "projectId": "00000000-0000-4000-8000-000000000001",
+            "repoName": "contract-service"
           }
         }
       ],
@@ -196,12 +201,12 @@
         "generators": {
           "path": {
             "dataType": "RAW",
-            "expression": "/projects/api/projects/${projectId}/repositories/by-name/no-such-repository",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/${repoName}",
             "type": "ProviderState"
           }
         },
         "method": "GET",
-        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/no-such-repository"
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/contract-service"
       },
       "response": {
         "status": 404

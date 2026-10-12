@@ -48,9 +48,6 @@ final class ProjectsContract {
 
   static final String PATH = "/projects/api/projects/{projectId}/repositories/by-name/{repoName}";
 
-  /** The name the 404 rows look up: one the state's project cannot hold, as it holds none. */
-  static final String UNKNOWN_NAME = "no-such-repository";
-
   static final String PENDING_REASON =
       "needs provider state '" + A_REPOSITORY_EXISTS + "' for " + RESOLVE_REPOSITORY_NAME
           + " in qits-projects-service";
@@ -77,11 +74,15 @@ final class ProjectsContract {
     }
   }
 
-  /** 404: "no such name". The resolver reads nothing of the body and answers empty. */
+  /**
+   * 404: "no such name". The resolver asks the name the state records, reads nothing of the body
+   * and answers empty.
+   */
   private static final BiConsumer<HttpRepositoryNameResolver, Map<String, String>> MISS =
       (resolver, params) ->
           assertEquals(
-              Optional.empty(), resolver.resolveRepositoryId(params.get("projectId"), UNKNOWN_NAME));
+              Optional.empty(),
+              resolver.resolveRepositoryId(params.get("projectId"), params.get("repoName")));
 
   static final List<Case> CASES =
       TRIGGERS.stream()
@@ -90,8 +91,7 @@ final class ProjectsContract {
                   new Case(
                       trigger,
                       NO_PROJECT_WITH_THE_GIVEN_ID,
-                      new Call(
-                          RESOLVE_REPOSITORY_NAME, "GET", PATH, Map.of("repoName", UNKNOWN_NAME), 404),
+                      new Call(RESOLVE_REPOSITORY_NAME, "GET", PATH, Map.of(), 404),
                       List.of(),
                       MISS))
           .toList();
