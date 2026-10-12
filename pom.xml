@@ -52,12 +52,12 @@
              The store now builds inside the qits-registries reactor and carries that reactor's
              version. The coordinate is unchanged; its packages are eu.wohlben.qits.blobstore.*
              since this release, and the config keys stay qits.artifacts.*. -->
-        <qits.blobstore.version>2026.1008.23008</qits.blobstore.version>
+        <qits.blobstore.version>2026.1011.202808</qits.blobstore.version>
         <!-- The event bus: the outbox, the idempotent PUT, the durable listener. Published by
              libs/qits-eventstream into the platform Maven repository — the same place the blob
              store above and qits-db-core below come from, and why the <repositories> block below
              exists: none of the three is on Maven Central or built in this reactor. -->
-        <qits.eventstream.version>2026.1010.165955</qits.eventstream.version>
+        <qits.eventstream.version>2026.1011.202648</qits.eventstream.version>
         <!-- Shared OIDC and forwarded-header authentication. -->
         <qits.integrations-quarkus.version>2026.1002.70617</qits.integrations-quarkus.version>
         <!-- qits-http-core's QitsHttpClients, pinned with its OWN property rather than riding
@@ -78,7 +78,7 @@
              move together — the rule names the driver as a string, so a driver that moved without
              the rule would pass a build it should fail. -->
         <qits.db-core.version>2026.1002.70617</qits.db-core.version>
-        <qits.arch-rules.version>2026.1002.70617</qits.arch-rules.version>
+        <qits.arch-rules.version>2026.1011.185745</qits.arch-rules.version>
         <!-- The user-story framework (test scope): TokenValidationBootstrapIT is a userflow, so a
              `mvn verify` also regenerates service/target/userstories/ — the stories' documentation,
              network diagram included. The diagram is OBSERVED rather than narrated: this version
@@ -122,7 +122,7 @@
              this repository's consumer pact against qits-projects (HttpRepositoryNameResolver's
              by-name lookup, ticket qits-1149). Moves like every internal pin: a qits-maintenance
              bump, never a hand edit to chase a release. -->
-        <qits.projects-golden-masters.version>2026.1010.101501</qits.projects-golden-masters.version>
+        <qits.projects-golden-masters.version>2026.1011.230000</qits.projects-golden-masters.version>
 
         <!-- Quinoa is a Quarkiverse extension: not in quarkus-bom either, and its version does NOT
              track the platform's. 2.8.2 is built against Quarkus 3.27.3 LTS — older than the 3.34.6
