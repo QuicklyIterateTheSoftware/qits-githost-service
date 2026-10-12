@@ -32,9 +32,10 @@ import org.junit.jupiter.api.Test;
  * that the one entry named as a string still resolves. A test pretending to more than that —
  * "native reflection works" asserted in surefire — would pass vacuously and be worse than none.
  *
- * <p>Plain JUnit: nothing here needs a container, and this service registers no listener bean to
- * cross-check the set against (qits-ci's version does, which is the one assertion of its that has
- * no counterpart here).
+ * <p>Plain JUnit: nothing here needs a container. This service's one listener, {@code
+ * RepositoryRenamedListener}, binds no event class, so there is no listener type to cross-check the
+ * set against (qits-ci's version does, which is the one assertion of its that has no counterpart
+ * here).
  */
 class EventWireReflectionTest {
 

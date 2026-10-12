@@ -42,9 +42,22 @@ import org.jboss.logging.Logger;
  * stance as the GC pin ports ({@code CdHttpDeploymentPins}, {@code CiHttpDaemonPins}), which throw
  * because a run that cannot read a pin must delete nothing.
  *
- * <p><b>Nothing is cached</b>, for the reason the pin ports state: a rename must not serve a stale
- * id. A cached alias would keep clones flowing to the repository a name used to mean, and this repo
- * has no caching idiom for an outbound lookup to borrow.
+ * <p><b>A found id is cached; a miss and an outage never are.</b> Every name-addressed git request
+ * lands here — each workspace daemon's minutely {@code git fetch} across ~70 repositories, the
+ * checkout followers, CI clones — and uncached that was a steady 1.5–2 lookups a second against
+ * qits-projects for the same names and the same answers ({@code qits-168}). So a 200's id is held in
+ * {@link RepositoryNameCache} for {@code qits.projects.name-resolver-cache-ttl} (ten minutes; zero
+ * turns it off). A 404 is not held, so a repository created a moment ago resolves at once, and an
+ * {@link RepositoryNameResolver.Unavailable} is not held, so an outage is never replayed from memory.
+ *
+ * <p>The price is a rename, which is why this used to cache nothing. A rename moves no bare — the id
+ * a name resolved to is the same repository afterwards — so what a stale entry can do is bounded and
+ * small: the OLD name keeps serving that same, unchanged repository, and a new repository created
+ * under the old name is shadowed by it. {@code bus/RepositoryRenamedListener} evicts both names the
+ * moment qits-projects announces {@code RepositoryRenamed}; that delivery is live-only, so a rename
+ * announced while this instance was off the stream is closed by the TTL instead, at most one TTL
+ * after the entry was written. The new name needs nothing in the common case — a name nobody had
+ * yet was a 404, and a 404 was never cached.
  *
  * <p>{@link DefaultBean} so a consuming application — or the test suite, which ships {@code
  * FakeRepositoryNameResolver} — can supply its own implementation without making {@code
@@ -86,6 +99,7 @@ public class HttpRepositoryNameResolver implements RepositoryNameResolver {
 
   @Inject ObjectMapper objectMapper;
   @Inject QitsHttpClients clients;
+  @Inject RepositoryNameCache cache;
 
   /**
    * Built here rather than at the field: {@link #clients} is itself injected, and a field
@@ -105,6 +119,10 @@ public class HttpRepositoryNameResolver implements RepositoryNameResolver {
     // GitHostRoutes strips the suffix already; belt and braces, because a `.git` that reached the
     // url would look up a name qits-projects never registered.
     String bare = name.endsWith(".git") ? name.substring(0, name.length() - 4) : name;
+    Optional<String> cached = cache.get(projectId, bare);
+    if (cached.isPresent()) {
+      return cached;
+    }
     String url =
         base + "/" + segment(projectId) + "/repositories/by-name/" + segment(bare);
     try {
@@ -136,6 +154,8 @@ public class HttpRepositoryNameResolver implements RepositoryNameResolver {
       if (id == null || !id.isTextual() || id.asText().isBlank()) {
         throw unavailable(url + " answered a body with no repositoryId", null);
       }
+      // Only here, after every way of not answering has thrown: the one answer worth keeping.
+      cache.put(projectId, bare, id.asText());
       return Optional.of(id.asText());
     } catch (InterruptedException interrupted) {
       Thread.currentThread().interrupt();

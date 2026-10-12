@@ -102,6 +102,14 @@ a refused connection, a non-200, an unreadable body — is a **503**. A git clie
 "this repository is gone", so an outage answered that way would tell the platform every repository
 had been deleted (the `fe26a6c` lesson).
 
+**A found name is cached; a miss and an outage are not.** The id a 200 answered is served from memory
+for `qits.projects.name-resolver-cache-ttl` (default `10M`, `0` turns it off), so the workspace
+daemons' minutely fetches stop costing qits-projects a lookup each. A 404 is never cached, so a new
+repository resolves at once. A rename evicts both names when qits-projects announces
+`RepositoryRenamed` (`bus/RepositoryRenamedListener`, a live-only subscriber); a rename this instance
+missed while off the stream lets the old name keep serving the same, unchanged repository for at most
+one TTL.
+
 ### Who may push what
 
 The path policy opens `/git/**` to six roles: `qits:admin` (a browser session), `qits:admin-agent`

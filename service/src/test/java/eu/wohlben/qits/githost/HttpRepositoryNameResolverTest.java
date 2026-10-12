@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,8 +78,16 @@ class HttpRepositoryNameResolverTest {
     exchange.close();
   }
 
+  /** What expiry reads instead of the wall clock, so a TTL is crossed by assignment, not a sleep. */
+  private final AtomicLong now = new AtomicLong();
+
   private HttpRepositoryNameResolver resolver(String url) {
+    return resolver(url, Duration.ofMinutes(10));
+  }
+
+  private HttpRepositoryNameResolver resolver(String url, Duration ttl) {
     HttpRepositoryNameResolver resolver = new HttpRepositoryNameResolver();
+    resolver.cache = new RepositoryNameCache(ttl, now::get);
     resolver.resolverUrl = Optional.ofNullable(url);
     resolver.objectMapper = new ObjectMapper();
     resolver.clients = QitsHttpClients.of(OpenTelemetry.noop(), null);
@@ -156,5 +165,87 @@ class HttpRepositoryNameResolverTest {
     assertEquals(Optional.empty(), resolver("  ").resolveRepositoryId("p-7", "testing-repo"));
     assertEquals(0, requests.get(), "an unconfigured resolver must make no request at all");
     assertNull(lastPath.get());
+  }
+
+  // --- the cache (qits-168) -----------------------------------------------------------------------
+  // Every name-addressed fetch lands in the resolver, so an uncached adapter is a lookup per fetch.
+  // What is held is a found id and nothing else: a 404 is re-asked so a new repository resolves at
+  // once, and an outage is re-asked so a 503 is never served from memory.
+
+  @Test
+  void aFoundIdIsServedFromTheCacheWithoutAskingAgain() {
+    HttpRepositoryNameResolver resolver = resolver(base);
+    assertEquals(Optional.of("repo-1"), resolver.resolveRepositoryId("p-7", "testing-repo"));
+    // Upstream changing its mind is invisible inside the TTL — which is the point, and the price.
+    body = "{\"repositoryId\":\"repo-2\"}";
+    assertEquals(Optional.of("repo-1"), resolver.resolveRepositoryId("p-7", "testing-repo"));
+    assertEquals(
+        Optional.of("repo-1"), resolver.resolveRepositoryId("p-7", "testing-repo.git"),
+        "the .git spelling is the same name and the same entry");
+    assertEquals(1, requests.get(), "one lookup, then memory");
+
+    assertEquals(Optional.of("repo-2"), resolver.resolveRepositoryId("p-8", "testing-repo"));
+    assertEquals(2, requests.get(), "a different project segment is a different key");
+  }
+
+  @Test
+  void aMissIsNeverCachedSoANewRepositoryResolvesAtOnce() {
+    HttpRepositoryNameResolver resolver = resolver(base);
+    status = 404;
+    body = "";
+    assertEquals(Optional.empty(), resolver.resolveRepositoryId("p-7", "fresh"));
+    status = 200;
+    body = "{\"repositoryId\":\"repo-fresh\"}";
+    assertEquals(Optional.of("repo-fresh"), resolver.resolveRepositoryId("p-7", "fresh"));
+    assertEquals(2, requests.get());
+  }
+
+  @Test
+  void anOutageIsNeverCached() {
+    HttpRepositoryNameResolver resolver = resolver(base);
+    status = 500;
+    body = "down";
+    assertThrows(
+        RepositoryNameResolver.Unavailable.class,
+        () -> resolver.resolveRepositoryId("p-7", "testing-repo"));
+    status = 200;
+    body = "{\"repositoryId\":\"repo-1\"}";
+    assertEquals(Optional.of("repo-1"), resolver.resolveRepositoryId("p-7", "testing-repo"));
+    assertEquals(2, requests.get(), "the failure was not remembered as anything");
+  }
+
+  @Test
+  void anEntryExpiresAfterTheTtl() {
+    HttpRepositoryNameResolver resolver = resolver(base, Duration.ofMinutes(10));
+    resolver.resolveRepositoryId("p-7", "testing-repo");
+    now.addAndGet(Duration.ofMinutes(10).minusNanos(1).toNanos());
+    resolver.resolveRepositoryId("p-7", "testing-repo");
+    assertEquals(1, requests.get(), "a nanosecond short of the TTL is still a hit");
+    now.addAndGet(1);
+    resolver.resolveRepositoryId("p-7", "testing-repo");
+    assertEquals(2, requests.get(), "at the TTL the entry is gone and upstream is asked again");
+  }
+
+  @Test
+  void aZeroTtlTurnsTheCacheOff() {
+    HttpRepositoryNameResolver resolver = resolver(base, Duration.ZERO);
+    resolver.resolveRepositoryId("p-7", "testing-repo");
+    resolver.resolveRepositoryId("p-7", "testing-repo");
+    assertEquals(2, requests.get(), "every lookup dials");
+    assertEquals(0, resolver.cache.size());
+  }
+
+  @Test
+  void evictingANameDropsItUnderEveryProjectSegment() {
+    // The key is the segment the url carried — a project id or its slug — so a rename, which names
+    // the id, evicts by name everywhere.
+    HttpRepositoryNameResolver resolver = resolver(base);
+    resolver.resolveRepositoryId("p-7", "testing-repo");
+    resolver.resolveRepositoryId("my-project", "testing-repo");
+    resolver.resolveRepositoryId("p-7", "other-repo");
+    assertEquals(2, resolver.cache.evictName("testing-repo"));
+    resolver.resolveRepositoryId("p-7", "testing-repo");
+    resolver.resolveRepositoryId("p-7", "other-repo");
+    assertEquals(4, requests.get(), "the evicted name asks again, the other is still a hit");
   }
 }
