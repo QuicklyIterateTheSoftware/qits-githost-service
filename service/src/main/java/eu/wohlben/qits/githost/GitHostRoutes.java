@@ -163,6 +163,10 @@ import org.jboss.logging.Logger;
  *   <li>{@code GET …/:repoId/tree/:rev[/<path>]} and {@code GET …/:projectId/:repoName/tree/:rev[/
  *       <path>]} — {@code {"entries":[{"name","type"}]}} for the directory there; no path is the
  *       root tree. A submodule gitlink is typed {@code commit} and carries the {@code sha} it pins.
+ *       {@code ?recursive=true} walks every blob and gitlink beneath the directory in one answer
+ *       instead — trees are not listed and a gitlink is not descended into — with each entry
+ *       carrying its {@code path} relative to the listed directory alongside {@code name}. See
+ *       {@link #serveTree(RoutingContext, OpenedRepo, String, String)}.
  * </ul>
  *
  * <p>The wire protocol has no blob-at-path verb, so a consumer that wanted one file had to keep a
@@ -1036,6 +1040,19 @@ public class GitHostRoutes {
    *
    * <p>The order is the tree's own — git's canonical sort — so it is stable across revisions without
    * this route sorting anything.
+   *
+   * <p>{@code ?recursive=true} walks every blob and gitlink beneath the listed directory into the
+   * one answer instead of stopping at its immediate children: a tree itself is never listed (there
+   * is nothing left to say about one once its contents are inline), and a gitlink is not descended
+   * into, which is unchanged from the non-recursive answer — JGit does not descend into one either.
+   * Every entry then carries {@code path}, its path relative to the listed directory, alongside the
+   * {@code name} fields above; {@code name} stays the entry's own last segment. The top-level object
+   * also carries {@code "recursive": true}, so a caller can tell a recursive answer apart from an
+   * older git host that silently ignored the parameter and answered non-recursively. Any other value
+   * — absent, {@code false}, anything unrecognized — is the plain, non-recursive answer this javadoc
+   * describes above, byte-for-byte. This exists for qits-maintenance's estate-pins plan, which reads
+   * every gitlink of a wrapper fold in one call rather than one directory listing per directory
+   * (qits-1258).
    */
   private void serveTree(RoutingContext rc) {
     String rev = decodePercent(rc.pathParam("rev"));
@@ -1098,18 +1115,27 @@ public class GitHostRoutes {
         rc.response().setStatusCode(404).end();
         return;
       }
+      boolean recursive = "true".equals(rc.request().getParam("recursive"));
       JsonArray entries = new JsonArray();
       try (TreeWalk walker = new TreeWalk(repo)) {
         walker.addTree(tree);
-        walker.setRecursive(false);
+        walker.setRecursive(recursive);
         while (walker.next()) {
-          entries.add(entry(walker));
+          JsonObject entry = entry(walker);
+          if (recursive) {
+            entry.put("path", walker.getPathString());
+          }
+          entries.add(entry);
         }
+      }
+      JsonObject body = new JsonObject().put("entries", entries);
+      if (recursive) {
+        body.put("recursive", true);
       }
       rc.response()
           .putHeader("Content-Type", "application/json")
           .putHeader(COMMIT_SHA_HEADER, commit.name())
-          .end(new JsonObject().put("entries", entries).encode());
+          .end(body.encode());
     } catch (MissingObjectException | IncorrectObjectTypeException e) {
       rc.response().setStatusCode(404).end();
     } catch (Exception e) {
@@ -1119,7 +1145,9 @@ public class GitHostRoutes {
 
   /**
    * One listing entry: {@code name} and {@code type} for anything, plus {@code sha} and {@code mode}
-   * for a gitlink, which is a pin rather than content. See {@link #serveTree(RoutingContext)}.
+   * for a gitlink, which is a pin rather than content. See {@link #serveTree(RoutingContext)}. A
+   * recursive listing adds {@code path} on top, relative to the listed directory; {@code name} stays
+   * the entry's own last segment either way.
    */
   private static JsonObject entry(TreeWalk walker) {
     FileMode mode = walker.getFileMode(0);

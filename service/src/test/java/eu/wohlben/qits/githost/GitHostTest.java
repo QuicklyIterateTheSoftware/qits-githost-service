@@ -389,6 +389,68 @@ public class GitHostTest {
   }
 
   @Test
+  public void theTreeListsRecursivelyInOneAnswer() throws Exception {
+    // qits-1258: qits-maintenance reads every gitlink of a wrapper fold in one call instead of one
+    // directory listing per directory, so a nested gitlink has to come back in the root's own
+    // answer, path and all.
+    String repoId = contentOrigin();
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    String pinned = GitHostFixture.head(clone);
+    GitHostFixture.commitGitlink(clone, "docs/nested-module", pinned, "pin a nested submodule");
+    GitHostFixture.git(clone, "git", "push", "origin", "main");
+    String head = refSha(repoId, "refs/heads/main");
+
+    given()
+        .when()
+        .get("/git/" + repoId + "/tree/main?recursive=true")
+        .then()
+        .statusCode(Response.Status.OK.getStatusCode())
+        .contentType(containsString("application/json"))
+        .header("Git-Commit-Sha", equalTo(head))
+        .body("recursive", equalTo(true))
+        // A tree itself is never listed — only the blobs and the gitlink beneath it, each carrying
+        // a path relative to the directory that was asked for.
+        .body("entries.find { it.name == 'docs' }", nullValue())
+        .body("entries.find { it.name == 'guide.md' }.path", equalTo("docs/guide.md"))
+        .body("entries.find { it.name == 'guide.md' }.type", equalTo("blob"))
+        .body("entries.find { it.name == 'README.md' }.path", equalTo("README.md"))
+        .body("entries.find { it.name == 'pipeline.yml' }.path", equalTo("pipeline.yml"))
+        .body("entries.find { it.name == 'nested-module' }.path", equalTo("docs/nested-module"))
+        .body("entries.find { it.name == 'nested-module' }.type", equalTo("commit"))
+        .body("entries.find { it.name == 'nested-module' }.sha", equalTo(pinned))
+        .body("entries.find { it.name == 'nested-module' }.mode", equalTo("160000"));
+
+    // A subdirectory recurses too, each of its entries' paths relative to IT rather than the root.
+    given()
+        .when()
+        .get("/git/" + repoId + "/tree/" + head + "/docs?recursive=true")
+        .then()
+        .statusCode(Response.Status.OK.getStatusCode())
+        .body("recursive", equalTo(true))
+        .body("entries.size()", equalTo(2))
+        .body("entries.find { it.name == 'guide.md' }.path", equalTo("guide.md"))
+        .body("entries.find { it.name == 'nested-module' }.path", equalTo("nested-module"));
+  }
+
+  @Test
+  public void withoutTheParameterTheTreeAnswerIsUnchanged() throws Exception {
+    // No `path`, no `recursive` — byte-for-byte what an older git host, which never heard of the
+    // parameter, already answers. Any value other than the literal `true` is the same plain answer.
+    String repoId = contentOrigin();
+    for (String query : new String[] {"", "?recursive=false", "?recursive=garbage"}) {
+      given()
+          .when()
+          .get("/git/" + repoId + "/tree/main" + query)
+          .then()
+          .statusCode(Response.Status.OK.getStatusCode())
+          .body("recursive", nullValue())
+          .body("entries.find { it.name == 'docs' }.type", equalTo("tree"))
+          .body("entries.find { it.name == 'docs' }.path", nullValue())
+          .body("entries.find { it.name == 'README.md' }.path", nullValue());
+    }
+  }
+
+  @Test
   public void aSlashyBranchNameIsReadableAsAnEncodedSegment() throws Exception {
     // A rev is one path segment, so `feature/x` has to arrive as %2F — the npm scoped-package
     // lesson, and RestAssured re-encodes the escape unless url encoding is turned off.
