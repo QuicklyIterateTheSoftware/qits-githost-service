@@ -122,7 +122,7 @@
              this repository's consumer pact against qits-projects (HttpRepositoryNameResolver's
              by-name lookup, ticket qits-1149). Moves like every internal pin: a qits-maintenance
              bump, never a hand edit to chase a release. -->
-        <qits.projects-golden-masters.version>2026.1014.174856</qits.projects-golden-masters.version>
+        <qits.projects-golden-masters.version>2026.1016.112931</qits.projects-golden-masters.version>
 
         <!-- Quinoa is a Quarkiverse extension: not in quarkus-bom either, and its version does NOT
              track the platform's. 2.8.2 is built against Quarkus 3.27.3 LTS — older than the 3.34.6
