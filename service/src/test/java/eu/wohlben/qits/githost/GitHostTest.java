@@ -1388,19 +1388,29 @@ public class GitHostTest {
     // Created out of order, under one run-unique prefix so the assertion survives a catalog that
     // outlives the class: the three are compared in isolation, and the whole answer is then checked
     // for sortedness so the order is a property of the response rather than of the insert order.
+    //
+    // Deleted again afterwards: these ids are not the UUIDs every real repository carries, and a
+    // later class listing the whole store (ConsumerPactVerificationTest's "two repositories",
+    // whose consumer pact expects UUIDs) must not find them there.
     String prefix = "listing-" + UUID.randomUUID();
-    for (String suffix : new String[] {"-c", "-a", "-b"}) {
+    String[] suffixes = {"-c", "-a", "-b"};
+    for (String suffix : suffixes) {
       repositories.create(prefix + suffix, "main");
     }
-
-    List<String> repositories = listRepositories();
-    assertEquals(
-        List.of(prefix + "-a", prefix + "-b", prefix + "-c"),
-        repositories.stream().filter(id -> id.startsWith(prefix)).toList());
-    assertEquals(
-        repositories.stream().sorted().toList(),
-        repositories,
-        "the whole listing is sorted, not merely the ids one test happened to create");
+    try {
+      List<String> listed = listRepositories();
+      assertEquals(
+          List.of(prefix + "-a", prefix + "-b", prefix + "-c"),
+          listed.stream().filter(id -> id.startsWith(prefix)).toList());
+      assertEquals(
+          listed.stream().sorted().toList(),
+          listed,
+          "the whole listing is sorted, not merely the ids one test happened to create");
+    } finally {
+      for (String suffix : suffixes) {
+        repositories.delete(prefix + suffix);
+      }
+    }
   }
 
   @Test
