@@ -20,12 +20,13 @@ import java.net.URL;
  *   <li><b>{@code /git/:projectId/:repoName}</b> — the PUBLIC clone url. It is what a developer
  *       types, what a workspace container's remote holds, what every CI checkout dials and what
  *       makes a committed relative submodule url ({@code ../<name>.git}) resolve. Serving it means
- *       asking qits-projects to turn the name into a storage id, which is why every story using it
- *       puts a {@code qits-githost -> qits-projects} edge in its diagram. <b>Every story here uses
- *       this scheme</b>, because it is the one a user meets.
+ *       turning the name into a storage id, which this host answers from its own name index —
+ *       stated to it by qits-projects, and in these stories by {@link StoryOrigin} — so no story
+ *       using it puts a {@code qits-githost -> qits-projects} edge in its diagram. <b>Every story
+ *       here uses this scheme</b>, because it is the one a user meets.
  *   <li><b>{@code /git/:repoId}</b> — the internal storage scheme, plus the lifecycle
- *       {@code PUT}/{@code GET}/{@code HEAD}/{@code DELETE} that only exist there. This host keys
- *       repositories by the id qits-projects mints and holds no name for any of them; a caller
+ *       {@code PUT}/{@code GET}/{@code HEAD}/{@code DELETE} and the name door that only exist
+ *       there. This host keys repositories by the id qits-projects mints; a caller
  *       holding one of those urls is qits-projects' own client and nothing else. <b>Only {@link
  *       StoryOrigin} uses this scheme</b>, standing in for that client, and {@link StoryAccessLog}
  *       drops every request on it: provisioning a fixture is not a story's traffic.

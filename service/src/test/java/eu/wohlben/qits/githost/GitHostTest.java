@@ -30,6 +30,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -59,7 +60,7 @@ import org.junit.jupiter.api.Test;
 @QuarkusTest
 public class GitHostTest {
 
-  @Inject FakeRepositoryNameResolver repositoryNames;
+  @Inject RepositoryNameSeeder repositoryNames;
 
   @Inject GitRepositoryProvider repositories;
 
@@ -76,6 +77,12 @@ public class GitHostTest {
   @BeforeEach
   void resetAliases() {
     repositoryNames.clear();
+  }
+
+  /** A severed name store is a QuarkusMock, which outlives the case that installed it. */
+  @AfterEach
+  void restoreTheNameStore() {
+    repositoryNames.beUnavailable(false);
   }
 
   /** One commit on {@code main}, in a repository this host provisioned itself. */
@@ -705,8 +712,9 @@ public class GitHostTest {
   @Test
   public void aResolverOutageIs503AndAMissIsStill404() throws Exception {
     // fe26a6c on this seam: a git client records a 404 as "this repository is gone" and stops, so a
-    // qits-projects that could not be asked must never produce one. Every name-addressed route
-    // answers 503 instead — and the miss, which IS an answer, stays a 404.
+    // name index that could not be read must never produce one. The store is severed here — its
+    // every lookup throws, as a lost database does — and every name-addressed route answers 503,
+    // even for a name the index holds; the miss, which IS an answer, stays a 404.
     String projectId = UUID.randomUUID().toString();
     String repoId = contentOrigin();
     repositoryNames.register(projectId, "testing-repo", repoId);

@@ -44,11 +44,9 @@
             <artifactId>qits-auth-core</artifactId>
         </dependency>
         <dependency>
-            <!-- QitsHttpClients: HttpRepositoryNameResolver's java.net.http client to qits-projects
-                 is wrapped through it, so that call opens a CLIENT span and carries X-Qits-Caller
-                 the way the REST client already does. Declared here — this module both builds the
-                 client and serves the JAX-RS resources, so CallerServerFilter/CallerClientFilter
-                 are on the classpath and active. -->
+            <!-- CallerServerFilter/CallerRouteRecorder: an inbound request is attributed to the
+                 X-Qits-Caller that sent it. Declared here because this module serves the JAX-RS
+                 resources and the routes, so the filters are on the classpath and active. -->
             <groupId>${project.groupId}</groupId>
             <artifactId>qits-http-core</artifactId>
         </dependency>
@@ -100,15 +98,15 @@
             <artifactId>quarkus-narayana-jta</artifactId>
         </dependency>
         <dependency>
-            <!-- The ObjectMapper HttpRepositoryNameResolver reads its one lookup response with. -->
+            <!-- The ObjectMapper GitHostRoutes reads the name door's statement with. -->
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-jackson</artifactId>
         </dependency>
         <dependency>
             <!-- The REST surface at /githost/api (quarkus.rest.path), which the SPA reads and no
                  `git` client ever touches. quarkus-rest-jackson brings quarkus-rest with it and
-                 adds the body writer that turns a record into JSON — the same Jackson the resolver
-                 above already uses, so nothing new arrives in the image for it.
+                 adds the body writer that turns a record into JSON — the same Jackson the routes
+                 above already use, so nothing new arrives in the image for it.
 
                  REST rather than another Vert.x route: the git routes are literals because git
                  owns their spelling, and nothing about that argument applies to an API a browser
@@ -199,9 +197,8 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <!-- The consumer half (ticket qits-1149): ProjectsConsumerPactTest and
-                 ProjectsPactFileTest write and check
-                 pacts/qits-githost-service_qits-projects-service.json. -->
+            <!-- The consumer half (ticket qits-1149): the pact-jvm IdpConsumerPactTest and
+                 EventstreamPactTest write this repository's own pacts with. -->
             <groupId>au.com.dius.pact.consumer</groupId>
             <artifactId>junit5</artifactId>
             <scope>test</scope>
@@ -211,12 +208,6 @@
                  pacts/qits-githost-service_qits-eventstream-javalib_qits-events-service.json. -->
             <groupId>${project.groupId}</groupId>
             <artifactId>qits-eventstream-contracts</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <!-- qits-projects' golden masters: the answers the consumer pact is built from. -->
-            <groupId>${project.groupId}</groupId>
-            <artifactId>qits-projects-golden-masters</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -263,12 +254,11 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <!-- The recording service mocks, two of them. The ITs point quarkus.oidc at
-                 idp.MockIdp — a MockService plus key material: it serves the JWKS for a generated
-                 keypair, mints the bearers every story presents, and records what it answered. A
-                 plain MockService plays qits-projects' name resolver, which is what makes the
-                 public /git/:projectId/:repoName clone url serve; both recordings are the FAR end
-                 of a story's diagram, drained as NetworkCapture sources. -->
+            <!-- The recording service mock. The ITs point quarkus.oidc at idp.MockIdp — a
+                 MockService plus key material: it serves the JWKS for a generated keypair, mints
+                 the bearers every story presents, and records what it answered; that recording is
+                 the FAR end of a story's diagram, drained as a NetworkCapture source. Nothing
+                 plays qits-projects: the git host calls it for nothing. -->
             <groupId>${project.groupId}</groupId>
             <artifactId>qits-service-mock</artifactId>
             <scope>test</scope>

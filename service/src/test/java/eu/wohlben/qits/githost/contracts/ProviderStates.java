@@ -1,7 +1,7 @@
 package eu.wohlben.qits.githost.contracts;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import eu.wohlben.qits.githost.FakeRepositoryNameResolver;
+import eu.wohlben.qits.githost.RepositoryNameSeeder;
 import eu.wohlben.qits.githost.GitRepositoryProvider;
 import eu.wohlben.qits.githost.loc.LocResponse;
 import eu.wohlben.qits.githost.loc.RepositoryLocScanner;
@@ -177,7 +177,7 @@ public class ProviderStates {
   @Inject GitRepositoryProvider repositories;
   @Inject RepositoryLocStore locStore;
   @Inject ObjectMapper mapper;
-  @Inject FakeRepositoryNameResolver names;
+  @Inject RepositoryNameSeeder names;
 
   private final Map<String, Supplier<Setup>> states = new LinkedHashMap<>();
 

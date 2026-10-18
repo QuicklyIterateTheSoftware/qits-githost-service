@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import eu.wohlben.qits.githost.api.TokenValidationBootstrapIT;
-import eu.wohlben.qits.githost.stories.support.MockProjects;
+import eu.wohlben.qits.githost.stories.support.StoryNames;
 import eu.wohlben.qits.githost.stories.support.StoryAccessLog;
 import eu.wohlben.qits.githost.stories.support.StoryOrigin;
 import eu.wohlben.qits.githost.stories.support.StoryTarget;
@@ -37,8 +37,8 @@ import org.junit.jupiter.api.condition.EnabledIf;
  * <p>This is the only story in the catalogue with <b>two initiators</b>, and it is the reason
  * {@link StoryAccessLog} stamps each log line as it harvests rather than reading one actor at drain
  * time. The developer clones, the teammate pushes, the developer pulls — and the diagram says
- * exactly that: two arrows into this service from two different people, plus the one this service
- * makes to qits-projects to know what the name means. A tap that could only name one initiator per
+ * exactly that: two arrows into this service from two different people, and none out of it — the
+ * name is answered from this host's own index. A tap that could only name one initiator per
  * story would draw the teammate's push as the developer's, which is the opposite of what happened.
  *
  * <p>The hand-overs are the delicate part. The access log is written off the request thread, so a
@@ -60,7 +60,7 @@ public class PullIT {
   /** {@code qits/shared-notes} — one repository, two working copies. */
   static final String REPO_NAME = "shared-notes";
 
-  static final String REPO_ID = MockProjects.repositoryId(REPO_NAME);
+  static final String REPO_ID = StoryNames.repositoryId(REPO_NAME);
 
   static final String SEEDED_FILE = "NOTES.md";
 
@@ -79,7 +79,6 @@ public class PullIT {
   @BeforeAll
   static void tapBothEndsOfTheNetwork() {
     StoryAccessLog.install();
-    MockProjects.installSource();
   }
 
   @BeforeEach
@@ -242,18 +241,11 @@ public class PullIT {
         TEAMMATE,
         StoryAccessLog.SERVICE,
         "POST " + repo + "/git-receive-pack -> 200");
-    ReportAssertions.assertEdge(
-        CATEGORY,
-        SLUG,
-        "http",
-        StoryAccessLog.SERVICE,
-        MockProjects.SERVICE_NAME,
-        MockProjects.lookupLabel(REPO_NAME, 200));
+    ReportAssertions.assertNoEdgesTo(CATEGORY, SLUG, StoryNames.PROJECTS_SERVICE);
 
-    // The actor set IS the story: exactly two people and this service, and nobody else reached
-    // anything. The request counts behind them belong to the clients.
-    ReportAssertions.assertOnlyEdgesFrom(
-        CATEGORY, SLUG, List.of(DEVELOPER, TEAMMATE, StoryAccessLog.SERVICE));
+    // The actor set IS the story: exactly two people, and nobody else reached anything — this
+    // service included. The request counts behind them belong to the clients.
+    ReportAssertions.assertOnlyEdgesFrom(CATEGORY, SLUG, List.of(DEVELOPER, TEAMMATE));
     ReportAssertions.assertNotLeaked(CATEGORY, SLUG, token);
   }
 }

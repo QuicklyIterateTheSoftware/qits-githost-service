@@ -3,7 +3,7 @@ package eu.wohlben.qits.githost.stories.git;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import eu.wohlben.qits.githost.api.TokenValidationBootstrapIT;
-import eu.wohlben.qits.githost.stories.support.MockProjects;
+import eu.wohlben.qits.githost.stories.support.StoryNames;
 import eu.wohlben.qits.githost.stories.support.StoryAccessLog;
 import eu.wohlben.qits.githost.stories.support.StoryOrigin;
 import eu.wohlben.qits.githost.stories.support.StoryTarget;
@@ -36,8 +36,9 @@ import org.junit.jupiter.api.condition.EnabledIf;
  * shells the same binary against the in-process routes, and its subject is git semantics. This
  * story's subject is the <b>public clone url</b>: {@code /git/:projectId/:repoName}, the spelling a
  * developer types, a workspace remote holds and a committed relative submodule url resolves to. It
- * is the one shape that cannot be served without asking qits-projects what the name means, so the
- * diagram this story emits has two hops in it and neither is narrated.
+ * is answered from this host's own name index, which qits-projects keeps current by pushing every
+ * repository's names here — so the diagram this story emits has exactly one hop in it, observed
+ * rather than narrated, and no {@code qits-githost -> qits-projects} edge.
  *
  * <p>Browserless: {@link Interactions} and {@link Commands}, no {@code Flow}, so no Chromium is
  * launched and the report is the transcript plus the diagram.
@@ -57,7 +58,7 @@ public class CloneIT {
   static final String REPO_NAME = "hello-world";
 
   /** …and as this host stores it. The story never spells this; the fixture does. */
-  static final String REPO_ID = MockProjects.repositoryId(REPO_NAME);
+  static final String REPO_ID = StoryNames.repositoryId(REPO_NAME);
 
   static final String FILE = "README.md";
 
@@ -76,19 +77,18 @@ public class CloneIT {
   URL root;
 
   /**
-   * Wires both halves of the diagram, once. The near side is the launched process' own access log
-   * (nothing in this JVM is on the socket {@code git} uses); the far side is the resolver mock's
-   * recording. Both are cumulative sources, drained by the framework at story end.
+   * Wires the diagram, once: the launched process' own access log (nothing in this JVM is on the
+   * socket {@code git} uses), a cumulative source drained by the framework at story end.
    */
   @BeforeAll
   static void tapBothEndsOfTheNetwork() {
     StoryAccessLog.install();
-    MockProjects.installSource();
   }
 
   /**
    * The state the story starts from, put there the way the platform puts it there: qits-projects'
-   * client provisions a repository by storage id and pushes the first commit into it. None of this
+   * client provisions a repository by storage id, states its name, and pushes the first commit into
+   * it. None of this
    * is a story step and none of it is a story's traffic — see {@link StoryOrigin}.
    */
   @BeforeEach
@@ -105,8 +105,8 @@ public class CloneIT {
       The git host as a developer meets it: one `git clone` against the public url —
       `<host>/git/<project>/<repository>` — carrying a platform bearer, and a working copy that
       holds the repository's files. Nothing about the storage is visible from here: this host keys
-      repositories by an id qits-projects mints and holds no name for any of them, so serving this
-      url means asking qits-projects what the name means, on every request and with nothing cached.
+      repositories by an id qits-projects mints, and answers the name from its own index — which
+      qits-projects keeps current — so serving this url asks nobody else anything.
       The clone's own HEAD is compared against the commit the origin was given, so what is proved
       is the repository's answer rather than the tool's exit code.
       """)
@@ -127,7 +127,7 @@ public class CloneIT {
     commands.env("GIT_TERMINAL_PROMPT", "0");
 
     story
-        .note("qits-projects has provisioned the repository and pushed its first commit")
+        .note("qits-projects has provisioned and named the repository and pushed its first commit")
         .as("origin-provisioned");
 
     // The whole story, in one command. The url is an ARGUMENT rather than part of the template:
@@ -178,9 +178,9 @@ public class CloneIT {
     ReportAssertions.assertStepId(CATEGORY, SLUG, "clone-verified");
     ReportAssertions.assertCommand(CATEGORY, SLUG, "clone", 0);
 
-    // The network, observed rather than claimed: the first two edges are lines the launched
-    // process wrote about what `git` sent it, the third is the resolver mock's own recording of
-    // what this service then asked IT.
+    // The network, observed rather than claimed: both edges are lines the launched process wrote
+    // about what `git` sent it — and there is no third, because this service asked nobody what the
+    // name means.
     //
     // `git` rather than `http` for the protocol shapes: a clone is a negotiated multi-request
     // exchange, and the transport carrying it says nothing about what it means.
@@ -198,22 +198,15 @@ public class CloneIT {
         ACTOR,
         StoryAccessLog.SERVICE,
         "POST " + StoryTarget.clonePath(REPO_NAME) + "/git-upload-pack -> 200");
-    ReportAssertions.assertEdge(
-        CATEGORY,
-        SLUG,
-        "http",
-        StoryAccessLog.SERVICE,
-        MockProjects.SERVICE_NAME,
-        MockProjects.lookupLabel(REPO_NAME, 200));
+    ReportAssertions.assertNoEdgesTo(CATEGORY, SLUG, StoryNames.PROJECTS_SERVICE);
 
     // NO assertEdgeCount, and the reason is worth keeping: how many requests a clone is belongs to
     // the CLIENT. Protocol v2 splits the negotiation into an ls-refs and a fetch — two POSTs that
     // dedupe to one edge here — while v0 sends one, and a git old enough to fall back to the dumb
     // protocol would send several more. What this repository owes a reader is WHO talked to WHOM,
-    // and that is a closed set: the developer reached this service, this service reached
-    // qits-projects, and nothing else initiated anything.
-    ReportAssertions.assertOnlyEdgesFrom(
-        CATEGORY, SLUG, List.of(ACTOR, StoryAccessLog.SERVICE));
+    // and that is a closed set: the developer reached this service, and nothing else — this
+    // service included — initiated anything.
+    ReportAssertions.assertOnlyEdgesFrom(CATEGORY, SLUG, List.of(ACTOR));
 
     // The bundle as bytes: the bearer is on four command lines and must be in none of them.
     ReportAssertions.assertNotLeaked(CATEGORY, SLUG, token);

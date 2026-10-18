@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import eu.wohlben.qits.githost.contracts.ProviderGoldenMasters;
 import eu.wohlben.qits.pact.consumer.ConsumerPact;
 import eu.wohlben.qits.pact.consumer.GoldenInteraction;
 import eu.wohlben.qits.pact.consumer.GoldenMasters;
@@ -33,8 +32,9 @@ import org.junit.jupiter.api.Test;
  * on a key it does not know, the same request). {@link ConsumerGuardTest} holds the properties to
  * that, so a tenant that starts discovering fails there until a discovery row is added here.
  *
- * <p>This service mints no token: it has no {@code quarkus-oidc-client}, and its one peer call
- * ({@link HttpRepositoryNameResolver}) presents the in-network forward-auth headers instead.
+ * <p>This service mints no token: it has no {@code quarkus-oidc-client}, and it makes no peer call
+ * that would present one — it answers repository names from its own index rather than asking
+ * qits-projects (qits-1215).
  */
 class IdpConsumerPactTest {
 
@@ -51,7 +51,10 @@ class IdpConsumerPactTest {
       GoldenInteraction.of(Trigger.event("StartupEvent"), STATE, "getJwks")
           .consumes("keys[].kid", "keys[].kty", "keys[].n", "keys[].e", "keys[].alg", "keys[].use");
 
-  static final ConsumerPact PACT = ConsumerPact.of(ProviderGoldenMasters.CONSUMER, IDP, JWKS);
+  /** This repository, as every pact names its consumer. */
+  static final String CONSUMER = "qits-githost-service";
+
+  static final ConsumerPact PACT = ConsumerPact.of(CONSUMER, IDP, JWKS);
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final HttpClient HTTP = HttpClient.newHttpClient();

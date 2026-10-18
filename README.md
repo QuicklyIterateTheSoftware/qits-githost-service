@@ -97,9 +97,10 @@ with the cutover.
 ### The name index
 
 The name-addressed scheme resolves `(project, repoName)` to a storage id, and is what makes a
-committed relative submodule url (`../<name>.git`) work. **This host answers it from its own table**
-(`V6__repository_names.sql`, `persistence/RepositoryNameStore`), so the public clone url of a
-repository whose names are held here serves whether or not qits-projects is up. The first segment may
+committed relative submodule url (`../<name>.git`) work. **This host answers it from its own table, and from nothing else**
+(`V6__repository_names.sql`, `persistence/RepositoryNameStore`, `StoredRepositoryNameResolver`), so
+the public clone url serves whether or not qits-projects is up: nothing on the clone, fetch, push or
+read path calls qits-projects. The first segment may
 be the project's **id or its slug** (`/git/qits/<name>`); when one spelling matches as an id and
 another project's slug, the id wins.
 
@@ -128,24 +129,15 @@ PUT /git/<repoId>/names
 nobody stated names for answers `"names": []` at revision `-1` with a null project. `DELETE
 /git/<repoId>` takes the repository's names and revision with its packs (a project's slug stays).
 
-**A miss falls back to qits-projects, transitionally.** Until qits-projects has stated every
-repository's names here, a name the index does not hold is asked of qits-projects over HTTP
-(`qits.projects.name-resolver-url`, `HttpRepositoryNameResolver`) — on a miss only, never on a fault.
-**qits-1282 removes the fallback** once the backfill is done; from then on a miss in the index is the
-answer. Unset, a name the index misses is a 404.
+**The index is the only source.** qits-projects pushes every repository's names here as they
+change (and backfilled every existing one), so a name the index does not hold is a name no
+repository carries: a **404**. A rename is a new statement, seen by the next request; the index
+caches nothing, it is the table.
 
-**A miss and an outage are different answers.** "No such name" reaches the client as a 404; anything
-that stopped the question being answered — the index's database unreadable past its retry deadline,
-or, on the fallback, a timeout, a refused connection, a non-200, an unreadable body — is a **503**. A
-git client records a 404 as "this repository is gone", so an outage answered that way would tell the
-platform every repository had been deleted (the `fe26a6c` lesson).
-
-**The fallback caches a found name; a miss and an outage are not cached.** The id qits-projects'
-200 answered is served from memory for `qits.projects.name-resolver-cache-ttl` (default `10M`, `0`
-turns it off). A rename evicts both names when qits-projects announces `RepositoryRenamed`
-(`bus/RepositoryRenamedListener`, a live-only subscriber); a rename this instance missed while off
-the stream lets the old name keep serving the same, unchanged repository for at most one TTL. The
-index itself caches nothing: it is the table.
+**A miss and an outage are different answers.** "No such name" reaches the client as a 404; the
+index's database unreadable past its retry deadline is a **503**. A git client records a 404 as
+"this repository is gone", so an outage answered that way would tell the platform every repository
+had been deleted (the `fe26a6c` lesson).
 
 ### Who may push what
 
@@ -281,10 +273,10 @@ This service is a pact provider, set up the way qits-projects-service is:
   test scope in `service/pom.xml`), named by repository on both sides. An empty classpath fails
   (`ClasspathPactLoader.REQUIRED`), and so does a state a pinned pact names that `ProviderStates`
   does not answer.
-- **This service's own consumer pacts** sit in `pacts/`: against qits-projects
-  (`ProjectsContract`, the name resolver) and qits-idp (`IdpConsumerPactTest`, the oidc tenant's
-  JWKS read), each built from the provider's pinned golden masters. `ConsumerGuardTest` fails when
-  a class starts calling out, or a client sends a request, that no row describes.
+- **This service's own consumer pacts** sit in `pacts/`: against qits-idp (`IdpConsumerPactTest`,
+  the oidc tenant's JWKS read), built from its pinned golden masters. There is none against
+  qits-projects: this service calls it for nothing. `ConsumerGuardTest` fails when a class starts
+  calling out that no pact describes.
 - From the qits-eventstream kit (qits-1163), `EventstreamPactTest` writes this service's pact of the
   outbox publish to qits-events, `pacts/qits-githost-service_qits-eventstream-javalib_qits-events-service.json`.
 
@@ -590,7 +582,6 @@ lineage, the retry budget). What this service owns is in
 | `QITS_RESOURCE_DB_URL` / `_USERNAME` / `_PASSWORD` | This service's PostgreSQL database (pack catalog, protection overrides, commit-subject bypass records). No defaults — an unset variable fails the boot. |
 | `QITS_RESOURCE_EVENTSTREAM_URL` / `_USERNAME` / `_PASSWORD` | The outbox's own database, from the qits-eventstream jar. |
 | `QITS_EVENTS_URL` | Where qits-events answers. Scheme, host and port, no path. |
-| `QITS_PROJECTS_NAME_RESOLVER_URL` | Where qits-projects resolves a repository name the name index does not hold — the transitional fallback qits-1282 removes. No default; unset means such a name 404s, so a real deployment sets it until the backfill is done. |
 | `QITS_GITHOST_STORAGE_CLIENT` | The client id whose self-role (`clients/<value>`) opens the id-addressed scheme. Set it to qits-projects' service client and nothing else opens those routes — not `qits:admin`, not `qits:system`. Unset (shipped) leaves the scheme exactly as it was. |
 | `QITS_REPOSITORIES_GIT_PROTECT_DEFAULT_BRANCH` | The default branch's seatbelt. Ships `false`. |
 | `QITS_GITHOST_COMMIT_SUBJECTS_EXEMPT_ROLES` | Roles whose pushes skip the commit-subject guard. Ships `qits:system,qits:ci-run`. A platform service client and the bootstrap ingress are exempt regardless. |
@@ -675,14 +666,13 @@ artifact, so neither can go stale without the build going red.
 for the whole IT phase. That is not a speed optimisation: the git stories' only possible network tap
 is the server's own access log, and one process means one log to attribute.
 
-**Two mocks stand in for the platform.** `idp.MockIdp` serves the JWKS and mints every bearer a
+**One mock stands in for the platform.** `idp.MockIdp` serves the JWKS and mints every bearer a
 story presents — validation is real, and a token minted for another audience is refused by the same
-code path a deployment runs. A plain `MockService` plays **qits-projects' name resolver** — the
-fallback behind the name index, which no story fills — so it is what makes `/git/:projectId/:repoName`
-serve in the stories; without `qits.projects.name-resolver-url` the public scheme 404s and not one git
-story could clone anything. Both mocks' recordings are registered
-as `NetworkCapture` sources, so the far half of every diagram is observed on the far side rather
-than claimed here.
+code path a deployment runs. Its recording is registered as a `NetworkCapture` source, so the far
+half of that diagram is observed on the far side rather than claimed here. Nothing plays
+qits-projects: the fixture states each story repository's name through `PUT /git/<repoId>/names`
+(`stories/support/StoryNames`), as qits-projects does, and the git stories assert there is **no**
+`qits-githost -> qits-projects` edge.
 
 **The diagram is observed, never narrated.** Three taps feed it and no story method draws an edge:
 
@@ -691,7 +681,7 @@ than claimed here.
 - `stories/support/StoryAccessLog`, which parses `quarkus.http.access-log`'s `%m %U %s` — `%U`
   carries the query, which is what distinguishes `?service=git-upload-pack` from
   `?service=git-receive-pack`;
-- the two mock recordings above.
+- the idp mock's recording above.
 
 `StoryAccessLog` does two things a copy of the sibling services' access-log tap does not. It decides
 the **kind per line**: the three smart-HTTP shapes are `git` (a negotiated protocol exchange, whose
@@ -701,7 +691,7 @@ than reading one initiator at drain time, which is what lets the pull story draw
 and the developer's pull as two different people.
 
 **A story drives the public scheme; the fixture drives the storage one.** `stories/support/
-StoryOrigin` provisions and seeds through `/git/:repoId` — it is playing qits-projects' own client,
+StoryOrigin` provisions, names and seeds through `/git/:repoId` — it is playing qits-projects' own client,
 which is the only caller with a legitimate reason to speak storage ids — and `StoryAccessLog` drops
 every request on that scheme, because provisioning a fixture is setup rather than a walk anybody
 takes. The two never collide, for the same reason the router can tell them apart: the public scheme

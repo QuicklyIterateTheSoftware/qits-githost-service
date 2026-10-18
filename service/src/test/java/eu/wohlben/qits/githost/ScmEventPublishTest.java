@@ -73,7 +73,7 @@ public class ScmEventPublishTest {
   @Inject GitRepositoryProvider repositories;
 
   /** The alias table, so a push can arrive on the public {@code /git/<project>/<name>} url. */
-  @Inject FakeRepositoryNameResolver repositoryNames;
+  @Inject RepositoryNameSeeder repositoryNames;
 
   /**
    * The outbox is read through its OWN persistence unit's EntityManager rather than through

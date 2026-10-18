@@ -49,7 +49,7 @@ public class GitHostStorageClientTest {
     }
   }
 
-  @Inject FakeRepositoryNameResolver repositoryNames;
+  @Inject RepositoryNameSeeder repositoryNames;
 
   @Inject GitRepositoryProvider repositories;
 

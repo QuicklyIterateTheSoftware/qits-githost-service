@@ -104,13 +104,13 @@ import org.jboss.logging.Logger;
  *   <li><b>name-addressed</b> {@code /git/:projectId/:repoName} — <b>the public clone url</b>, and
  *       the only address anything above the projects↔githost seam ever holds: CI, the daemons, a
  *       deploy push, a human. {@code repoName} is resolved through the {@link
- *       RepositoryNameResolver} port to a storage id — answered from this host's own name index,
- *       which qits-projects fills through the name door below, and transitionally from qits-projects
- *       itself on a miss ({@link StoredRepositoryNameResolver}). The first segment may be the
+ *       RepositoryNameResolver} port to a storage id — answered from this host's own name index
+ *       alone ({@link StoredRepositoryNameResolver}), which qits-projects keeps current by pushing
+ *       every repository's names through the name door below. The first segment may be the
  *       project's id or its slug. {@code (projectId, repoName)} is what a push then ECHOES onto its
  *       events, as the pusher spelled them. It is also what lets committed relative submodule urls
  *       ({@code ../<name>.git}) resolve natively against a sibling, with no {@code
- *       submodule.<name>.url} override. A name neither answers is a 404.
+ *       submodule.<name>.url} override. A name the index does not hold is a 404.
  *   <li><b>id-addressed</b> {@code /git/:repoId} — the opaque storage id, handed straight to the
  *       store. <b>Internal plumbing for qits-projects</b>, which mints that id and is the one
  *       service that may speak it; a UUID clone url is never published and never leaks upward. When
@@ -143,7 +143,7 @@ import org.jboss.logging.Logger;
  *
  * <p>And the <b>name door</b>, on the same base and behind the same guard — qits-projects telling
  * this host what a repository is called, so the public scheme answers from this host's own index
- * ({@link StoredRepositoryNameResolver}) rather than by asking qits-projects per request:
+ * ({@link StoredRepositoryNameResolver}) and never has to ask qits-projects:
  *
  * <ul>
  *   <li>{@code PUT …/:repoId/names} {@code {"projectId", "projectSlug", "names": [...],
@@ -334,8 +334,7 @@ public class GitHostRoutes {
    * <p>An {@code Optional}, never a {@code String} with an empty default: SmallRye reads a
    * configured-empty value as <em>absent</em>, so a {@code String} injection of an unset key kills
    * the packaged binary at boot with "Failed to load config value of type java.lang.String" — the
-   * trap {@code MirrorUpstream.endpointOverride} documents, {@code PackagedProcessIT} caught, and
-   * {@link HttpRepositoryNameResolver#resolverUrl} avoids the same way.
+   * trap {@code MirrorUpstream.endpointOverride} documents and {@code PackagedProcessIT} caught.
    */
   @ConfigProperty(name = "qits.githost.storage-client")
   Optional<String> storageClient;
@@ -1803,8 +1802,8 @@ public class GitHostRoutes {
    *
    * <p>503 rather than 404 is the whole of {@code fe26a6c} restated on this seam: a git client
    * records a 404 as "this repository does not exist" and stops, while a 503 is a condition it
-   * retries. An outage of qits-projects must not read as every repository on the platform having
-   * been deleted.
+   * retries. A name index that cannot be read must not read as every repository on the platform
+   * having been deleted.
    */
   private void byName(RoutingContext rc, Consumer<OpenedRepo> served) {
     NamedRepo named;

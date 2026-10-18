@@ -4,7 +4,6 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import eu.wohlben.qits.githost.stories.support.MockProjects;
 import eu.wohlben.qits.githost.stories.support.StoryAccessLog;
 import eu.wohlben.qits.githost.testdb.EmbeddedPg;
 import eu.wohlben.qits.servicemock.idp.MockIdp;
@@ -80,25 +79,25 @@ public class TokenValidationBootstrapIT {
    * a story mints carries it, so the packaged process enforces exactly what a deployment does.
    *
    * <p>The databases are the same embedded postgres the surefire suite spawns, under IT-own names
-   * so nothing is shared with the {@code @QuarkusTest} databases. The two mocks start here — before
-   * the application — via {@code ensureStarted()}, which parks their coordinates in system
+   * so nothing is shared with the {@code @QuarkusTest} databases. The idp mock starts here — before
+   * the application — via {@code ensureStarted()}, which parks its coordinates in system
    * properties: a test profile is instantiated in more than one classloader, and the property
    * table is the one thing every copy (and a story method's {@code attach()}) shares.
    *
-   * <p><b>Three of the seams below exist for the git stories rather than for this class</b>, and
+   * <p><b>Two of the seams below exist for the git stories rather than for this class</b>, and
    * they live here because this is the profile every story class in the module names — one profile
    * means one launched process for the whole IT phase, which is what makes the access log a single
    * attributable recording:
    *
    * <ul>
-   *   <li>{@code qits.projects.name-resolver-url} — without it the PUBLIC clone url
-   *       ({@code /git/:projectId/:repoName}) 404s and only the internal storage scheme serves, so
-   *       not one git story could clone anything. {@link MockProjects} is the far end.
    *   <li>the {@code quarkus.http.access-log.*} block — the git stories' only possible network
    *       tap, since their subject is a real {@code git} talking over a socket this JVM is not on.
    *   <li>{@code qits.githost.storage-client} stays UNSET, which is the shipped compat arm: the
    *       id-addressed scheme then opens to {@code qits:system} and the fixture can provision
-   *       through it. Setting it is a different story than any told here.
+   *       through it — and state each repository's name through {@code PUT /git/<repoId>/names},
+   *       which is all the PUBLIC clone url ({@code /git/:projectId/:repoName}) needs: the host
+   *       answers names from its own index and dials no qits-projects. Setting it is a different
+   *       story than any told here.
    * </ul>
    */
   public static class PackagedWithMockIdp implements QuarkusTestProfile {
@@ -119,10 +118,6 @@ public class TokenValidationBootstrapIT {
       // the one seam this test moves: where the idp is. Runtime key, so the packaged artifact
       // is otherwise exactly what ships.
       overrides.put("quarkus.oidc.auth-server-url", idp.baseUrl());
-      // Where (projectId, repoName) becomes a storage id — the key a real deployment must set or
-      // it serves nothing anyone can clone. Runtime, and read per request: nothing is cached, so a
-      // rename can never serve a stale id.
-      overrides.put("qits.projects.name-resolver-url", MockProjects.resolverUrl());
       // dark outside a deployment, like %dev/%test — both are runtime keys
       overrides.put("quarkus.otel.sdk.disabled", "true");
       overrides.put("qits.eventstream.enabled", "false");

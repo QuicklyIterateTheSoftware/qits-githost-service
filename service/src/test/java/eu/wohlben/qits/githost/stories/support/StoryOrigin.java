@@ -30,12 +30,15 @@ import java.util.Map;
  * RestAssured tap {@code TokenValidationBootstrapIT} installs JVM-wide and drawn as an edge nobody
  * walked.
  *
- * <p><b>Delete, then create.</b> The storage ids are fixed literals (see {@link MockProjects}), and
+ * <p><b>Delete, then create, then name.</b> The storage ids are fixed literals (see {@link
+ * StoryNames}), and
  * the IT database is not wiped between builds, so a repository left by a previous run would make
  * "a push lands NEW history" a push of history that was already there. {@code DELETE} takes every
  * row keyed by the id — packs, pack files, the protection override, the loc memos — in one
  * transaction, and the {@code PUT} that follows is a repository whose HEAD names an unborn branch
- * and nothing else.
+ * and nothing else. The delete takes the repository's names too, so the last step states them
+ * again — {@code PUT /git/<repoId>/names}, exactly as qits-projects does — which is what makes the
+ * public clone url resolve.
  */
 public final class StoryOrigin {
 
@@ -98,7 +101,8 @@ public final class StoryOrigin {
 
   /**
    * A repository that exists and is empty: {@code DELETE} whatever is there, then {@code PUT} it
-   * back with a HEAD naming {@link #BRANCH} and nothing on it. This is the shape a freshly
+   * back with a HEAD naming {@link #BRANCH} and nothing on it, then state its public name (if
+   * {@link StoryNames} gives it one) under {@link StoryTarget#PROJECT}. This is the shape a freshly
    * provisioned origin has.
    */
   public static void provisionEmpty(StoryTarget target, String repoId, String token) {
@@ -110,6 +114,31 @@ public final class StoryOrigin {
             .PUT(HttpRequest.BodyPublishers.ofString("{\"defaultBranch\":\"" + BRANCH + "\"}"))
             .build(),
         201);
+    StoryNames.nameOf(repoId).ifPresent(name -> stateName(url, token, name));
+  }
+
+  /**
+   * {@code PUT /git/<repoId>/names} — the repository's whole name set, as qits-projects states it.
+   * The delete above dropped the revision row with the names, so any revision is newer; the clock
+   * is used only so a rerun against a database that kept it still applies.
+   */
+  private static void stateName(String storageUrl, String token, String name) {
+    String body =
+        "{\"projectId\":\""
+            + StoryTarget.PROJECT
+            + "\",\"projectSlug\":\""
+            + StoryTarget.PROJECT
+            + "\",\"names\":[\""
+            + name
+            + "\"],\"revision\":"
+            + System.currentTimeMillis()
+            + "}";
+    send(
+        request(storageUrl + "/names", token)
+            .header("Content-Type", "application/json")
+            .PUT(HttpRequest.BodyPublishers.ofString(body))
+            .build(),
+        200);
   }
 
   /**
