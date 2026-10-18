@@ -28,9 +28,8 @@ import java.util.function.BiConsumer;
  * answers: 200, where it reads {@code repositoryId} and nothing else, and 404, where it reads
  * nothing.
  *
- * <p><b>{@link #CASES} are the rows the provider can verify today</b> and go into the committed
- * pact. {@link #PENDING} are rows that wait on a provider state qits-projects does not record yet;
- * they stay out of the pact and their test is disabled, naming the state.
+ * <p>Both answers are recorded by qits-projects (its golden masters, pinned in the pom), so every
+ * row in {@link #CASES} goes into the committed pact; none waits on a provider state.
  */
 final class ProjectsContract {
 
@@ -39,19 +38,12 @@ final class ProjectsContract {
   /** Recorded by qits-projects (it records getProject's 404 in it). */
   static final String NO_PROJECT_WITH_THE_GIVEN_ID = "no project with the given id";
 
-  /**
-   * NOT recorded yet: qits-projects must record {@code resolveRepositoryName} in this state, with a
-   * {@code repoName} param and {@code repositoryId} under {@code frozen.ids}.
-   */
+  /** Recorded by qits-projects: {@code resolveRepositoryName} answers 200 with {@code repositoryId}. */
   static final String A_REPOSITORY_EXISTS = "a repository exists";
 
   static final String RESOLVE_REPOSITORY_NAME = "resolveRepositoryName";
 
   static final String PATH = "/projects/api/projects/{projectId}/repositories/by-name/{repoName}";
-
-  static final String PENDING_REASON =
-      "needs provider state '" + A_REPOSITORY_EXISTS + "' for " + RESOLVE_REPOSITORY_NAME
-          + " in qits-projects-service";
 
   /** Every route of the name-addressed scheme; each one resolves the name before it serves. */
   static final List<Trigger> TRIGGERS =
@@ -85,33 +77,31 @@ final class ProjectsContract {
               Optional.empty(),
               resolver.resolveRepositoryId(params.get("projectId"), params.get("repoName")));
 
+  /** 200: the name resolves. The resolver reads {@code repositoryId} and answers it. */
+  private static final BiConsumer<HttpRepositoryNameResolver, Map<String, String>> HIT =
+      (resolver, params) ->
+          assertEquals(
+              Optional.of(params.get("repositoryId")),
+              resolver.resolveRepositoryId(params.get("projectId"), params.get("repoName")));
+
+  /** Every route, once per answer: the 404 miss and the 200 hit. */
   static final List<Case> CASES =
       TRIGGERS.stream()
-          .map(
+          .flatMap(
               trigger ->
-                  new Case(
-                      trigger,
-                      NO_PROJECT_WITH_THE_GIVEN_ID,
-                      new Call(RESOLVE_REPOSITORY_NAME, "GET", PATH, Map.of(), 404),
-                      List.of(),
-                      MISS))
-          .toList();
-
-  /** 200: the name resolves. The resolver reads {@code repositoryId} and answers it. */
-  static final List<Case> PENDING =
-      TRIGGERS.stream()
-          .map(
-              trigger ->
-                  new Case(
-                      trigger,
-                      A_REPOSITORY_EXISTS,
-                      new Call(RESOLVE_REPOSITORY_NAME, "GET", PATH, Map.of(), 200),
-                      List.of("$.repositoryId"),
-                      (resolver, params) ->
-                          assertEquals(
-                              Optional.of(params.get("repositoryId")),
-                              resolver.resolveRepositoryId(
-                                  params.get("projectId"), params.get("repoName")))))
+                  java.util.stream.Stream.of(
+                      new Case(
+                          trigger,
+                          NO_PROJECT_WITH_THE_GIVEN_ID,
+                          new Call(RESOLVE_REPOSITORY_NAME, "GET", PATH, Map.of(), 404),
+                          List.of(),
+                          MISS),
+                      new Case(
+                          trigger,
+                          A_REPOSITORY_EXISTS,
+                          new Call(RESOLVE_REPOSITORY_NAME, "GET", PATH, Map.of(), 200),
+                          List.of("$.repositoryId"),
+                          HIT)))
           .toList();
 
   private ProjectsContract() {}

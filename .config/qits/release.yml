@@ -12,13 +12,13 @@ artifacts:
 # The provider golden masters: the platform packages `golden-masters/` as
 # `eu.wohlben.qits:qits-githost-golden-masters` and `@qits/githost-golden-masters`, each published
 # only when its content changed, plus the `@contracts/qits-githost` docs bundle.
-# THE PACTS (ticket qits-1149): qits-githost's own consumer pact against qits-projects, keyed by
-# the provider's repository name, as qits-maintenance-service declares its. It sits flat in
-# `pacts/` as `qits-githost-service_qits-projects-service.json`; qits-ci packs only
-# `pacts/*_<provider>.json` into that provider's maven jar,
-# eu.wohlben.qits:qits-githost-service-pacts-<provider>, and publishes it only when those files
-# changed. Beside it (qits-1163), what qits-eventstream asks qits-events on this service's behalf
-# — only the outbox publish, as its one listener is raw — in
+# THE PACTS (ticket qits-1149): qits-githost's own consumer pacts, keyed by the provider's
+# repository name, as qits-maintenance-service declares its — against qits-projects (the name
+# resolver) and qits-idp (the quarkus-oidc tenant's JWKS read). Each sits flat in `pacts/` as
+# `qits-githost-service_<provider>.json`; qits-ci packs only `pacts/*_<provider>.json` into that
+# provider's maven jar, eu.wohlben.qits:qits-githost-service-pacts-<provider>, and publishes it only
+# when those files changed. Beside them (qits-1163), what qits-eventstream asks qits-events on this
+# service's behalf — only the outbox publish, as its one listener is raw — in
 # `qits-githost-service_qits-eventstream-javalib_qits-events-service.json`, written by
 # EventstreamPactTest from the library's kit and packed for qits-events-service.
 contracts:
@@ -27,4 +27,5 @@ contracts:
   pacts:
     qits-projects-service: { packages: [maven] }
     qits-events-service: { packages: [maven] }
+    qits-idp-service: { packages: [maven] }
 userflows: qits-githost

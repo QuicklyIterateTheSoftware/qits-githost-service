@@ -31,6 +31,190 @@
       ]
     },
     {
+      "name": "a repository declaring its configuration",
+      "slug": "a-repository-declaring-its-configuration",
+      "params": {
+        "path": ".config/qits/configuration.yml",
+        "projectId": "00000000-0000-4000-8000-000000000001",
+        "repoName": "contract-service",
+        "repositoryId": "00000000-0000-4000-8000-000000000002",
+        "rev": "main"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "getBlob",
+          "method": "GET",
+          "path": "/git/{projectId}/{repoName}/blob/{rev}/{path}",
+          "status": 200,
+          "responseHeaders": {
+            "Git-Commit-Sha": "0000000000000000000000000000000000000001"
+          },
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "responseHeaders": [
+              "Git-Commit-Sha"
+            ],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getBlobById",
+          "method": "GET",
+          "path": "/git/{repositoryId}/blob/{rev}/{path}",
+          "status": 200,
+          "responseHeaders": {
+            "Git-Commit-Sha": "0000000000000000000000000000000000000001"
+          },
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "responseHeaders": [
+              "Git-Commit-Sha"
+            ],
+            "listFilteredTo": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "a repository declaring its deployments",
+      "slug": "a-repository-declaring-its-deployments",
+      "params": {
+        "path": ".config/qits/deployments.yml",
+        "projectId": "00000000-0000-4000-8000-000000000001",
+        "repoName": "contract-service",
+        "repositoryId": "00000000-0000-4000-8000-000000000002",
+        "rev": "main"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "getBlob",
+          "method": "GET",
+          "path": "/git/{projectId}/{repoName}/blob/{rev}/{path}",
+          "status": 200,
+          "responseHeaders": {
+            "Git-Commit-Sha": "0000000000000000000000000000000000000001"
+          },
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "responseHeaders": [
+              "Git-Commit-Sha"
+            ],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getBlobById",
+          "method": "GET",
+          "path": "/git/{repositoryId}/blob/{rev}/{path}",
+          "status": 200,
+          "responseHeaders": {
+            "Git-Commit-Sha": "0000000000000000000000000000000000000001"
+          },
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "responseHeaders": [
+              "Git-Commit-Sha"
+            ],
+            "listFilteredTo": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "a repository declaring no configuration",
+      "slug": "a-repository-declaring-no-configuration",
+      "params": {
+        "path": ".config/qits/configuration.yml",
+        "projectId": "00000000-0000-4000-8000-000000000001",
+        "repoName": "contract-service",
+        "repositoryId": "00000000-0000-4000-8000-000000000002",
+        "rev": "main"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "getBlob",
+          "method": "GET",
+          "path": "/git/{projectId}/{repoName}/blob/{rev}/{path}",
+          "status": 404,
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getBlobById",
+          "method": "GET",
+          "path": "/git/{repositoryId}/blob/{rev}/{path}",
+          "status": 404,
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "a repository declaring no deployments",
+      "slug": "a-repository-declaring-no-deployments",
+      "params": {
+        "path": ".config/qits/deployments.yml",
+        "projectId": "00000000-0000-4000-8000-000000000001",
+        "repoName": "contract-service",
+        "repositoryId": "00000000-0000-4000-8000-000000000002",
+        "rev": "main"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "getBlob",
+          "method": "GET",
+          "path": "/git/{projectId}/{repoName}/blob/{rev}/{path}",
+          "status": 404,
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getBlobById",
+          "method": "GET",
+          "path": "/git/{repositoryId}/blob/{rev}/{path}",
+          "status": 404,
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        }
+      ]
+    },
+    {
       "name": "a repository exists",
       "slug": "a-repository-exists",
       "params": {
@@ -147,6 +331,19 @@
             "strings": [],
             "listFilteredTo": null
           }
+        },
+        {
+          "operationId": "getRootTreeById",
+          "method": "GET",
+          "path": "/git/{repositoryId}/tree/{sha}",
+          "status": 404,
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
         }
       ]
     },
@@ -177,9 +374,54 @@
           }
         },
         {
+          "operationId": "getBlobById",
+          "method": "GET",
+          "path": "/git/{repositoryId}/blob/{rev}/{path}",
+          "status": 404,
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getRootTree",
+          "method": "GET",
+          "path": "/git/{projectId}/{repoName}/tree/{rev}",
+          "status": 200,
+          "responseHeaders": {
+            "Git-Commit-Sha": "0000000000000000000000000000000000000001"
+          },
+          "file": "a-repository-missing-the-requested-path/getRootTree.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "responseHeaders": [
+              "Git-Commit-Sha"
+            ],
+            "listFilteredTo": null
+          }
+        },
+        {
           "operationId": "getTree",
           "method": "GET",
           "path": "/git/{projectId}/{repoName}/tree/{rev}/{directory}",
+          "status": 404,
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getTreeById",
+          "method": "GET",
+          "path": "/git/{repositoryId}/tree/{rev}/{directory}",
           "status": 404,
           "file": null,
           "frozen": {
@@ -529,6 +771,25 @@
           }
         },
         {
+          "operationId": "getBlobById",
+          "method": "GET",
+          "path": "/git/{repositoryId}/blob/{rev}/{path}",
+          "status": 200,
+          "responseHeaders": {
+            "Git-Commit-Sha": "0000000000000000000000000000000000000001"
+          },
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "responseHeaders": [
+              "Git-Commit-Sha"
+            ],
+            "listFilteredTo": null
+          }
+        },
+        {
           "operationId": "getRepositoryFile",
           "method": "GET",
           "path": "/githost/api/repositories/{repositoryId}/file",
@@ -584,6 +845,25 @@
           }
         },
         {
+          "operationId": "getRootTreeById",
+          "method": "GET",
+          "path": "/git/{repositoryId}/tree/{sha}",
+          "status": 200,
+          "responseHeaders": {
+            "Git-Commit-Sha": "0000000000000000000000000000000000000001"
+          },
+          "file": "a-repository-with-files-on-main/getRootTreeById.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "responseHeaders": [
+              "Git-Commit-Sha"
+            ],
+            "listFilteredTo": null
+          }
+        },
+        {
           "operationId": "getTree",
           "method": "GET",
           "path": "/git/{projectId}/{repoName}/tree/{rev}/{directory}",
@@ -592,6 +872,25 @@
             "Git-Commit-Sha": "0000000000000000000000000000000000000001"
           },
           "file": "a-repository-with-files-on-main/getTree.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "responseHeaders": [
+              "Git-Commit-Sha"
+            ],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getTreeById",
+          "method": "GET",
+          "path": "/git/{repositoryId}/tree/{rev}/{directory}",
+          "status": 200,
+          "responseHeaders": {
+            "Git-Commit-Sha": "0000000000000000000000000000000000000001"
+          },
+          "file": "a-repository-with-files-on-main/getTreeById.json",
           "frozen": {
             "ids": [],
             "instants": [],
@@ -625,6 +924,87 @@
             "instants": [],
             "strings": [],
             "listFilteredTo": "$.entries"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a repository with the release tag",
+      "slug": "a-repository-with-the-release-tag",
+      "params": {
+        "projectId": "00000000-0000-4000-8000-000000000001",
+        "repoName": "contract-service",
+        "repositoryId": "00000000-0000-4000-8000-000000000002",
+        "sha": "0000000000000000000000000000000000000001"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "createTag",
+          "method": "POST",
+          "path": "/githost/api/repositories/{repositoryId}/tags",
+          "body": {
+            "name": "2026.101.120000",
+            "sha": "{sha}",
+            "message": "release 2026.101.120000",
+            "author": {
+              "name": "qits-projects",
+              "email": "qits-projects@qits.internal"
+            },
+            "projectId": "{projectId}",
+            "repoName": "{repoName}"
+          },
+          "status": 409,
+          "file": "a-repository-with-the-release-tag/createTag.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "shas": [
+              "$.sha"
+            ],
+            "listFilteredTo": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "a repository without the branch to fold",
+      "slug": "a-repository-without-the-branch-to-fold",
+      "params": {
+        "projectId": "00000000-0000-4000-8000-000000000001",
+        "repoName": "contract-service",
+        "repositoryId": "00000000-0000-4000-8000-000000000002",
+        "source": "feature/contract",
+        "target": "refs/heads/main"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "mergeBranches",
+          "method": "POST",
+          "path": "/githost/api/repositories/{repositoryId}/merges",
+          "body": {
+            "target": "{target}",
+            "sources": [
+              "{source}"
+            ],
+            "message": "fold the branch",
+            "author": {
+              "name": "qits-projects",
+              "email": "qits-projects@qits.internal"
+            },
+            "projectId": "{projectId}",
+            "repoName": "{repoName}",
+            "versionPins": true
+          },
+          "status": 404,
+          "file": "a-repository-without-the-branch-to-fold/mergeBranches.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
           }
         }
       ]
@@ -673,6 +1053,31 @@
       "dependsOn": [],
       "operations": [
         {
+          "operationId": "getRootTree",
+          "method": "GET",
+          "path": "/git/{projectId}/{repoName}/tree/{rev}",
+          "query": {
+            "recursive": "true"
+          },
+          "status": 200,
+          "responseHeaders": {
+            "Git-Commit-Sha": "0000000000000000000000000000000000000002"
+          },
+          "file": "a-wrapper-repository-with-a-submodule/getRootTree.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "shas": [
+              "$.entries[*].sha"
+            ],
+            "responseHeaders": [
+              "Git-Commit-Sha"
+            ],
+            "listFilteredTo": null
+          }
+        },
+        {
           "operationId": "getTree",
           "method": "GET",
           "path": "/git/{projectId}/{repoName}/tree/{rev}/{directory}",
@@ -688,6 +1093,52 @@
             "shas": [
               "$.entries[*].sha"
             ],
+            "responseHeaders": [
+              "Git-Commit-Sha"
+            ],
+            "listFilteredTo": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "an unnamed repository declaring its deployments",
+      "slug": "an-unnamed-repository-declaring-its-deployments",
+      "params": {
+        "path": ".config/qits/deployments.yml",
+        "projectId": "00000000-0000-4000-8000-000000000001",
+        "repoName": "contract-service",
+        "repositoryId": "00000000-0000-4000-8000-000000000002",
+        "rev": "main"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "getBlob",
+          "method": "GET",
+          "path": "/git/{projectId}/{repoName}/blob/{rev}/{path}",
+          "status": 404,
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getBlobById",
+          "method": "GET",
+          "path": "/git/{repositoryId}/blob/{rev}/{path}",
+          "status": 200,
+          "responseHeaders": {
+            "Git-Commit-Sha": "0000000000000000000000000000000000000001"
+          },
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
             "responseHeaders": [
               "Git-Commit-Sha"
             ],

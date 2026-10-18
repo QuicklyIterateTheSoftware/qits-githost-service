@@ -277,11 +277,16 @@ This service is a pact provider, set up the way qits-projects-service is:
 - Both tests **compare by default** and fail with a diff. Rewrite with `-Dgolden.update=true`, then
   review the diff.
 - **`ConsumerPactVerificationTest`** verifies every `pacts/<consumer>_qits-githost-service.json` on
-  the test classpath — the consumers' pinned pact jars, named by repository on both sides. No
-  consumer pins one yet, so an empty classpath passes with a log line. When the first pact jar is
-  pinned, drop `@IgnoreNoPactsToVerify` and set `ClasspathPactLoader.REQUIRED` to true.
-- As a consumer, `pacts/` holds this service's pact against qits-projects and, from the
-  qits-eventstream kit (qits-1163), `EventstreamPactTest`'s pact of the outbox publish to qits-events.
+  the test classpath — the consumers' pinned pact jars (`<consumer>-pacts-qits-githost-service`,
+  test scope in `service/pom.xml`), named by repository on both sides. An empty classpath fails
+  (`ClasspathPactLoader.REQUIRED`), and so does a state a pinned pact names that `ProviderStates`
+  does not answer.
+- **This service's own consumer pacts** sit in `pacts/`: against qits-projects
+  (`ProjectsContract`, the name resolver) and qits-idp (`IdpConsumerPactTest`, the oidc tenant's
+  JWKS read), each built from the provider's pinned golden masters. `ConsumerGuardTest` fails when
+  a class starts calling out, or a client sends a request, that no row describes.
+- From the qits-eventstream kit (qits-1163), `EventstreamPactTest` writes this service's pact of the
+  outbox publish to qits-events, `pacts/qits-githost-service_qits-eventstream-javalib_qits-events-service.json`.
 
 ### The git primitives
 

@@ -9,7 +9,6 @@ import au.com.dius.pact.consumer.model.MockProviderConfig;
 import au.com.dius.pact.core.model.PactSpecVersion;
 import java.util.ArrayList;
 import java.util.List;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -32,13 +31,6 @@ class ProjectsConsumerPactTest {
   void everyRowIsWhatTheResolverAsksAndUnderstands() {
     assertFalse(ProjectsContract.CASES.isEmpty());
     run(ProjectsContract.CASES);
-  }
-
-  @Test
-  @Disabled(ProjectsContract.PENDING_REASON)
-  void aResolvedNameIsWhatTheResolverReads() {
-    // When qits-projects records the state: move PENDING into CASES and update the pact file.
-    run(ProjectsContract.PENDING);
   }
 
   private static void run(List<ProjectsContract.Case> rows) {

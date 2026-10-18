@@ -34,8 +34,8 @@ import java.util.regex.Pattern;
  *       by its {@code provider} field, never by classpath order.
  *   <li><b>The pact binds only what the consumer reads.</b> An interaction names the body paths its
  *       code reads ({@code consumes}); the response holds those paths and nothing else, with the
- *       recorded values as examples. No paths means a status-only interaction, which needs no
- *       recording at all — only the provider state.
+ *       recorded values as examples. No paths means a status-only interaction, still bound to
+ *       the recorded operation and its status in that state.
  * </ul>
  *
  * <p>Matchers, from the index's {@code frozen} lists: a path under {@code frozen.ids} gets a UUID
@@ -125,7 +125,8 @@ public final class ProviderGoldenMasters {
   /**
    * Add the V4 HTTP interaction for {@code call} in {@code state}, reached from {@code trigger},
    * binding only {@code consumes}. With paths, the response body comes from the recording of
-   * {@code call.operationId()} in {@code state}; without, the interaction is status-only.
+   * {@code call.operationId()} in {@code state}; without, the interaction is status-only — and
+   * either way the state must have recorded that operation with that status.
    */
   public PactBuilder interaction(
       PactBuilder builder,
@@ -136,6 +137,14 @@ public final class ProviderGoldenMasters {
       List<String> consumes) {
     Objects.requireNonNull(trigger, "trigger: every interaction names the entry point that makes it");
     Map<String, String> params = params(state);
+    // A status-only row is bound to the recording too: the operation must be recorded in that
+    // state, answering that status — never a status the consumer merely hopes for.
+    JsonNode recorded = operationNode(state, call.operationId());
+    if (recorded.path("status").asInt() != call.status()) {
+      throw new IllegalStateException(
+          indexProvider + " golden master " + state + "/" + call.operationId() + " recorded status "
+              + recorded.path("status").asInt() + ", the call expects " + call.status());
+    }
     DslPart body = consumes.isEmpty() ? null : responseBody(state, call, consumes);
     Map<String, Object> references = new LinkedHashMap<>();
     Map<String, String> qitsCall = new LinkedHashMap<>();

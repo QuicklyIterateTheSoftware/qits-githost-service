@@ -126,6 +126,9 @@ class GoldenMasterRecordingTest {
 
   private static final String NAMED = "/git/{projectId}/{repoName}";
 
+  /** The content reads' storage-id twin (qits-ci and qits-deployments fall back to it). */
+  private static final String STORED = "/git/{repositoryId}";
+
   private static final String BY_ID = "/githost/api/repositories/{repositoryId}";
 
   static final List<Interaction> INTERACTIONS =
@@ -314,6 +317,121 @@ class GoldenMasterRecordingTest {
               NAMED + "/blob/{rev}/{path}",
               404,
               true),
+          // the root of a repository that lacks the path: the second read that tells a missing
+          // path from a missing commit (qits-maintenance's GitHostReader)
+          raw(
+              ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_PATH,
+              "getRootTree",
+              NAMED + "/tree/{rev}",
+              200,
+              false),
+          // the whole tree in one read, every blob and gitlink with its path (qits-maintenance's
+          // estate pins)
+          raw(
+              ProviderStates.A_WRAPPER_REPOSITORY_WITH_A_SUBMODULE,
+              "getRootTree",
+              NAMED + "/tree/{rev}?recursive=true",
+              200,
+              false),
+          // --- the same reads by storage id (qits-ci, qits-deployments) ------------------------
+          raw(
+              ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN,
+              "getRootTreeById",
+              STORED + "/tree/{sha}",
+              200,
+              false),
+          raw(
+              ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN,
+              "getTreeById",
+              STORED + "/tree/{rev}/{directory}",
+              200,
+              false),
+          raw(
+              ProviderStates.A_REPOSITORY_WITH_FILES_ON_MAIN,
+              "getBlobById",
+              STORED + "/blob/{rev}/{path}",
+              200,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_COMMIT,
+              "getRootTreeById",
+              STORED + "/tree/{sha}",
+              404,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_PATH,
+              "getTreeById",
+              STORED + "/tree/{rev}/{directory}",
+              404,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_PATH,
+              "getBlobById",
+              STORED + "/blob/{rev}/{path}",
+              404,
+              true),
+          // --- the deployer's two declarations, each at its fixed path, by name and by id
+          // (qits-deployments' GitHostSpecSource) -------------------------------------------------
+          raw(
+              ProviderStates.A_REPOSITORY_DECLARING_ITS_DEPLOYMENTS,
+              "getBlob",
+              NAMED + "/blob/{rev}/{path}",
+              200,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_DECLARING_ITS_DEPLOYMENTS,
+              "getBlobById",
+              STORED + "/blob/{rev}/{path}",
+              200,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_DECLARING_NO_DEPLOYMENTS,
+              "getBlob",
+              NAMED + "/blob/{rev}/{path}",
+              404,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_DECLARING_NO_DEPLOYMENTS,
+              "getBlobById",
+              STORED + "/blob/{rev}/{path}",
+              404,
+              true),
+          raw(
+              ProviderStates.AN_UNNAMED_REPOSITORY_DECLARING_ITS_DEPLOYMENTS,
+              "getBlob",
+              NAMED + "/blob/{rev}/{path}",
+              404,
+              true),
+          raw(
+              ProviderStates.AN_UNNAMED_REPOSITORY_DECLARING_ITS_DEPLOYMENTS,
+              "getBlobById",
+              STORED + "/blob/{rev}/{path}",
+              200,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_DECLARING_ITS_CONFIGURATION,
+              "getBlob",
+              NAMED + "/blob/{rev}/{path}",
+              200,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_DECLARING_ITS_CONFIGURATION,
+              "getBlobById",
+              STORED + "/blob/{rev}/{path}",
+              200,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_DECLARING_NO_CONFIGURATION,
+              "getBlob",
+              NAMED + "/blob/{rev}/{path}",
+              404,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_DECLARING_NO_CONFIGURATION,
+              "getBlobById",
+              STORED + "/blob/{rev}/{path}",
+              404,
+              true),
           // --- the REST reads and ref writes (qits-projects, qits-maintenance) ------------------
           new Interaction(
               ProviderStates.A_REPOSITORY_WITH_A_SIDE_BRANCH,
@@ -362,6 +480,13 @@ class GoldenMasterRecordingTest {
               201,
               TAG_BODY),
           write(
+              ProviderStates.A_REPOSITORY_WITH_THE_RELEASE_TAG,
+              "createTag",
+              "POST",
+              BY_ID + "/tags",
+              409,
+              TAG_BODY),
+          write(
               ProviderStates.A_REPOSITORY_WITH_A_SIDE_BRANCH,
               "deleteBranch",
               "DELETE",
@@ -388,6 +513,13 @@ class GoldenMasterRecordingTest {
               "POST",
               BY_ID + "/merges",
               409,
+              MERGE_BODY),
+          write(
+              ProviderStates.A_REPOSITORY_WITHOUT_THE_BRANCH_TO_FOLD,
+              "mergeBranches",
+              "POST",
+              BY_ID + "/merges",
+              404,
               MERGE_BODY));
 
   /** A write: {@code body} null for one that takes none. */
