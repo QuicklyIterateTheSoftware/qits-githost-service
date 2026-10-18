@@ -17,10 +17,14 @@ artifacts:
 # `pacts/` as `qits-githost-service_qits-projects-service.json`; qits-ci packs only
 # `pacts/*_<provider>.json` into that provider's maven jar,
 # eu.wohlben.qits:qits-githost-service-pacts-<provider>, and publishes it only when those files
-# changed.
+# changed. Beside it (qits-1163), what qits-eventstream asks qits-events on this service's behalf
+# — only the outbox publish, as its one listener is raw — in
+# `qits-githost-service_qits-eventstream-javalib_qits-events-service.json`, written by
+# EventstreamPactTest from the library's kit and packed for qits-events-service.
 contracts:
   application: qits-githost
   golden-masters: { from: golden-masters/, packages: [maven, npm] }
   pacts:
     qits-projects-service: { packages: [maven] }
+    qits-events-service: { packages: [maven] }
 userflows: qits-githost

@@ -57,7 +57,7 @@
              libs/qits-eventstream into the platform Maven repository — the same place the blob
              store above and qits-db-core below come from, and why the <repositories> block below
              exists: none of the three is on Maven Central or built in this reactor. -->
-        <qits.eventstream.version>2026.1014.223716</qits.eventstream.version>
+        <qits.eventstream.version>2026.1018.151251</qits.eventstream.version>
         <!-- Shared OIDC and forwarded-header authentication. -->
         <qits.integrations-quarkus.version>2026.1012.173247</qits.integrations-quarkus.version>
         <!-- qits-http-core's QitsHttpClients, pinned with its OWN property rather than riding
@@ -205,6 +205,14 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>qits-eventstream</artifactId>
+                <version>${qits.eventstream.version}</version>
+            </dependency>
+            <dependency>
+                <!-- The eventstream pact kit (qits-1163), always qits-eventstream's own version:
+                     EventstreamPactTest pacts what the library asks qits-events on this service's
+                     behalf. Test scope at every declaration site. -->
+                <groupId>${project.groupId}</groupId>
+                <artifactId>qits-eventstream-contracts</artifactId>
                 <version>${qits.eventstream.version}</version>
             </dependency>
             <dependency>

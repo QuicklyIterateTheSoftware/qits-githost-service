@@ -280,6 +280,8 @@ This service is a pact provider, set up the way qits-projects-service is:
   the test classpath — the consumers' pinned pact jars, named by repository on both sides. No
   consumer pins one yet, so an empty classpath passes with a log line. When the first pact jar is
   pinned, drop `@IgnoreNoPactsToVerify` and set `ClasspathPactLoader.REQUIRED` to true.
+- As a consumer, `pacts/` holds this service's pact against qits-projects and, from the
+  qits-eventstream kit (qits-1163), `EventstreamPactTest`'s pact of the outbox publish to qits-events.
 
 ### The git primitives
 

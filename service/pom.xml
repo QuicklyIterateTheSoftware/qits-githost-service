@@ -207,6 +207,13 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <!-- The eventstream pact kit (qits-1163): EventstreamPactTest writes
+                 pacts/qits-githost-service_qits-eventstream-javalib_qits-events-service.json. -->
+            <groupId>${project.groupId}</groupId>
+            <artifactId>qits-eventstream-contracts</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <!-- qits-projects' golden masters: the answers the consumer pact is built from. -->
             <groupId>${project.groupId}</groupId>
             <artifactId>qits-projects-golden-masters</artifactId>
