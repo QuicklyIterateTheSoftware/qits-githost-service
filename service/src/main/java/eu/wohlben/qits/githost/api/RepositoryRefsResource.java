@@ -3,6 +3,7 @@ package eu.wohlben.qits.githost.api;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import eu.wohlben.qits.githost.GitIdentity;
 import eu.wohlben.qits.githost.GitRepositoryProvider;
+import eu.wohlben.qits.githost.RepositoryNameResolver;
 import eu.wohlben.qits.githost.ScmAnnouncer;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.annotation.security.RolesAllowed;
@@ -172,6 +173,12 @@ public class RepositoryRefsResource {
 
   @Inject GitIdentity identity;
 
+  /**
+   * Resolves a submodule's declared name to the sibling the gitlink-pin rule reads. Optional: with
+   * no implementation the rule declines every path, and nothing else here uses it.
+   */
+  @Inject Instance<RepositoryNameResolver> repositoryNames;
+
   /** Told about every ref move a door makes. Zero is supported: then nothing is announced. */
   @Inject Instance<ScmAnnouncer> announcers;
 
@@ -230,12 +237,26 @@ public class RepositoryRefsResource {
    * decided for the newer version, out of the three blobs the merge was already comparing (see
    * {@link VersionPinRule}). The flag applies every registered format; the caller sends no content
    * and names no path, it only asks for the rule. Each decision is also recorded in the merge commit itself, as a
-   * {@code Resolved-Version} trailer ({@link #withVersionTrailers}). It exists because two release
+   * {@code Resolved-Version} trailer ({@link #withTrailers}). It exists because two release
    * sources bumping the same dependency version is the text conflict a fold meets most, and it is
    * decidable without a person — the newer release is the answer every time.
    *
+   * <p>{@code gitlinkPins} is optional and opt-in the same way: absent or {@code false}, the fold
+   * is the one this endpoint has always performed. {@code true} turns on the second merge rule: an
+   * unmerged GITLINK conflict where both heads pin a release of the same sibling — each sha the
+   * peeled commit of a calendar-version tag in the repository the head's {@code .gitmodules}
+   * declares at that path, resolved by name in {@code projectId} — is decided for the release with
+   * the higher version, but only when that release strictly contains the other (see {@link
+   * GitlinkPinRule}). A path the rule declines stays in the 409 with {@link ConflictedPath#declined()}
+   * saying why; an explicit {@link Resolution} for the same path wins over the rule. Each decision
+   * is recorded in the merge commit as a {@code Resolved-Gitlink} trailer, in the same trailer block
+   * as the {@code Resolved-Version} ones. It exists because two release requests each bumping the
+   * same submodule is the conflict a wrapper fold meets most, and the newer release that contains
+   * the older one is the answer every time.
+   *
    * <p>{@code projectId} and {@code repoName} are optional: the public address the move is
-   * announced under (see "Every write is announced" above).
+   * announced under (see "Every write is announced" above). {@code projectId} is also the project
+   * the gitlink-pin rule resolves declared submodule names in; without it the rule decides nothing.
    *
    * <p>{@code rebuild} is optional and opt-in: absent or {@code false}, the target's own tip is the
    * first head, as always. {@code true} leaves the target's tip <b>out</b> of the fold: the result
@@ -257,7 +278,24 @@ public class RepositoryRefsResource {
       String projectId,
       String repoName,
       Boolean versionPins,
-      Boolean rebuild) {
+      Boolean rebuild,
+      Boolean gitlinkPins) {
+    /** The form before the gitlink-pin rule existed: every gitlink conflict is the caller's. */
+    public MergeRequest(
+        String target,
+        List<String> sources,
+        String message,
+        Author author,
+        List<Resolution> resolutions,
+        String projectId,
+        String repoName,
+        Boolean versionPins,
+        Boolean rebuild) {
+      this(
+          target, sources, message, author, resolutions, projectId, repoName, versionPins, rebuild,
+          null);
+    }
+
     /** The form before the rebuild mode existed: the target's tip is always the first head. */
     public MergeRequest(
         String target,
@@ -318,6 +356,11 @@ public class RepositoryRefsResource {
    * per token pair it took the newer side of, and is empty when it decided nothing. It is reported
    * for the same reason as {@code resolved}, one level finer: a path alone does not say which
    * version won, and a caller recording a release should not have to diff a manifest to find out.
+   *
+   * <p>{@code resolvedGitlinks} says what the gitlink-pin rule decided, one {@link ResolvedGitlink}
+   * per decision in fold order — a path decided at several octopus steps is listed once per step,
+   * because each step was a decision — and is empty when it decided nothing. Explicit {@link
+   * Resolution}s are not listed here: the caller already knows what it directed.
    */
   @RegisterForReflection
   public record MergeResponse(
@@ -327,7 +370,20 @@ public class RepositoryRefsResource {
       List<String> parents,
       List<String> skipped,
       List<String> resolved,
-      List<ResolvedVersion> resolvedVersions) {
+      List<ResolvedVersion> resolvedVersions,
+      List<ResolvedGitlink> resolvedGitlinks) {
+    /** The form before the gitlink-pin rule existed. */
+    public MergeResponse(
+        String target,
+        String sha,
+        String outcome,
+        List<String> parents,
+        List<String> skipped,
+        List<String> resolved,
+        List<ResolvedVersion> resolvedVersions) {
+      this(target, sha, outcome, parents, skipped, resolved, resolvedVersions, List.of());
+    }
+
     /** The form before the version-pin rule existed. */
     public MergeResponse(
         String target,
@@ -354,6 +410,14 @@ public class RepositoryRefsResource {
   public record ResolvedVersion(String path, int line, String ours, String theirs, String chosen) {}
 
   /**
+   * One gitlink the gitlink-pin rule decided: at {@code path}, the submodule declared as {@code
+   * name} moved from {@code from} — the release that lost — to {@code to}, the release tagged
+   * {@code tag} that contains it. Both are full commit shas of the sibling's repository.
+   */
+  @RegisterForReflection
+  public record ResolvedGitlink(String path, String name, String from, String to, String tag) {}
+
+  /**
    * A conflict, reported rather than resolved. {@code head} is the source <b>as the caller spelled
    * it</b> — the head being folded in when the conflict appeared, which is git's own answer to
    * "who broke it" and the one the caller can act on.
@@ -371,6 +435,11 @@ public class RepositoryRefsResource {
    * gitlink they are commits of the <em>submodule's</em> repository and are forwarded as values,
    * never resolved here. An unrelated-histories merge has no base at all and every {@code base} is
    * then null, which is the truth and not an error.
+   *
+   * <p>{@code declined} is one sentence saying why the gitlink-pin rule did not decide this path,
+   * when the fold asked for the rule and the rule examined it; {@code null} otherwise — a text
+   * conflict, a fold without the flag, a path an explicit {@link Resolution} named. It is beside
+   * {@code reason} rather than in it, because {@code reason} is one of the frozen four.
    */
   @RegisterForReflection
   public record ConflictedPath(
@@ -381,7 +450,21 @@ public class RepositoryRefsResource {
       String kind,
       String base,
       String ours,
-      String theirs) {}
+      String theirs,
+      String declined) {
+    /** The form before the gitlink-pin rule could decline a path. */
+    public ConflictedPath(
+        String path,
+        String head,
+        String headSha,
+        String reason,
+        String kind,
+        String base,
+        String ours,
+        String theirs) {
+      this(path, head, headSha, reason, kind, base, ours, theirs, null);
+    }
+  }
 
   /** The body of the 409 a conflicted merge answers. {@code error} is always {@code merge-conflict}. */
   @RegisterForReflection
@@ -548,6 +631,11 @@ public class RepositoryRefsResource {
    * switch the rule on, and cannot say what it writes. Both exceptions are all or none — a step whose
    * conflicts the directives and the rule do not decide in full is the same 409 as ever, naming only
    * what is left undecided, and nothing is written.
+   *
+   * <p><b>The gitlink-pin rule is the third</b>, and the same kind of thing: with {@link
+   * MergeRequest#gitlinkPins()} on, a gitlink conflict between two releases of one sibling, the
+   * newer containing the older, is decided for the newer ({@link GitlinkPinRule}). The pin comes
+   * from the two sides, never from the request, and it joins the same all-or-none step.
    *
    * <p><b>Nothing here protects the target.</b> Merging into a repository's default branch is
    * allowed and is a designed use of this endpoint (a release reaches {@code main} only after it
@@ -735,6 +823,14 @@ public class RepositoryRefsResource {
       }
 
       boolean versionPins = Boolean.TRUE.equals(request.versionPins());
+      boolean gitlinkPins = Boolean.TRUE.equals(request.gitlinkPins());
+      // One rule per fold: its caches (declarations per head, names, sibling tags) live exactly as
+      // long as this request, so a later fold always sees the releases made since.
+      GitlinkPinRule gitlinkRule =
+          gitlinkPins
+              ? new GitlinkPinRule(reader, request.projectId(), repositoryNames, repositories)
+              : null;
+      List<ResolvedGitlink> resolvedGitlinks = new ArrayList<>();
       PersonIdent person = authorOf(request.author());
       RevCommit accumulator = effective.get(0).commit();
       ObjectId resultTree = null;
@@ -752,8 +848,9 @@ public class RepositoryRefsResource {
         ObjectId folded;
         if (merger.merge(false, accumulator, theirs)) {
           folded = merger.getResultTreeId();
-        } else if (directed.isEmpty() && !versionPins) {
-          return conflict(target, conflictsOf(merger, walk, accumulator, theirs, next, null));
+        } else if (directed.isEmpty() && !versionPins && !gitlinkPins) {
+          return conflict(
+              target, conflictsOf(merger, walk, accumulator, theirs, next, null, Map.of()));
         } else {
           // A directed step: a Resolution, the version-pin rule, or both. The result tree of a FAILED
           // merge says nothing — there is no patching getResultTreeId() — so the conflict is removed
@@ -786,6 +883,32 @@ public class RepositoryRefsResource {
                   path + " is not an unmerged gitlink conflict; a resolution decides only those");
             }
             applies.put(path, pin);
+          }
+          // The gitlink-pin rule, at THIS step: the head being folded in is the one whose
+          // .gitmodules says what the conflicting path is, and the pin chosen is always one the two
+          // sides already held. An explicit directive for the path was applied above and wins.
+          // Composes over an octopus like the version-pin rule: three heads bumping one submodule
+          // end at the newest descendant whichever order they fold in.
+          Map<String, String> declined = new TreeMap<>();
+          List<ResolvedGitlink> stepGitlinks = new ArrayList<>();
+          if (gitlinkRule != null) {
+            for (String path : disputed) {
+              Sides side = sides.get(path);
+              if (applies.containsKey(path)
+                  || !merger.getUnmergedPaths().contains(path)
+                  || side == null
+                  || !"gitlink".equals(side.kind())) {
+                continue;
+              }
+              GitlinkPinRule.Verdict verdict =
+                  gitlinkRule.decide(path, side.ours(), side.theirs(), theirs, next.spelling());
+              if (verdict.decided() != null) {
+                applies.put(path, verdict.decided().to());
+                stepGitlinks.add(verdict.decided());
+              } else {
+                declined.put(path, verdict.declined());
+              }
+            }
           }
           // The version-pin rule, at THIS step and against THIS step's three sides: base is the
           // merge base the step computed, ours the accumulator, theirs the head being folded in. On
@@ -821,7 +944,8 @@ public class RepositoryRefsResource {
           if (!residue.isEmpty()) {
             // Partly directed is not directed. Answering 409 with what is left over beats folding
             // half a conflict and leaving the caller to discover the rest from the tree.
-            return conflict(target, conflictsOf(merger, walk, accumulator, theirs, next, residue));
+            return conflict(
+                target, conflictsOf(merger, walk, accumulator, theirs, next, residue, declined));
           }
           RevCommit directedOurs =
               directedHead(inserter, reader, walk, person, accumulator, applies, rewritten, target);
@@ -836,11 +960,13 @@ public class RepositoryRefsResource {
             // was applied is a conflict the caller did not describe, and guessing again would only
             // move the surprise further from the request that caused it.
             return conflict(
-                target, conflictsOf(retry, walk, directedOurs, directedTheirs, next, null));
+                target,
+                conflictsOf(retry, walk, directedOurs, directedTheirs, next, null, declined));
           }
           decided.addAll(applies.keySet());
           pinned.addAll(rewritten.keySet());
           resolvedVersions.addAll(stepVersions);
+          resolvedGitlinks.addAll(stepGitlinks);
           folded = retry.getResultTreeId();
         }
         if (i == effective.size() - 1) {
@@ -875,7 +1001,7 @@ public class RepositoryRefsResource {
               resultTree,
               parents,
               person,
-              withVersionTrailers(mergeMessage(request, effective), resolvedVersions));
+              withTrailers(mergeMessage(request, effective), resolvedVersions, resolvedGitlinks));
       inserter.flush();
 
       Response moved =
@@ -899,7 +1025,8 @@ public class RepositoryRefsResource {
                   parents.stream().map(ObjectId::name).toList(),
                   skipped,
                   List.copyOf(resolved),
-                  List.copyOf(resolvedVersions)))
+                  List.copyOf(resolvedVersions),
+                  List.copyOf(resolvedGitlinks)))
           .build();
     }
   }
@@ -1496,9 +1623,18 @@ public class RepositoryRefsResource {
    * <p>{@code head} names the <b>real</b> source in every case, including a retry against a rewritten
    * head: what the caller can act on is the branch it named, and a throwaway commit's sha resolves
    * nowhere once the inserter it lives in is discarded.
+   *
+   * <p>{@code declined} is path → the sentence the gitlink-pin rule declined that path with, at this
+   * step; a path absent from it reports {@code declined} {@code null}.
    */
   private static List<ConflictedPath> conflictsOf(
-      ResolveMerger merger, RevWalk walk, RevCommit ours, RevCommit theirs, Head head, Set<String> only)
+      ResolveMerger merger,
+      RevWalk walk,
+      RevCommit ours,
+      RevCommit theirs,
+      Head head,
+      Set<String> only,
+      Map<String, String> declined)
       throws IOException {
     Set<String> paths = new TreeSet<>(merger.getUnmergedPaths());
     Map<String, ResolveMerger.MergeFailureReason> failing = merger.getFailingPaths();
@@ -1510,7 +1646,7 @@ public class RepositoryRefsResource {
     List<ConflictedPath> conflicts = new ArrayList<>();
     for (String path : paths) {
       if (reported.contains(path)) {
-        conflicts.add(conflicted(path, head, "content", sides.get(path)));
+        conflicts.add(conflicted(path, head, "content", sides.get(path), declined.get(path)));
       }
     }
     if (failing != null) {
@@ -1518,14 +1654,20 @@ public class RepositoryRefsResource {
           (path, reason) -> {
             if (!paths.contains(path) && reported.contains(path)) {
               conflicts.add(
-                  conflicted(path, head, reason.name().toLowerCase(), sides.get(path)));
+                  conflicted(
+                      path,
+                      head,
+                      reason.name().toLowerCase(),
+                      sides.get(path),
+                      declined.get(path)));
             }
           });
     }
     return conflicts;
   }
 
-  private static ConflictedPath conflicted(String path, Head head, String reason, Sides sides) {
+  private static ConflictedPath conflicted(
+      String path, Head head, String reason, Sides sides, String declined) {
     Sides described = sides == null ? UNKNOWN_SIDES : sides;
     return new ConflictedPath(
         path,
@@ -1535,7 +1677,8 @@ public class RepositoryRefsResource {
         described.kind(),
         described.base(),
         described.ours(),
-        described.theirs());
+        described.theirs(),
+        declined);
   }
 
   /** Everything one pairwise step could not decide: unmerged and outright failing alike. */
@@ -1702,9 +1845,16 @@ public class RepositoryRefsResource {
   /** A git trailer line, {@code Token: value} — what git interpret-trailers reads as one. */
   private static final Pattern TRAILER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*: .*");
 
+  /** {@link #withTrailers} with no gitlink decisions — the version-pin rule's trailers alone. */
+  static String withVersionTrailers(String message, List<ResolvedVersion> versions) {
+    return withTrailers(message, versions, List.of());
+  }
+
   /**
-   * The merge commit's message with one {@code Resolved-Version} trailer per version the rule
-   * decided, in {@code resolvedVersions} order, or the message untouched when it decided none.
+   * The merge commit's message with one trailer per decision a merge rule made — a {@code
+   * Resolved-Version} per version the version-pin rule decided, in {@code resolvedVersions} order,
+   * then a {@code Resolved-Gitlink} per pin the gitlink-pin rule decided, in {@code
+   * resolvedGitlinks} order — or the message untouched when neither decided anything.
    *
    * <p>The decision belongs in the history and not only in the caller's log: whoever reads the
    * merge with {@code git log} should see that a pin was chosen by a rule, which one, and over
@@ -1714,10 +1864,15 @@ public class RepositoryRefsResource {
    * <p>Spelled the way git spells trailers: separated from the message by a blank line, or — when
    * the message already ends in a trailer block (a last paragraph, not the subject, whose every
    * line is {@code Token: value}) — appended to that block, so {@code git interpret-trailers} still
-   * reads one block.
+   * reads one block. Both kinds share that one block.
+   *
+   * <p>The gitlink line is {@code Resolved-Gitlink: <path> <from> -> <to> (<name> <tag>)} with full
+   * shas — the line qits-projects' {@code ConflictResolver} wrote when it made the same decision
+   * from outside, so a wrapper's log reads the same whichever side decided.
    */
-  static String withVersionTrailers(String message, List<ResolvedVersion> versions) {
-    if (versions.isEmpty()) {
+  static String withTrailers(
+      String message, List<ResolvedVersion> versions, List<ResolvedGitlink> gitlinks) {
+    if (versions.isEmpty() && gitlinks.isEmpty()) {
       return message;
     }
     String body = message.replaceAll("[\\r\\n]+$", "");
@@ -1746,6 +1901,19 @@ public class RepositoryRefsResource {
           .append(" -> ")
           .append(version.chosen())
           .append('\n');
+    }
+    for (ResolvedGitlink gitlink : gitlinks) {
+      out.append("Resolved-Gitlink: ")
+          .append(gitlink.path())
+          .append(' ')
+          .append(gitlink.from())
+          .append(" -> ")
+          .append(gitlink.to())
+          .append(" (")
+          .append(gitlink.name())
+          .append(' ')
+          .append(gitlink.tag())
+          .append(")\n");
     }
     return out.toString();
   }

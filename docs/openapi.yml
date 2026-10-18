@@ -326,6 +326,8 @@ components:
           type: boolean
         rebuild:
           type: boolean
+        gitlinkPins:
+          type: boolean
     RepositoriesResponse:
       type: object
       properties:

@@ -313,16 +313,20 @@ POST /githost/api/repositories/<repoId>/merges
  "author": {"name": "…", "email": "…"},           // optional
  "resolutions": [{"path": "components/x", "gitlink": "<sha>"}],   // optional, see below
  "versionPins": true,                             // optional, see below
+ "gitlinkPins": true,                             // optional, see below (needs projectId)
  "rebuild": true,                                 // optional, see below
  "projectId": "…", "repoName": "…"}               // optional: the address the move is announced under
 
 200 {"target": "refs/heads/release/17", "sha": "<commit>", "outcome": "merged",
      "parents": ["…", "…"], "skipped": ["refs/heads/main"], "resolved": ["components/x", "pom.xml"],
      "resolvedVersions": [{"path": "pom.xml", "line": 5, "ours": "2026.1006.55511",
-                           "theirs": "2026.1006.64435", "chosen": "2026.1006.64435"}]}
+                           "theirs": "2026.1006.64435", "chosen": "2026.1006.64435"}],
+     "resolvedGitlinks": [{"path": "components/x", "name": "x", "from": "<sha>", "to": "<sha>",
+                           "tag": "2026.1006.64435"}]}
 409 {"error": "merge-conflict", "target": "…",
      "conflicts": [{"path": "pom.xml", "head": "feature/x", "headSha": "…", "reason": "content",
-                    "kind": "file", "base": "<blob>", "ours": "<blob>", "theirs": "<blob>"}]}
+                    "kind": "file", "base": "<blob>", "ours": "<blob>", "theirs": "<blob>",
+                    "declined": null}]}
 ```
 
 **The target's own tip is the first head**, which is what makes this git's octopus rather than an
@@ -402,6 +406,25 @@ against `1.2.0` has no newer side and stays a conflict. **Adding an ecosystem** 
 is one class implementing `PinFormat` — which files, which spans are versions, which is newer — plus
 one entry in that list; the engine that walks the merge and enforces the rules above does not change.
 The `PinFormat` javadoc sketches both. Lockfiles never match.
+
+**`gitlinkPins` is the second merge rule**, for the gitlink conflict a wrapper fold meets most: two
+heads each bumping one submodule to a release. With it `true`, an unmerged gitlink conflict whose two
+sides are both present is decided when all of this holds: the `.gitmodules` of the head being folded
+in at that step declares a `submodule.<name>` with that `path`; `(projectId, <name>)` resolves to a
+repository this host holds (the same name index the git routes use); both shas are the peeled commit
+of a `refs/tags/YYYY.MDD.HMMSS` tag there (the highest, if several), versions compared numerically
+segment by segment; and the higher release **strictly contains** the other. The pin is the higher
+release — always one the two sides already held. A newer release cut from a side branch, a
+descendant carrying the lower version, an equal version, an untagged sha, an unknown name, no
+`projectId`, an unreadable object or a resolver outage all decline the path, and its 409 entry
+carries `declined`: one sentence, `the conflict at <path> is not one this service can decide: <why>`
+(`null` everywhere else). An explicit `resolutions` entry for the path wins over the rule; it composes
+with `versionPins` and is all or none the same way. `resolvedGitlinks` lists one `{path, name, from,
+to, tag}` per decision (`from` the release that lost), every octopus step that decided it included,
+and those paths join `resolved`. Each decision is also a trailer in the same block as the
+`Resolved-Version` ones: `Resolved-Gitlink: <path> <from> -> <to> (<name> <tag>)`, full shas — the
+line qits-projects' `ConflictResolver` wrote when it decided the same thing from outside. Absent or
+`false`, the fold is exactly the old one.
 
 ```
 GET /githost/api/repositories/<repoId>/contains?commit=<sha-or-rev>&in=<sha-or-rev>
