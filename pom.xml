@@ -125,10 +125,10 @@
         <qits.projects-golden-masters.version>2026.1016.112931</qits.projects-golden-masters.version>
         <!-- qits-idp's recorded answers (test scope), read through qits-pact-consumer by
              IdpConsumerPactTest: the quarkus-oidc tenant's JWKS read (ticket qits-1149). -->
-        <qits.idp-golden-masters.version>2026.1012.180836</qits.idp-golden-masters.version>
+        <qits.idp-golden-masters.version>2026.1018.142635</qits.idp-golden-masters.version>
         <!-- The shared consumer-pact helper (golden-master reader, row builder), released out of
              libs/qits-integrations-quarkus with its own string. -->
-        <qits.pact-consumer.version>2026.1018.135552</qits.pact-consumer.version>
+        <qits.pact-consumer.version>2026.1018.142240</qits.pact-consumer.version>
         <!-- THE CONSUMER PACTS this provider verifies (ticket qits-1149): one jar per consumer that
              commits pacts/<consumer>_qits-githost-service.json, read off the test classpath by
              contracts/ClasspathPactLoader. qits-maintenance bumps each when the consumer releases a
