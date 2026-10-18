@@ -1,7 +1,10 @@
 package eu.wohlben.qits.githost;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.wohlben.qits.eventstream.CausationHeader;
 import eu.wohlben.qits.eventstream.CausationScope;
+import eu.wohlben.qits.githost.persistence.RepositoryNameStore;
 import io.quarkus.runtime.configuration.MemorySize;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonArray;
@@ -21,6 +24,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -100,11 +104,13 @@ import org.jboss.logging.Logger;
  *   <li><b>name-addressed</b> {@code /git/:projectId/:repoName} — <b>the public clone url</b>, and
  *       the only address anything above the projects↔githost seam ever holds: CI, the daemons, a
  *       deploy push, a human. {@code repoName} is resolved through the {@link
- *       RepositoryNameResolver} port to a storage id, and {@code (projectId, repoName)} is what a
- *       push then ECHOES onto its events — this host resolves a name per request and remembers
- *       none. It is also what lets committed relative submodule urls ({@code ../<name>.git}) resolve
- *       natively against a sibling, with no {@code submodule.<name>.url} override. With no resolver
- *       on the classpath, or none configured, the scheme answers 404.
+ *       RepositoryNameResolver} port to a storage id — answered from this host's own name index,
+ *       which qits-projects fills through the name door below, and transitionally from qits-projects
+ *       itself on a miss ({@link StoredRepositoryNameResolver}). The first segment may be the
+ *       project's id or its slug. {@code (projectId, repoName)} is what a push then ECHOES onto its
+ *       events, as the pusher spelled them. It is also what lets committed relative submodule urls
+ *       ({@code ../<name>.git}) resolve natively against a sibling, with no {@code
+ *       submodule.<name>.url} override. A name neither answers is a 404.
  *   <li><b>id-addressed</b> {@code /git/:repoId} — the opaque storage id, handed straight to the
  *       store. <b>Internal plumbing for qits-projects</b>, which mints that id and is the one
  *       service that may speak it; a UUID clone url is never published and never leaks upward. When
@@ -133,6 +139,22 @@ import org.jboss.logging.Logger;
  *   <li>{@code HEAD …/:repoId} — the same existence question with no body.
  *   <li>{@code DELETE …/:repoId} — delete the repository: 204 when it existed and its rows are
  *       gone, 404 when this host holds no such repository. No body either way.
+ * </ul>
+ *
+ * <p>And the <b>name door</b>, on the same base and behind the same guard — qits-projects telling
+ * this host what a repository is called, so the public scheme answers from this host's own index
+ * ({@link StoredRepositoryNameResolver}) rather than by asking qits-projects per request:
+ *
+ * <ul>
+ *   <li>{@code PUT …/:repoId/names} {@code {"projectId", "projectSlug", "names": [...],
+ *       "revision"}} — replace the repository's whole name set, if {@code revision} is newer than
+ *       the one held: 200 {@code {"repoId", "projectId", "projectSlug", "names", "revision",
+ *       "applied"}}, where a stale statement is {@code "applied": false} and answers the held set.
+ *       400 for a malformed statement, 404 for a repository this host does not hold — and nothing
+ *       written either way. A name another repository of the project held moves to this one.
+ *   <li>{@code GET …/:repoId/names} — the held set, the same shape without {@code applied}; a
+ *       repository whose names were never stated answers {@code "names": []} at revision {@code -1}
+ *       with a null project. 404 for a repository this host does not hold.
  * </ul>
  *
  * <p>These give a caller (qits-projects) a way to provision a repository over the wire instead of
@@ -269,6 +291,19 @@ public class GitHostRoutes {
   private static final long LIFECYCLE_BODY_LIMIT = 4096;
 
   /**
+   * The JSON body limit for {@code PUT …/:repoId/names}. Larger than {@link #LIFECYCLE_BODY_LIMIT}
+   * because a name set is a list, and still a document rather than a payload: a repository has a
+   * handful of names, and 64 KiB is hundreds of them at their longest.
+   */
+  private static final long NAMES_BODY_LIMIT = 64 * 1024;
+
+  /** The longest project id the name door accepts — the column it lands in. */
+  private static final int MAX_PROJECT_ID_LENGTH = 64;
+
+  /** The longest project slug or repository name the name door accepts — the column it lands in. */
+  private static final int MAX_NAME_LENGTH = 255;
+
+  /**
    * The largest pack this host accepts, and the reason it is spelled out rather than inherited.
    *
    * <p>{@code BodyHandler.create()} is <em>not</em> unlimited: vertx-web's {@code BodyHandlerImpl}
@@ -380,6 +415,12 @@ public class GitHostRoutes {
    */
   @Inject GitRepositoryProvider provider;
 
+  /** The name index the name door writes and the shipped resolver reads. */
+  @Inject RepositoryNameStore repositoryNameStore;
+
+  /** Parses the name door's body: a {@link JsonNode}, never a bound DTO (the native-image rule). */
+  @Inject ObjectMapper objectMapper;
+
   /**
    * A resolved repository plus <b>the address it was reached by</b>: the storage id the post-receive
    * hook needs, and the {@code (projectId, repoName)} the request carried when it used the public
@@ -462,6 +503,20 @@ public class GitHostRoutes {
         .delete(BASE + "/:repoId")
         .handler(this::requireStorageClient)
         .blockingHandler(this::deleteRepository);
+
+    // The name door: two segments, so it shadows nothing. The lifecycle verbs are one segment, and
+    // every name-addressed route is three or more (`/git/<project>/names/info/refs` is a clone of a
+    // repository CALLED names, and still reaches its route). The content-read regexes demand a
+    // literal blob/tree segment plus a rev, so they cannot match it either.
+    router
+        .put(BASE + "/:repoId/names")
+        .handler(namesBodyHandler())
+        .handler(this::requireStorageClient)
+        .blockingHandler(this::putRepositoryNames);
+    router
+        .get(BASE + "/:repoId/names")
+        .handler(this::requireStorageClient)
+        .blockingHandler(this::getRepositoryNames);
 
     // The content reads. Registered with regexes so the tail can hold slashes, the
     // MavenPaths/NpmPaths shape: every group is (?<named>…) or (?:…), because vertx-web silently
@@ -649,6 +704,11 @@ public class GitHostRoutes {
   /** The lifecycle {@code PUT}'s body handler. See {@link #LIFECYCLE_BODY_LIMIT} for the number. */
   private BodyHandler lifecycleBodyHandler() {
     return BodyHandler.create(false).setBodyLimit(LIFECYCLE_BODY_LIMIT);
+  }
+
+  /** The name door's body handler. See {@link #NAMES_BODY_LIMIT} for the number. */
+  private BodyHandler namesBodyHandler() {
+    return BodyHandler.create(false).setBodyLimit(NAMES_BODY_LIMIT);
   }
 
   /** {@code GET …/info/refs?service=…} — the smart-HTTP ref advertisement. */
@@ -1413,6 +1473,166 @@ public class GitHostRoutes {
     } catch (Exception e) {
       fail(rc, "git-delete", e);
     }
+  }
+
+  // --- the name door ------------------------------------------------------------------------------
+
+  /** A validated {@code PUT …/:repoId/names} body. */
+  private record NamesStatement(
+      String projectId, String projectSlug, List<String> names, long revision) {}
+
+  /**
+   * {@code PUT …/:repoId/names} — qits-projects stating a repository's whole name set at a
+   * revision. Validated in full before anything is read or written, then refused with a 404 for a
+   * repository the store does not hold (the same existence question {@code GET …/:repoId} asks), and
+   * otherwise handed to {@link RepositoryNameStore#apply}, which applies it only if the revision is
+   * newer than the one held.
+   *
+   * <p>Always 200 once applied or not: a stale statement is not an error — it is a retry or a
+   * reordering that lost to a newer one — so it answers {@code "applied": false} with the set this
+   * host holds, which is what the caller can reconcile against.
+   */
+  private void putRepositoryNames(RoutingContext rc) {
+    String repoId = rc.pathParam("repoId");
+    if (repoId == null || !repoId.matches(REPO_ID_PATTERN)) {
+      rc.response().setStatusCode(400).end("repo id must match " + REPO_ID_PATTERN);
+      return;
+    }
+    NamesStatement statement;
+    try {
+      statement = readNamesStatement(rc.body().buffer());
+    } catch (IllegalArgumentException malformed) {
+      rc.response().setStatusCode(400).end(malformed.getMessage());
+      return;
+    }
+    try {
+      if (!repositoryExists(repoId)) {
+        rc.response().setStatusCode(404).end();
+        return;
+      }
+      RepositoryNameStore.Applied applied =
+          repositoryNameStore.apply(
+              repoId,
+              statement.projectId(),
+              statement.projectSlug(),
+              statement.names(),
+              statement.revision());
+      respondNames(rc, namesBody(repoId, applied.state()).put("applied", applied.applied()));
+    } catch (Exception e) {
+      fail(rc, "git-names", e);
+    }
+  }
+
+  /**
+   * {@code GET …/:repoId/names} — the name set this host holds for the repository, 404 for one it
+   * does not hold. A repository nobody stated names for answers an empty set at revision {@code -1}.
+   */
+  private void getRepositoryNames(RoutingContext rc) {
+    String repoId = rc.pathParam("repoId");
+    if (repoId == null || !repoId.matches(REPO_ID_PATTERN)) {
+      rc.response().setStatusCode(400).end("repo id must match " + REPO_ID_PATTERN);
+      return;
+    }
+    try {
+      if (!repositoryExists(repoId)) {
+        rc.response().setStatusCode(404).end();
+        return;
+      }
+      RepositoryNameStore.NamesState state =
+          repositoryNameStore
+              .namesOf(repoId)
+              .orElse(
+                  new RepositoryNameStore.NamesState(
+                      null, null, List.of(), RepositoryNameStore.NO_REVISION));
+      respondNames(rc, namesBody(repoId, state));
+    } catch (Exception e) {
+      fail(rc, "git-names", e);
+    }
+  }
+
+  private static JsonObject namesBody(String repoId, RepositoryNameStore.NamesState state) {
+    return new JsonObject()
+        .put("repoId", repoId)
+        .put("projectId", state.projectId())
+        .put("projectSlug", state.projectSlug())
+        .put("names", new JsonArray(new ArrayList<Object>(state.names())))
+        .put("revision", state.revision());
+  }
+
+  private static void respondNames(RoutingContext rc, JsonObject body) {
+    rc.response()
+        .setStatusCode(200)
+        .putHeader("Content-Type", "application/json")
+        .end(body.encode());
+  }
+
+  /**
+   * Parses and validates the name door's body, or throws {@link IllegalArgumentException} carrying
+   * the 400's message. A {@link JsonNode} rather than a bound DTO — the wire rule this repository
+   * keeps so nothing needs {@code @RegisterForReflection}.
+   *
+   * <p>A name is a url SEGMENT, so it may hold no {@code /} and no whitespace, and it may not end in
+   * {@code .git}: the routes strip that suffix before the lookup, so a name stored with it could
+   * never be asked for.
+   */
+  private NamesStatement readNamesStatement(Buffer body) {
+    if (body == null || body.length() == 0) {
+      throw new IllegalArgumentException("the body must be a JSON object");
+    }
+    JsonNode root;
+    try {
+      root = objectMapper.readTree(body.getBytes());
+    } catch (IOException e) {
+      throw new IllegalArgumentException("the body must be a JSON object");
+    }
+    if (root == null || !root.isObject()) {
+      throw new IllegalArgumentException("the body must be a JSON object");
+    }
+    String projectId = text(root, "projectId", MAX_PROJECT_ID_LENGTH);
+    String projectSlug = text(root, "projectSlug", MAX_NAME_LENGTH);
+    JsonNode names = root.get("names");
+    if (names == null || !names.isArray()) {
+      throw new IllegalArgumentException("names must be an array of repository names");
+    }
+    List<String> parsed = new ArrayList<>(names.size());
+    for (JsonNode name : names) {
+      if (!name.isTextual() || !isValidRepositoryName(name.asText())) {
+        throw new IllegalArgumentException(
+            "every name must be a non-blank string of at most "
+                + MAX_NAME_LENGTH
+                + " characters, with no '/', no whitespace, and not ending in .git");
+      }
+      parsed.add(name.asText());
+    }
+    JsonNode revision = root.get("revision");
+    if (revision == null
+        || !revision.isIntegralNumber()
+        || !revision.canConvertToLong()
+        || revision.asLong() < 0) {
+      throw new IllegalArgumentException("revision must be an integer >= 0");
+    }
+    return new NamesStatement(projectId, projectSlug, parsed, revision.asLong());
+  }
+
+  /** A required, non-blank string field of at most {@code max} characters. */
+  private static String text(JsonNode root, String field, int max) {
+    JsonNode value = root.get(field);
+    if (value == null
+        || !value.isTextual()
+        || value.asText().isBlank()
+        || value.asText().length() > max) {
+      throw new IllegalArgumentException(
+          field + " must be a non-blank string of at most " + max + " characters");
+    }
+    return value.asText();
+  }
+
+  private static boolean isValidRepositoryName(String name) {
+    return !name.isBlank()
+        && name.length() <= MAX_NAME_LENGTH
+        && name.indexOf('/') < 0
+        && name.chars().noneMatch(Character::isWhitespace)
+        && !name.endsWith(".git");
   }
 
   /**

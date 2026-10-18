@@ -3,9 +3,9 @@ package eu.wohlben.qits.githost;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.wohlben.qits.http.QitsHttpClients;
-import io.quarkus.arc.DefaultBean;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Typed;
 import jakarta.inject.Inject;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -19,8 +19,10 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 /**
- * The shipped {@link RepositoryNameResolver}: it asks qits-projects, which owns the alias table, over
- * one GET.
+ * The <b>transitional fallback</b> behind {@link StoredRepositoryNameResolver}: it asks qits-projects,
+ * which owns the alias table, over one GET — and is asked only when this host's own name index
+ * misses. qits-1282 removes it once qits-projects has backfilled every name through {@code PUT
+ * /git/:repoId/names}.
  *
  * <pre>
  *   GET &lt;qits.projects.name-resolver-url&gt;/{projectId}/repositories/by-name/{repoName}
@@ -30,8 +32,8 @@ import org.jboss.logging.Logger;
  *
  * <p><b>Absent config is a supported configuration and answers nothing.</b> With {@code
  * qits.projects.name-resolver-url} unset this returns empty without dialling anything, so the
- * name-addressed scheme 404s exactly as it did before this class existed — the same 404 {@link
- * GitHostRoutes#openByName} produces when no resolver bean is present at all.
+ * name-addressed scheme serves only the names this host's own index holds, and every other name is
+ * the 404 it was before this class existed.
  *
  * <p><b>A 404 is empty; everything else throws {@link RepositoryNameResolver.Unavailable}.</b> The
  * two are not the same answer and this adapter must not blur them: qits-projects' 404 means "no
@@ -59,12 +61,15 @@ import org.jboss.logging.Logger;
  * after the entry was written. The new name needs nothing in the common case — a name nobody had
  * yet was a 404, and a 404 was never cached.
  *
- * <p>{@link DefaultBean} so a consuming application — or the test suite, which ships {@code
- * FakeRepositoryNameResolver} — can supply its own implementation without making {@code
- * Instance<RepositoryNameResolver>} ambiguous. In production this is the only bean.
+ * <p><b>{@link Typed} to its own class, so it is not a {@link RepositoryNameResolver} bean.</b> The
+ * port's one bean is {@link StoredRepositoryNameResolver}, which injects this class by name as its
+ * delegate; exposing it under the port type too would make {@code Instance<RepositoryNameResolver>}
+ * ambiguous. It still implements the port, because what it answers — and the miss/outage line it
+ * draws — is the port's contract. The test suite replaces it with {@code FakeRepositoryNameResolver},
+ * an alternative of this same type, so no {@code @QuarkusTest} dials qits-projects.
  */
 @ApplicationScoped
-@DefaultBean
+@Typed(HttpRepositoryNameResolver.class)
 public class HttpRepositoryNameResolver implements RepositoryNameResolver {
 
   private static final Logger LOG = Logger.getLogger(HttpRepositoryNameResolver.class);

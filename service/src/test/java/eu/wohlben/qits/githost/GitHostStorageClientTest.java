@@ -111,6 +111,19 @@ public class GitHostStorageClientTest {
     withRoles(roles).when().get("/git/" + repoId + "/blob/main/README.md").then().statusCode(status);
     withRoles(roles).when().get("/git/" + repoId + "/tree/main").then().statusCode(status);
     withRoles(roles).when().get("/git/" + repoId + "/tree/main/").then().statusCode(status);
+    withRoles(roles).when().get("/git/" + repoId + "/names").then().statusCode(status);
+    withRoles(roles)
+        .contentType(ContentType.JSON)
+        .body(
+            "{\"projectId\":\""
+                + projectId
+                + "\",\"projectSlug\":\"slug-"
+                + projectId
+                + "\",\"names\":[\"testing-repo\"],\"revision\":1}")
+        .when()
+        .put("/git/" + repoId + "/names")
+        .then()
+        .statusCode(status);
     withRoles(roles)
         .when()
         .delete("/git/" + repoId)

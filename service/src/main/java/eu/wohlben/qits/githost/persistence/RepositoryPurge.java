@@ -10,12 +10,16 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  * Deletes every row this host keys by a repository id — the database half of {@code DELETE
  * /git/:repoId}.
  *
- * <p><b>Four tables, one transaction.</b> Packs and pack files are the repository; the protection
- * override and the lines-of-code memos hang off it. They belong to three different stores, and no
- * one of those stores may own the others' rows, so the sweep is a class of its own rather than a
+ * <p><b>Six tables, one transaction.</b> Packs and pack files are the repository; the protection
+ * override, the lines-of-code memos and the name index's rows (its names and the revision that
+ * ordered them) hang off it. They belong to four different stores, and no one of those stores may
+ * own the others' rows, so the sweep is a class of its own rather than a
  * method bolted onto {@code CatalogRepository}. Half a deletion is the one outcome worth ruling out:
  * a repository whose packs are gone but whose override remains would hand the next repository
- * created under a reused id somebody else's settings.
+ * created under a reused id somebody else's settings — or, for the names, a public clone url that
+ * still resolves to an id nothing serves.
+ *
+ * <p>A project's slug ({@link GitProject}) stays: it describes the project, not the repository.
  *
  * <p><b>Rows, not bytes.</b> The pack blobs are content-addressed and shared, nothing counts
  * references to them, and the blob store's one delete is reachable only from its sweep. So the
@@ -68,6 +72,8 @@ public class RepositoryPurge {
     long packs = GitPack.delete("repositoryId", repositoryId);
     GitRepositoryProtection.delete("repositoryId", repositoryId);
     GitRepositoryLoc.delete("repositoryId", repositoryId);
+    GitRepositoryName.delete("repositoryId", repositoryId);
+    GitRepositoryNamesRevision.delete("repositoryId", repositoryId);
     return packs > 0;
   }
 

@@ -25,8 +25,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The HTTP adapter on its own, as a plain JUnit test rather than a {@code @QuarkusTest}: under CDI
- * {@link FakeRepositoryNameResolver} overrides it (it carries {@code @DefaultBean}), so the only way
- * to exercise the real one is to build it and set its two fields. Upstream is an in-process {@link
+ * {@link FakeRepositoryNameResolver} replaces it (an alternative of its type, standing in for the
+ * fallback behind {@link StoredRepositoryNameResolver}), so the only way to exercise the real one is
+ * to build it and set its two fields. Upstream is an in-process {@link
  * HttpServer}, the {@code StubIntake} / {@code StubNpmRegistry} idiom — there is no network here, and
  * a test that reached a real qits-projects would pass or fail for reasons unrelated to this code.
  *
