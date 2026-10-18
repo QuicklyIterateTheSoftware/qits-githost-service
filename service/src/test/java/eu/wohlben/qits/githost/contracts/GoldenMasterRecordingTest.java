@@ -116,6 +116,14 @@ class GoldenMasterRecordingTest {
           + AUTHOR
           + ",\"projectId\":\"{projectId}\",\"repoName\":\"{repoName}\",\"versionPins\":true}";
 
+  /**
+   * The name door's statement, as qits-projects sends it. Literal project coordinates: the state
+   * hands back only a repository id, and the names are what the door is about.
+   */
+  private static final String NAMES_BODY =
+      "{\"projectId\":\"contract-project\",\"projectSlug\":\"contract\","
+          + "\"names\":[\"contract-service\"],\"revision\":1}";
+
   private static final String NAMED = "/git/{projectId}/{repoName}";
 
   private static final String BY_ID = "/githost/api/repositories/{repositoryId}";
@@ -222,6 +230,37 @@ class GoldenMasterRecordingTest {
               "DELETE",
               "/git/{repositoryId}",
               404,
+              null),
+          // --- the name door, id-addressed (qits-projects) ---------------------------------------
+          write(
+              ProviderStates.A_REPOSITORY_EXISTS,
+              "putRepositoryNames",
+              "PUT",
+              "/git/{repositoryId}/names",
+              200,
+              NAMES_BODY),
+          write(
+              ProviderStates.NO_REPOSITORY_WITH_THE_GIVEN_ID,
+              "putRepositoryNames",
+              "PUT",
+              "/git/{repositoryId}/names",
+              404,
+              NAMES_BODY),
+          new Interaction(
+              ProviderStates.A_REPOSITORY_EXISTS,
+              "getRepositoryNames",
+              "GET",
+              "/git/{repositoryId}/names",
+              200,
+              null,
+              null),
+          new Interaction(
+              ProviderStates.NO_REPOSITORY_WITH_THE_GIVEN_ID,
+              "getRepositoryNames",
+              "GET",
+              "/git/{repositoryId}/names",
+              404,
+              null,
               null),
           new Interaction(
               ProviderStates.TWO_REPOSITORIES,

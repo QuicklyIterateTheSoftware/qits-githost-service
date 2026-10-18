@@ -82,6 +82,68 @@ components:
           type: string
         defaultBranch:
           type: string
+    RepositoryNamesStatement:
+      type: object
+      description: >-
+        One repository's whole name set, as qits-projects states it. Applied only when revision is
+        newer than the one held.
+      required: [projectId, projectSlug, names, revision]
+      properties:
+        projectId:
+          type: string
+          maxLength: 64
+        projectSlug:
+          type: string
+          maxLength: 255
+        names:
+          type: array
+          description: Each non-blank, at most 255 characters, no '/', no whitespace, no .git suffix
+          items:
+            type: string
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+    RepositoryNames:
+      type: object
+      description: >-
+        The name set this host holds. A repository nobody stated names for answers a null project,
+        no names and revision -1.
+      properties:
+        repoId:
+          type: string
+        projectId:
+          type: [string, "null"]
+        projectSlug:
+          type: [string, "null"]
+        names:
+          type: array
+          items:
+            type: string
+        revision:
+          type: integer
+          format: int64
+    RepositoryNamesApplied:
+      type: object
+      description: >-
+        The set held after the statement; applied is false when the statement was not newer, and
+        the set is then the one already held.
+      properties:
+        repoId:
+          type: string
+        projectId:
+          type: [string, "null"]
+        projectSlug:
+          type: [string, "null"]
+        names:
+          type: array
+          items:
+            type: string
+        revision:
+          type: integer
+          format: int64
+        applied:
+          type: boolean
     GitTree:
       type: object
       properties:
@@ -159,6 +221,41 @@ paths:
       responses:
         "204":
           description: Deleted
+        "404":
+          description: No such repository
+  /git/{repoId}/names:
+    parameters:
+      - $ref: "#/components/parameters/repoId"
+    put:
+      operationId: putRepositoryNames
+      summary: State the repository's whole name set at a revision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepositoryNamesStatement"
+      responses:
+        "200":
+          description: Applied, or not newer than the held set (applied false)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryNamesApplied"
+        "400":
+          description: A malformed statement; nothing written
+        "404":
+          description: No such repository; nothing written
+    get:
+      operationId: getRepositoryNames
+      summary: The name set this host holds for the repository
+      responses:
+        "200":
+          description: The held set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryNames"
         "404":
           description: No such repository
   /git/{projectId}/{repoName}/tree/{rev}:

@@ -74,6 +74,8 @@ predates the key.
 | `GET /git/:repoId` | `{"repoId", "defaultBranch"}`, or 404. |
 | `HEAD /git/:repoId` | The same existence question, no body. |
 | `DELETE /git/:repoId` | Delete the repository. 204 gone, 404 no such repository. No body. |
+| `PUT /git/:repoId/names` | qits-projects stating the repository's whole name set — see [The name index](#the-name-index). |
+| `GET /git/:repoId/names` | The name set this host holds for the repository, or 404. |
 | `GET /git/:repoId/info/refs?service=git-(upload\|receive)-pack` | The ref advertisement, id-addressed. |
 | `POST /git/:repoId/git-upload-pack` | Fetch, id-addressed. |
 | `POST /git/:repoId/git-receive-pack` | Push, id-addressed. |
@@ -92,23 +94,58 @@ alone it drops the borrowed segment. qits-gateway routes verbatim by prefix, so 
 an extra prefix on this service's entry, and every client that names the old path has to be moved
 with the cutover.
 
-The name-addressed scheme resolves `(projectId, repoName)` through qits-projects
-(`qits.projects.name-resolver-url`) and is what makes a committed relative submodule url
-(`../<name>.git`) work. Unset, that scheme answers 404 and the id-addressed one keeps serving.
+### The name index
 
-**A resolver miss and a resolver outage are different answers.** qits-projects' 404 means "no such
-name" and reaches the client as a 404; anything that stopped the question being answered — a timeout,
-a refused connection, a non-200, an unreadable body — is a **503**. A git client records a 404 as
-"this repository is gone", so an outage answered that way would tell the platform every repository
-had been deleted (the `fe26a6c` lesson).
+The name-addressed scheme resolves `(project, repoName)` to a storage id, and is what makes a
+committed relative submodule url (`../<name>.git`) work. **This host answers it from its own table**
+(`V6__repository_names.sql`, `persistence/RepositoryNameStore`), so the public clone url of a
+repository whose names are held here serves whether or not qits-projects is up. The first segment may
+be the project's **id or its slug** (`/git/qits/<name>`); when one spelling matches as an id and
+another project's slug, the id wins.
 
-**A found name is cached; a miss and an outage are not.** The id a 200 answered is served from memory
-for `qits.projects.name-resolver-cache-ttl` (default `10M`, `0` turns it off), so the workspace
-daemons' minutely fetches stop costing qits-projects a lookup each. A 404 is never cached, so a new
-repository resolves at once. A rename evicts both names when qits-projects announces
-`RepositoryRenamed` (`bus/RepositoryRenamedListener`, a live-only subscriber); a rename this instance
-missed while off the stream lets the old name keep serving the same, unchanged repository for at most
-one TTL.
+qits-projects owns the names and is the one writer, through the **name door** on the id-addressed
+scheme, behind the same storage-client guard as the lifecycle verbs:
+
+```
+PUT /git/<repoId>/names
+{"projectId": "<id>", "projectSlug": "qits", "names": ["qits-ci-service", "ci"], "revision": 7}
+200 {"repoId", "projectId", "projectSlug", "names": [sorted], "revision", "applied": true|false}
+```
+
+- **A statement is the repository's whole set**, replaced at once: a name it no longer lists stops
+  resolving. An empty list is a statement too.
+- **Ordered by `revision`**, which qits-projects increases. A statement that is not newer than the one
+  held changes nothing and answers `"applied": false` with the held set, so a retried or reordered
+  delivery can never roll a rename back.
+- **A name moves, it is never shared.** `(project, name)` is the key; a statement naming a name
+  another repository of the project holds takes it over. Names are case-sensitive.
+- **A slug is held by one project at a time**, and stating it for another project moves it.
+- **400** for a malformed statement: a name must be non-blank, at most 255 characters, with no `/`, no
+  whitespace and no `.git` suffix (the routes strip that before the lookup); `revision` an integer
+  `>= 0`. **404** for a repository this host does not hold. Nothing is written either way.
+
+`GET /git/<repoId>/names` answers the held set in the same shape without `applied`; a repository
+nobody stated names for answers `"names": []` at revision `-1` with a null project. `DELETE
+/git/<repoId>` takes the repository's names and revision with its packs (a project's slug stays).
+
+**A miss falls back to qits-projects, transitionally.** Until qits-projects has stated every
+repository's names here, a name the index does not hold is asked of qits-projects over HTTP
+(`qits.projects.name-resolver-url`, `HttpRepositoryNameResolver`) — on a miss only, never on a fault.
+**qits-1282 removes the fallback** once the backfill is done; from then on a miss in the index is the
+answer. Unset, a name the index misses is a 404.
+
+**A miss and an outage are different answers.** "No such name" reaches the client as a 404; anything
+that stopped the question being answered — the index's database unreadable past its retry deadline,
+or, on the fallback, a timeout, a refused connection, a non-200, an unreadable body — is a **503**. A
+git client records a 404 as "this repository is gone", so an outage answered that way would tell the
+platform every repository had been deleted (the `fe26a6c` lesson).
+
+**The fallback caches a found name; a miss and an outage are not cached.** The id qits-projects'
+200 answered is served from memory for `qits.projects.name-resolver-cache-ttl` (default `10M`, `0`
+turns it off). A rename evicts both names when qits-projects announces `RepositoryRenamed`
+(`bus/RepositoryRenamedListener`, a live-only subscriber); a rename this instance missed while off
+the stream lets the old name keep serving the same, unchanged repository for at most one TTL. The
+index itself caches nothing: it is the table.
 
 ### Who may push what
 
@@ -523,7 +560,7 @@ lineage, the retry budget). What this service owns is in
 | `QITS_RESOURCE_DB_URL` / `_USERNAME` / `_PASSWORD` | This service's PostgreSQL database (pack catalog, protection overrides, commit-subject bypass records). No defaults — an unset variable fails the boot. |
 | `QITS_RESOURCE_EVENTSTREAM_URL` / `_USERNAME` / `_PASSWORD` | The outbox's own database, from the qits-eventstream jar. |
 | `QITS_EVENTS_URL` | Where qits-events answers. Scheme, host and port, no path. |
-| `QITS_PROJECTS_NAME_RESOLVER_URL` | Where qits-projects resolves a repository name. No default; unset means the name-addressed scheme 404s — which is every public clone url, so a real deployment sets it. |
+| `QITS_PROJECTS_NAME_RESOLVER_URL` | Where qits-projects resolves a repository name the name index does not hold — the transitional fallback qits-1282 removes. No default; unset means such a name 404s, so a real deployment sets it until the backfill is done. |
 | `QITS_GITHOST_STORAGE_CLIENT` | The client id whose self-role (`clients/<value>`) opens the id-addressed scheme. Set it to qits-projects' service client and nothing else opens those routes — not `qits:admin`, not `qits:system`. Unset (shipped) leaves the scheme exactly as it was. |
 | `QITS_REPOSITORIES_GIT_PROTECT_DEFAULT_BRANCH` | The default branch's seatbelt. Ships `false`. |
 | `QITS_GITHOST_COMMIT_SUBJECTS_EXEMPT_ROLES` | Roles whose pushes skip the commit-subject guard. Ships `qits:system,qits:ci-run`. A platform service client and the bootstrap ingress are exempt regardless. |
@@ -610,9 +647,10 @@ is the server's own access log, and one process means one log to attribute.
 
 **Two mocks stand in for the platform.** `idp.MockIdp` serves the JWKS and mints every bearer a
 story presents — validation is real, and a token minted for another audience is refused by the same
-code path a deployment runs. A plain `MockService` plays **qits-projects' name resolver**, which is
-what makes `/git/:projectId/:repoName` serve at all; without `qits.projects.name-resolver-url` the
-public scheme 404s and not one git story could clone anything. Both mocks' recordings are registered
+code path a deployment runs. A plain `MockService` plays **qits-projects' name resolver** — the
+fallback behind the name index, which no story fills — so it is what makes `/git/:projectId/:repoName`
+serve in the stories; without `qits.projects.name-resolver-url` the public scheme 404s and not one git
+story could clone anything. Both mocks' recordings are registered
 as `NetworkCapture` sources, so the far half of every diagram is observed on the far side rather
 than claimed here.
 
@@ -692,7 +730,8 @@ largest repository, 22 packs and 7.8 MB became 2 packs and 15 MB. The accepted c
 three blobs and three rows per push.
 
 **A repository can be deleted, and that frees rows rather than bytes.** `DELETE /git/:repoId` removes
-every row keyed by the id — packs, pack files, the protection override, the lines-of-code memos — in
+every row keyed by the id — packs, pack files, the protection override, the lines-of-code memos, its
+names and their revision — in
 one transaction, so qits-projects deleting a repository no longer leaves a bare behind at an id
 nobody holds. The pack blobs stay: the store is content-addressed and shared, nothing counts
 references to a blob, so they are orphaned exactly as a repack's are. A census sweep is what will

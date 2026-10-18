@@ -83,6 +83,44 @@
             "strings": [],
             "listFilteredTo": null
           }
+        },
+        {
+          "operationId": "getRepositoryNames",
+          "method": "GET",
+          "path": "/git/{repositoryId}/names",
+          "status": 200,
+          "file": "a-repository-exists/getRepositoryNames.json",
+          "frozen": {
+            "ids": [
+              "$.repoId"
+            ],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "putRepositoryNames",
+          "method": "PUT",
+          "path": "/git/{repositoryId}/names",
+          "body": {
+            "projectId": "contract-project",
+            "projectSlug": "contract",
+            "names": [
+              "contract-service"
+            ],
+            "revision": 1
+          },
+          "status": 200,
+          "file": "a-repository-exists/putRepositoryNames.json",
+          "frozen": {
+            "ids": [
+              "$.repoId"
+            ],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
         }
       ]
     },
@@ -716,6 +754,40 @@
           "path": "/githost/api/repositories/{repositoryId}/loc",
           "status": 404,
           "file": "no-repository-with-the-given-id/getLoc.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getRepositoryNames",
+          "method": "GET",
+          "path": "/git/{repositoryId}/names",
+          "status": 404,
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "putRepositoryNames",
+          "method": "PUT",
+          "path": "/git/{repositoryId}/names",
+          "body": {
+            "projectId": "contract-project",
+            "projectSlug": "contract",
+            "names": [
+              "contract-service"
+            ],
+            "revision": 1
+          },
+          "status": 404,
+          "file": null,
           "frozen": {
             "ids": [],
             "instants": [],
