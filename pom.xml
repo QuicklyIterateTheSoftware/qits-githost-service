@@ -125,7 +125,7 @@
         <qits.projects-golden-masters.version>2026.1016.112931</qits.projects-golden-masters.version>
         <!-- qits-idp's recorded answers (test scope), read through qits-pact-consumer by
              IdpConsumerPactTest: the quarkus-oidc tenant's JWKS read (ticket qits-1149). -->
-        <qits.idp-golden-masters.version>2026.1018.142635</qits.idp-golden-masters.version>
+        <qits.idp-golden-masters.version>2026.1018.165736</qits.idp-golden-masters.version>
         <!-- The shared consumer-pact helper (golden-master reader, row builder), released out of
              libs/qits-integrations-quarkus with its own string. -->
         <qits.pact-consumer.version>2026.1018.164604</qits.pact-consumer.version>
