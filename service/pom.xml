@@ -213,6 +213,26 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <!-- qits-idp's golden masters: IdpConsumerPactTest's JWKS row is built from them. -->
+            <groupId>${project.groupId}</groupId>
+            <artifactId>qits-idp-golden-masters</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- The shared golden-master reader and row builder IdpConsumerPactTest writes with. -->
+            <groupId>${project.groupId}</groupId>
+            <artifactId>qits-pact-consumer</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <!-- The consumer pacts ConsumerPactVerificationTest verifies: each jar carries one
+                 pacts/<consumer>_qits-githost-service.json, read off the classpath. The pinned jar
+                 IS the source of the pact; nothing is copied into this tree. -->
+            <groupId>${project.groupId}</groupId>
+            <artifactId>qits-projects-service-pacts-qits-githost-service</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <!-- The platform's shared rules. Only the datasource baseline is enabled here (see
                  DatasourceBaselineTest): a datasource that lost a line of the three-line block
                  fails this build rather than a review. -->

@@ -80,6 +80,19 @@ public class ProviderStates {
       "a repository with a branch to fold";
   public static final String A_REPOSITORY_WITH_A_BRANCH_THAT_CONFLICTS_WITH_MAIN =
       "a repository with a branch that conflicts with main";
+  public static final String A_REPOSITORY_WITHOUT_THE_BRANCH_TO_FOLD =
+      "a repository without the branch to fold";
+  public static final String A_REPOSITORY_WITH_THE_RELEASE_TAG = "a repository with the release tag";
+  public static final String A_REPOSITORY_DECLARING_ITS_DEPLOYMENTS =
+      "a repository declaring its deployments";
+  public static final String A_REPOSITORY_DECLARING_NO_DEPLOYMENTS =
+      "a repository declaring no deployments";
+  public static final String AN_UNNAMED_REPOSITORY_DECLARING_ITS_DEPLOYMENTS =
+      "an unnamed repository declaring its deployments";
+  public static final String A_REPOSITORY_DECLARING_ITS_CONFIGURATION =
+      "a repository declaring its configuration";
+  public static final String A_REPOSITORY_DECLARING_NO_CONFIGURATION =
+      "a repository declaring no configuration";
 
   /** The project every name-addressed state registers its repository under, with this name. */
   static final String REPO_NAME = "contract-service";
@@ -89,6 +102,14 @@ public class ProviderStates {
 
   /** The branch a fold state merges into main. */
   static final String FOLD_BRANCH = "feature/contract";
+
+  /** The tag a release names, as {@code GoldenMasterRecordingTest}'s tag body sends it. */
+  static final String RELEASE_TAG = "2026.101.120000";
+
+  /** The deployer's two declarations, read by fixed path (qits-deployments' SpecSource). */
+  static final String DEPLOYMENTS_PATH = ".config/qits/deployments.yml";
+
+  static final String CONFIGURATION_PATH = ".config/qits/configuration.yml";
 
   /** A well-formed commit sha no seeded repository holds. */
   static final String ABSENT_SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -163,6 +184,16 @@ public class ProviderStates {
     states.put(
         A_REPOSITORY_WITH_A_BRANCH_THAT_CONFLICTS_WITH_MAIN,
         this::aRepositoryWithABranchThatConflictsWithMain);
+    states.put(A_REPOSITORY_WITHOUT_THE_BRANCH_TO_FOLD, this::aRepositoryWithoutTheBranchToFold);
+    states.put(A_REPOSITORY_WITH_THE_RELEASE_TAG, this::aRepositoryWithTheReleaseTag);
+    states.put(A_REPOSITORY_DECLARING_ITS_DEPLOYMENTS, this::aRepositoryDeclaringItsDeployments);
+    states.put(A_REPOSITORY_DECLARING_NO_DEPLOYMENTS, this::aRepositoryDeclaringNoDeployments);
+    states.put(
+        AN_UNNAMED_REPOSITORY_DECLARING_ITS_DEPLOYMENTS,
+        this::anUnnamedRepositoryDeclaringItsDeployments);
+    states.put(
+        A_REPOSITORY_DECLARING_ITS_CONFIGURATION, this::aRepositoryDeclaringItsConfiguration);
+    states.put(A_REPOSITORY_DECLARING_NO_CONFIGURATION, this::aRepositoryDeclaringNoConfiguration);
   }
 
   /** Every state name this provider answers for. */
@@ -373,6 +404,59 @@ public class ProviderStates {
     return new Setup(repo.params("target", "refs/heads/main", "source", FOLD_BRANCH), List.of());
   }
 
+  /** Main only: {@code source} names a branch the repository does not have, so nothing folds. */
+  private Setup aRepositoryWithoutTheBranchToFold() {
+    Named repo = namedContentRepository();
+    return new Setup(repo.params("target", "refs/heads/main", "source", FOLD_BRANCH), List.of());
+  }
+
+  /**
+   * {@link #RELEASE_TAG} already on main's commit, a lightweight tag: tagging it again is the
+   * {@code tag-exists} conflict, answered with the sha the ref holds.
+   */
+  private Setup aRepositoryWithTheReleaseTag() {
+    Named repo = namedContentRepository();
+    moveRef(repo.id(), Constants.R_TAGS + RELEASE_TAG, null, repo.commit());
+    return new Setup(repo.params("sha", repo.commit().name()), List.of());
+  }
+
+  /** {@link #CONTENT_FILES}, which hold {@link #DEPLOYMENTS_PATH}; {@code path} names it. */
+  private Setup aRepositoryDeclaringItsDeployments() {
+    Named repo = namedContentRepository();
+    return new Setup(repo.params("rev", "main", "path", DEPLOYMENTS_PATH), List.of());
+  }
+
+  /** {@link #CONTENT_FILES} without {@link #DEPLOYMENTS_PATH}; {@code path} names it all the same. */
+  private Setup aRepositoryDeclaringNoDeployments() {
+    Map<String, String> files = new TreeMap<>(CONTENT_FILES);
+    files.remove(DEPLOYMENTS_PATH);
+    Named repo = namedRepository(files, true);
+    return new Setup(repo.params("rev", "main", "path", DEPLOYMENTS_PATH), List.of());
+  }
+
+  /**
+   * The deployments declaration, held by a repository no name resolves to yet: the name-addressed
+   * read misses, the id-addressed one finds it — the deployer's fallback.
+   */
+  private Setup anUnnamedRepositoryDeclaringItsDeployments() {
+    Named repo = namedRepository(CONTENT_FILES, false);
+    return new Setup(repo.params("rev", "main", "path", DEPLOYMENTS_PATH), List.of());
+  }
+
+  /** {@link #CONTENT_FILES} plus {@link #CONFIGURATION_PATH}; {@code path} names it. */
+  private Setup aRepositoryDeclaringItsConfiguration() {
+    Map<String, String> files = new TreeMap<>(CONTENT_FILES);
+    files.put(CONFIGURATION_PATH, "keys: {}\n");
+    Named repo = namedRepository(files, true);
+    return new Setup(repo.params("rev", "main", "path", CONFIGURATION_PATH), List.of());
+  }
+
+  /** {@link #CONTENT_FILES}, which hold no {@link #CONFIGURATION_PATH}; {@code path} names it. */
+  private Setup aRepositoryDeclaringNoConfiguration() {
+    Named repo = namedContentRepository();
+    return new Setup(repo.params("rev", "main", "path", CONFIGURATION_PATH), List.of());
+  }
+
   // --- the content repository ------------------------------------------------------------------
 
   /** A repository with {@link #CONTENT_FILES} on main, registered under a fresh project. */
@@ -393,13 +477,23 @@ public class ProviderStates {
   }
 
   private Named namedContentRepository() {
+    return namedRepository(CONTENT_FILES, true);
+  }
+
+  /**
+   * A repository with {@code files} on main under a fresh project; {@code registered} false leaves
+   * the name unresolvable, so only its storage id reaches it.
+   */
+  private Named namedRepository(Map<String, String> files, boolean registered) {
     String id = UUID.randomUUID().toString();
     String projectId = UUID.randomUUID().toString();
     create(id);
     RevCommit commit =
-        commit(id, null, CONTENT_FILES, Map.of(), "feat(contract-1): seed the contract repository\n");
+        commit(id, null, files, Map.of(), "feat(contract-1): seed the contract repository\n");
     move(id, "main", null, commit);
-    names.register(projectId, REPO_NAME, id);
+    if (registered) {
+      names.register(projectId, REPO_NAME, id);
+    }
     return new Named(id, projectId, commit);
   }
 
@@ -480,13 +574,18 @@ public class ProviderStates {
 
   /** Moves (or creates, {@code from} null) a branch, in-process: no push, so nothing announced. */
   private void move(String id, String branch, RevCommit from, RevCommit to) {
+    moveRef(id, Constants.R_HEADS + branch, from, to);
+  }
+
+  /** {@link #move} for any ref, named in full. */
+  private void moveRef(String id, String ref, RevCommit from, RevCommit to) {
     try (Repository repo = repositories.open(id)) {
-      RefUpdate update = repo.updateRef(Constants.R_HEADS + branch);
+      RefUpdate update = repo.updateRef(ref);
       update.setNewObjectId(to);
       update.setExpectedOldObjectId(from == null ? ObjectId.zeroId() : from);
       RefUpdate.Result result = update.update();
       if (result != RefUpdate.Result.NEW && result != RefUpdate.Result.FAST_FORWARD) {
-        throw new IllegalStateException("Moving " + branch + " of " + id + ": " + result);
+        throw new IllegalStateException("Moving " + ref + " of " + id + ": " + result);
       }
     } catch (IOException e) {
       throw new UncheckedIOException(e);

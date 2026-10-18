@@ -8,7 +8,6 @@ import au.com.dius.pact.core.model.ProviderState;
 import au.com.dius.pact.provider.junit5.HttpTestTarget;
 import au.com.dius.pact.provider.junit5.PactVerificationContext;
 import au.com.dius.pact.provider.junit5.PactVerificationInvocationContextProvider;
-import au.com.dius.pact.provider.junitsupport.IgnoreNoPactsToVerify;
 import au.com.dius.pact.provider.junitsupport.Provider;
 import au.com.dius.pact.provider.junitsupport.State;
 import au.com.dius.pact.provider.junitsupport.loader.PactSource;
@@ -31,9 +30,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * pins that jar as a test dependency, and qits-maintenance bumps the pin when the consumer releases
  * a changed pact. {@link ClasspathPactLoader} finds them all.
  *
- * <p><b>No consumer pins a pact yet</b>, so {@code @IgnoreNoPactsToVerify} lets an empty classpath
- * pass and the loader logs that nothing was verified. When the first consumer's pact jar is pinned,
- * drop the annotation and set {@link ClasspathPactLoader#REQUIRED} to true.
+ * <p><b>The pinned pacts</b> are the test-scope {@code eu.wohlben.qits:<consumer>-pacts-qits-githost-service}
+ * dependencies in {@code service/pom.xml} — today qits-projects-service's. {@link
+ * ClasspathPactLoader#REQUIRED} is true, so a classpath that lost them fails rather than verifying
+ * nothing. A consumer that starts committing {@code pacts/<consumer>_qits-githost-service.json} is
+ * pinned there once its jar is published; a state its pact names that this class does not answer
+ * fails {@link #target} and is added to {@link ProviderStates}, with its golden master.
  *
  * <p>Each interaction runs against this {@code @QuarkusTest} application over real HTTP, as the
  * {@code %test} synthetic user — exactly as {@link GoldenMasterRecordingTest}'s calls run. Every
@@ -43,7 +45,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 @QuarkusTest
 @Provider(ConsumerPactVerificationTest.PROVIDER)
 @PactSource(ClasspathPactLoader.class)
-@IgnoreNoPactsToVerify
 class ConsumerPactVerificationTest {
 
   /** The provider's name in a pact: the repository name, not the application name. */
@@ -61,9 +62,6 @@ class ConsumerPactVerificationTest {
 
   @BeforeEach
   void target(PactVerificationContext context, Pact pact, Interaction interaction) {
-    if (context == null) {
-      return; // no pact to verify: @IgnoreNoPactsToVerify's single empty run
-    }
     String consumer = pact.getConsumer().getName();
     for (ProviderState state : interaction.getProviderStates()) {
       if (!states.names().contains(state.getName())) {
@@ -96,9 +94,7 @@ class ConsumerPactVerificationTest {
   @TestTemplate
   @ExtendWith(PactVerificationInvocationContextProvider.class)
   void consumerPactHolds(PactVerificationContext context) {
-    if (context != null) {
-      context.verifyInteraction();
-    }
+    context.verifyInteraction();
   }
 
   // --- the states: each one line into the registry -------------------------------------------
@@ -186,5 +182,40 @@ class ConsumerPactVerificationTest {
   @State(ProviderStates.A_REPOSITORY_WITH_A_BRANCH_THAT_CONFLICTS_WITH_MAIN)
   Map<String, String> aRepositoryWithABranchThatConflictsWithMain() {
     return states.params(ProviderStates.A_REPOSITORY_WITH_A_BRANCH_THAT_CONFLICTS_WITH_MAIN);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_WITHOUT_THE_BRANCH_TO_FOLD)
+  Map<String, String> aRepositoryWithoutTheBranchToFold() {
+    return states.params(ProviderStates.A_REPOSITORY_WITHOUT_THE_BRANCH_TO_FOLD);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_WITH_THE_RELEASE_TAG)
+  Map<String, String> aRepositoryWithTheReleaseTag() {
+    return states.params(ProviderStates.A_REPOSITORY_WITH_THE_RELEASE_TAG);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_DECLARING_ITS_DEPLOYMENTS)
+  Map<String, String> aRepositoryDeclaringItsDeployments() {
+    return states.params(ProviderStates.A_REPOSITORY_DECLARING_ITS_DEPLOYMENTS);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_DECLARING_NO_DEPLOYMENTS)
+  Map<String, String> aRepositoryDeclaringNoDeployments() {
+    return states.params(ProviderStates.A_REPOSITORY_DECLARING_NO_DEPLOYMENTS);
+  }
+
+  @State(ProviderStates.AN_UNNAMED_REPOSITORY_DECLARING_ITS_DEPLOYMENTS)
+  Map<String, String> anUnnamedRepositoryDeclaringItsDeployments() {
+    return states.params(ProviderStates.AN_UNNAMED_REPOSITORY_DECLARING_ITS_DEPLOYMENTS);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_DECLARING_ITS_CONFIGURATION)
+  Map<String, String> aRepositoryDeclaringItsConfiguration() {
+    return states.params(ProviderStates.A_REPOSITORY_DECLARING_ITS_CONFIGURATION);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_DECLARING_NO_CONFIGURATION)
+  Map<String, String> aRepositoryDeclaringNoConfiguration() {
+    return states.params(ProviderStates.A_REPOSITORY_DECLARING_NO_CONFIGURATION);
   }
 }
