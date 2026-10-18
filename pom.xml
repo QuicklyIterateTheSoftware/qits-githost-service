@@ -60,10 +60,11 @@
         <qits.eventstream.version>2026.1018.170159</qits.eventstream.version>
         <!-- Shared OIDC and forwarded-header authentication. -->
         <qits.integrations-quarkus.version>2026.1012.173247</qits.integrations-quarkus.version>
-        <!-- qits-http-core's QitsHttpClients, pinned with its OWN property rather than riding
-             qits.integrations-quarkus.version above: HttpRepositoryNameResolver's qits-projects
-             lookup is wrapped through it so the CLIENT span and X-Qits-Caller travel with that call,
-             the same way the REST client already carries them. A separate property because this
+        <!-- qits-http-core, pinned with its OWN property rather than riding
+             qits.integrations-quarkus.version above: its CallerServerFilter and CallerRouteRecorder
+             attribute every inbound request to the X-Qits-Caller that sent it. (This service makes
+             no outbound HTTP call of its own any more — the qits-projects name lookup it once wrapped
+             through QitsHttpClients is gone, qits-1215.) A separate property because this
              repository pins each library released out of libs/qits-integrations-quarkus by its own
              string unless two of them carry an explicit same-string policy (qits-db-core and
              qits-arch-rules, above) — this one carries none. -->
@@ -90,10 +91,11 @@
         <!-- The recording service mocks the same IT boots against (the generic MockService plus
              idp.MockIdp), released out of libs/qits-integrations-quarkus like
              qits-db-core/qits-arch-rules above (the same-string policy applies the day this repo
-             consumes a newer reactor). Two are impersonated now: the idp mints and validates the
-             bearers, and a plain MockService plays qits-projects' name resolver — which is what
-             makes the PUBLIC clone url (/git/:projectId/:repoName) serve at all, and what puts the
-             qits-githost -> qits-projects lookup in every git story's diagram. -->
+             consumes a newer reactor). One is impersonated: the idp mints and validates the
+             bearers. qits-projects is played by the stories as a CALLER only — it states each
+             repository's names through PUT /git/<repoId>/names, which is what makes the PUBLIC
+             clone url (/git/:projectId/:repoName) serve — because the git host calls it for
+             nothing. -->
         <qits.service-mock.version>2026.1002.70617</qits.service-mock.version>
         <qits.maven.repository.url>https://registry.qits.wohlben.eu/artifacts/maven/maven</qits.maven.repository.url>
 
@@ -118,11 +120,6 @@
              qits-projects-service verifies with, so a consumer's pact is read the same way at
              both providers. -->
         <pact.version>4.6.21</pact.version>
-        <!-- qits-projects' recorded answers (test scope), read by contracts/ProviderGoldenMasters for
-             this repository's consumer pact against qits-projects (HttpRepositoryNameResolver's
-             by-name lookup, ticket qits-1149). Moves like every internal pin: a qits-maintenance
-             bump, never a hand edit to chase a release. -->
-        <qits.projects-golden-masters.version>2026.1016.112931</qits.projects-golden-masters.version>
         <!-- qits-idp's recorded answers (test scope), read through qits-pact-consumer by
              IdpConsumerPactTest: the quarkus-oidc tenant's JWKS read (ticket qits-1149). -->
         <qits.idp-golden-masters.version>2026.1018.165736</qits.idp-golden-masters.version>
@@ -191,17 +188,13 @@
                 <version>${pact.version}</version>
             </dependency>
             <dependency>
-                <!-- The consumer half, on the same version: ProjectsConsumerPactTest writes this
-                     repository's pact against qits-projects. Test scope at every declaration site. -->
+                <!-- The consumer half, on the same version as the provider half above: what
+                     qits-pact-consumer (IdpConsumerPactTest) and the eventstream pact kit
+                     (EventstreamPactTest) write this repository's pacts with. Test scope at every
+                     declaration site. -->
                 <groupId>au.com.dius.pact.consumer</groupId>
                 <artifactId>junit5</artifactId>
                 <version>${pact.version}</version>
-            </dependency>
-            <dependency>
-                <!-- Test scope at every declaration site: recordings a test reads, never code. -->
-                <groupId>${project.groupId}</groupId>
-                <artifactId>qits-projects-golden-masters</artifactId>
-                <version>${qits.projects-golden-masters.version}</version>
             </dependency>
             <dependency>
                 <!-- Test scope at every declaration site: recordings a test reads, never code. -->
@@ -269,9 +262,8 @@
                 <version>${qits.integrations-quarkus.version}</version>
             </dependency>
             <dependency>
-                <!-- QitsHttpClients: wraps HttpRepositoryNameResolver's java.net.http client so it
-                     opens a CLIENT span and carries X-Qits-Caller, like the REST client already
-                     does. Pinned by its own property — see it above. -->
+                <!-- The X-Qits-Caller attribution of inbound requests. Pinned by its own property —
+                     see it above. -->
                 <groupId>${project.groupId}</groupId>
                 <artifactId>qits-http-core</artifactId>
                 <version>${qits.http-core.version}</version>

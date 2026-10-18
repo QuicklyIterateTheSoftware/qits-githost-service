@@ -11,7 +11,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 
-import eu.wohlben.qits.githost.FakeRepositoryNameResolver;
+import eu.wohlben.qits.githost.RepositoryNameSeeder;
 import eu.wohlben.qits.githost.GitRepositoryProvider;
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
@@ -46,8 +46,8 @@ public class RepositoryMergeResourceTest {
 
   @Inject GitRepositoryProvider repositories;
 
-  /** qits-projects' name lookup, played by a map — the gitlink-pin rule resolves names through it. */
-  @Inject FakeRepositoryNameResolver projectRepositories;
+  /** States names into the real name index — the gitlink-pin rule resolves names through it. */
+  @Inject RepositoryNameSeeder projectRepositories;
 
   @TestHTTPResource("/git")
   URL gitBase;

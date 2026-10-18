@@ -3,7 +3,7 @@ package eu.wohlben.qits.githost.stories.browse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import eu.wohlben.qits.githost.api.TokenValidationBootstrapIT;
-import eu.wohlben.qits.githost.stories.support.MockProjects;
+import eu.wohlben.qits.githost.stories.support.StoryNames;
 import eu.wohlben.qits.githost.stories.support.StoryAccessLog;
 import eu.wohlben.qits.githost.stories.support.StoryOrigin;
 import eu.wohlben.qits.githost.stories.support.StoryTarget;
@@ -55,7 +55,7 @@ public class CodeBrowseIT {
   static final String ACTOR = "a reader in the browser";
 
   /** Addressed by storage id, because that is what the browser plane speaks. */
-  static final String REPO_ID = MockProjects.BROWSE_REPOSITORY_ID;
+  static final String REPO_ID = StoryNames.BROWSE_REPOSITORY_ID;
 
   static final String FILE = "README.md";
 
@@ -71,9 +71,6 @@ public class CodeBrowseIT {
   @BeforeAll
   static void tapTheNetwork() {
     StoryAccessLog.install();
-    // Registered although this story expects no lookup: the source has to be draining for
-    // "qits-projects was never asked" to be an observation rather than an omission.
-    MockProjects.installSource();
   }
 
   @BeforeEach
@@ -207,7 +204,7 @@ public class CodeBrowseIT {
     // this service reached NOBODY. A lookup edge appearing here would mean the browse routes had
     // started resolving names server-side, which is a different design than the one shipped.
     ReportAssertions.assertOnlyEdgesFrom(CATEGORY, SLUG, List.of(ACTOR));
-    ReportAssertions.assertNoEdgesTo(CATEGORY, SLUG, MockProjects.SERVICE_NAME);
+    ReportAssertions.assertNoEdgesTo(CATEGORY, SLUG, StoryNames.PROJECTS_SERVICE);
     ReportAssertions.assertNotLeaked(CATEGORY, SLUG, token);
   }
 }

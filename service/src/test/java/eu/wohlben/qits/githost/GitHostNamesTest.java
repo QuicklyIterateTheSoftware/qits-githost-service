@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -32,14 +31,11 @@ import org.junit.jupiter.api.Test;
  * what it wrote, through the real {@link RepositoryNameStore} and the shipped {@link
  * StoredRepositoryNameResolver}.
  *
- * <p>{@link FakeRepositoryNameResolver} plays the transitional HTTP fallback behind the index. Most
- * cases here make it UNAVAILABLE on purpose: a name that still serves then can only have been served
- * from the index, which is the claim — the public clone url no longer needs qits-projects up.
+ * <p>The index is the only source: nothing on this path asks qits-projects, so a name the index
+ * does not hold is a 404 and an index that cannot be read is a 503 — never a guess from elsewhere.
  */
 @QuarkusTest
 public class GitHostNamesTest {
-
-  @Inject FakeRepositoryNameResolver fallback;
 
   @Inject GitRepositoryProvider repositories;
 
@@ -48,11 +44,6 @@ public class GitHostNamesTest {
 
   @TestHTTPResource("/git")
   URL gitBase;
-
-  @BeforeEach
-  void reset() {
-    fallback.clear();
-  }
 
   /** See {@code GitHostCatalogUnavailableTest}: a mock installed in a method outlives it. */
   @AfterEach
@@ -95,7 +86,7 @@ public class GitHostNamesTest {
   }
 
   @Test
-  public void aStatedNameClonesByProjectIdAndBySlugWithTheFallbackUnreachable() throws Exception {
+  public void aStatedNameClonesByProjectIdAndBySlug() throws Exception {
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     String projectId = UUID.randomUUID().toString();
     String slug = "slug-" + UUID.randomUUID();
@@ -109,7 +100,6 @@ public class GitHostNamesTest {
         .body("revision", equalTo(1))
         .body("applied", equalTo(true));
 
-    fallback.beUnavailable(true);
     for (String url :
         List.of(
             gitBase + "/" + projectId + "/svc",
@@ -260,29 +250,31 @@ public class GitHostNamesTest {
   }
 
   @Test
-  public void aMissInTheIndexFallsBackToQitsProjects() throws Exception {
-    String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
+  public void aNameTheIndexDoesNotHoldIs404() throws Exception {
+    // The index is the only source: a repository that exists but was never named here is not
+    // reachable by name, and nothing is asked on its behalf.
+    GitHostFixture.seedOrigin(repositories, gitBase);
     String projectId = UUID.randomUUID().toString();
-    fallback.register(projectId, "only-upstream", repoId);
 
-    Path clone = cloneOf(gitBase + "/" + projectId + "/only-upstream");
-    assertTrue(Files.exists(clone.resolve(".git")), "the fallback must still answer a miss");
-
-    fallback.beUnavailable(true);
     given()
         .when()
-        .get("/git/" + projectId + "/only-upstream/info/refs?service=git-upload-pack")
+        .get("/git/" + projectId + "/unstated/info/refs?service=git-upload-pack")
         .then()
-        .statusCode(Response.Status.SERVICE_UNAVAILABLE.getStatusCode());
+        .statusCode(Response.Status.NOT_FOUND.getStatusCode());
+    given()
+        .when()
+        .get("/git/" + projectId + "/unstated/tree/main")
+        .then()
+        .statusCode(Response.Status.NOT_FOUND.getStatusCode());
   }
 
   @Test
-  public void anIndexThatCannotBeReadIs503AndTheFallbackIsNotAsked() throws Exception {
-    // A fault is not a miss: the fallback holds the name here, and still the answer is a 503 —
-    // never a 404, and never a guess from the second source.
+  public void anIndexThatCannotBeReadIs503() throws Exception {
+    // A fault is not a miss: the index holds the name, the database cannot be asked, and the
+    // answer is a 503 — never a 404 a git client would record as "this repository is gone".
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     String projectId = UUID.randomUUID().toString();
-    fallback.register(projectId, "svc", repoId);
+    put(repoId, statement(projectId, "slug-" + projectId, List.of("svc"), 1)).statusCode(200);
     QuarkusMock.installMockForType(new SeveredStore(), RepositoryNameStore.class);
 
     given()

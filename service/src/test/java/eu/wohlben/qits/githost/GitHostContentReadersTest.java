@@ -58,7 +58,7 @@ public class GitHostContentReadersTest {
     }
   }
 
-  @Inject FakeRepositoryNameResolver repositoryNames;
+  @Inject RepositoryNameSeeder repositoryNames;
 
   @Inject GitRepositoryProvider repositories;
 
@@ -179,8 +179,8 @@ public class GitHostContentReadersTest {
 
   @Test
   public void aResolverOutageIsA503AndNeverAFallThroughTo403() {
-    // The failure this whole fix is about, in its other half: qits-projects unreachable must be a
-    // retryable upstream answer, never a refusal about an address the caller never spelled. The
+    // The failure this whole fix is about, in its other half: a name index that cannot be read must
+    // be a retryable answer, never a refusal about an address the caller never spelled. The
     // hand-off runs AFTER the resolver has answered, so an outage never reaches it.
     repositoryNames.beUnavailable(true);
     try {

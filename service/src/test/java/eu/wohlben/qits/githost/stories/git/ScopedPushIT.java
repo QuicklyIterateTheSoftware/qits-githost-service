@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import eu.wohlben.qits.githost.api.TokenValidationBootstrapIT;
-import eu.wohlben.qits.githost.stories.support.MockProjects;
+import eu.wohlben.qits.githost.stories.support.StoryNames;
 import eu.wohlben.qits.githost.stories.support.StoryAccessLog;
 import eu.wohlben.qits.githost.stories.support.StoryOrigin;
 import eu.wohlben.qits.githost.stories.support.StoryTarget;
@@ -60,7 +60,6 @@ public class ScopedPushIT {
   @BeforeAll
   static void tapBothEndsOfTheNetwork() {
     StoryAccessLog.install();
-    MockProjects.installSource();
   }
 
   @UserStory(value = "A person's CLI token pushes only external branches", category = "git")
@@ -207,7 +206,7 @@ public class ScopedPushIT {
   private static String seed(StoryTarget target, String repoName) {
     return StoryOrigin.provisionSeeded(
         target,
-        MockProjects.repositoryId(repoName),
+        StoryNames.repositoryId(repoName),
         StoryOrigin.bearer(),
         Map.of("README.md", "# " + repoName + "\n"),
         "the first commit");
@@ -280,14 +279,8 @@ public class ScopedPushIT {
         "GET " + repo + "/info/refs?service=git-receive-pack -> 200");
     ReportAssertions.assertEdge(
         CATEGORY, slug, "git", actor, StoryAccessLog.SERVICE, "POST " + repo + "/git-receive-pack -> 200");
-    ReportAssertions.assertEdge(
-        CATEGORY,
-        slug,
-        "http",
-        StoryAccessLog.SERVICE,
-        MockProjects.SERVICE_NAME,
-        MockProjects.lookupLabel(repoName, 200));
-    ReportAssertions.assertOnlyEdgesFrom(CATEGORY, slug, List.of(actor, StoryAccessLog.SERVICE));
+    ReportAssertions.assertNoEdgesTo(CATEGORY, slug, StoryNames.PROJECTS_SERVICE);
+    ReportAssertions.assertOnlyEdgesFrom(CATEGORY, slug, List.of(actor));
     ReportAssertions.assertNotLeaked(CATEGORY, slug, token);
   }
 }

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import eu.wohlben.qits.githost.api.TokenValidationBootstrapIT;
-import eu.wohlben.qits.githost.stories.support.MockProjects;
+import eu.wohlben.qits.githost.stories.support.StoryNames;
 import eu.wohlben.qits.githost.stories.support.StoryAccessLog;
 import eu.wohlben.qits.githost.stories.support.StoryOrigin;
 import eu.wohlben.qits.githost.stories.support.StoryTarget;
@@ -56,7 +56,7 @@ public class ReadFileIT {
   /** {@code qits/pipeline-config} — a repository a pipeline reads and never clones. */
   static final String REPO_NAME = "pipeline-config";
 
-  static final String REPO_ID = MockProjects.repositoryId(REPO_NAME);
+  static final String REPO_ID = StoryNames.repositoryId(REPO_NAME);
 
   /** The directory the listing is asked for, and the file inside it the pipeline actually wants. */
   static final String DIRECTORY = "ci";
@@ -78,7 +78,6 @@ public class ReadFileIT {
   @BeforeAll
   static void tapBothEndsOfTheNetwork() {
     StoryAccessLog.install();
-    MockProjects.installSource();
   }
 
   @BeforeEach
@@ -172,23 +171,15 @@ public class ReadFileIT {
         ACTOR,
         StoryAccessLog.SERVICE,
         "GET " + StoryTarget.blobPath(REPO_NAME, StoryOrigin.BRANCH, FILE) + " -> 200");
-    // Both reads made this service ask qits-projects what the name means. Nothing is cached, so it
-    // asked twice — and both asks are the same question with the same answer, so the diagram draws
-    // one arrow.
-    ReportAssertions.assertEdge(
-        CATEGORY,
-        SLUG,
-        "http",
-        StoryAccessLog.SERVICE,
-        MockProjects.SERVICE_NAME,
-        MockProjects.lookupLabel(REPO_NAME, 200));
+    // Neither read made this service ask qits-projects what the name means: it is answered from
+    // this host's own index.
+    ReportAssertions.assertNoEdgesTo(CATEGORY, SLUG, StoryNames.PROJECTS_SERVICE);
 
-    // THE COUNT IS THE SERVICE'S PROMISE HERE, unlike everywhere else in this category: two reads,
-    // one lookup shape, and nothing else on the wire. A third edge appearing means either a route
-    // started answering differently or this service grew a dependency, and both are worth failing
-    // a build over.
-    ReportAssertions.assertEdgeCount(CATEGORY, SLUG, 3);
-    ReportAssertions.assertOnlyEdgesFrom(CATEGORY, SLUG, List.of(ACTOR, StoryAccessLog.SERVICE));
+    // THE COUNT IS THE SERVICE'S PROMISE HERE, unlike everywhere else in this category: two reads
+    // and nothing else on the wire. A third edge appearing means either a route started answering
+    // differently or this service grew a dependency, and both are worth failing a build over.
+    ReportAssertions.assertEdgeCount(CATEGORY, SLUG, 2);
+    ReportAssertions.assertOnlyEdgesFrom(CATEGORY, SLUG, List.of(ACTOR));
     ReportAssertions.assertNotLeaked(CATEGORY, SLUG, token);
   }
 }

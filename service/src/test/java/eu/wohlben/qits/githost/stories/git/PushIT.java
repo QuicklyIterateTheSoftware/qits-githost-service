@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import eu.wohlben.qits.githost.api.TokenValidationBootstrapIT;
-import eu.wohlben.qits.githost.stories.support.MockProjects;
+import eu.wohlben.qits.githost.stories.support.StoryNames;
 import eu.wohlben.qits.githost.stories.support.StoryAccessLog;
 import eu.wohlben.qits.githost.stories.support.StoryOrigin;
 import eu.wohlben.qits.githost.stories.support.StoryTarget;
@@ -54,7 +54,7 @@ public class PushIT {
   /** {@code qits/release-notes} — as the world names it. */
   static final String REPO_NAME = "release-notes";
 
-  static final String REPO_ID = MockProjects.repositoryId(REPO_NAME);
+  static final String REPO_ID = StoryNames.repositoryId(REPO_NAME);
 
   /** What the fixture seeds, so the push is an UPDATE of an existing branch rather than its birth. */
   static final String SEEDED_FILE = "README.md";
@@ -77,7 +77,6 @@ public class PushIT {
   @BeforeAll
   static void tapBothEndsOfTheNetwork() {
     StoryAccessLog.install();
-    MockProjects.installSource();
   }
 
   @BeforeEach
@@ -231,20 +230,14 @@ public class PushIT {
         ACTOR,
         StoryAccessLog.SERVICE,
         "GET " + StoryTarget.blobPath(REPO_NAME, StoryOrigin.BRANCH, PUSHED_FILE) + " -> 200");
-    // Every one of those five requests made this service ask qits-projects what the name means —
-    // nothing is cached, deliberately, so a rename can never serve a stale id. Same question, same
-    // answer, so the diagram draws one arrow.
-    ReportAssertions.assertEdge(
-        CATEGORY,
-        SLUG,
-        "http",
-        StoryAccessLog.SERVICE,
-        MockProjects.SERVICE_NAME,
-        MockProjects.lookupLabel(REPO_NAME, 200));
+    // None of those five requests made this service ask qits-projects what the name means: the
+    // name is answered from this host's own index, which qits-projects keeps current.
+    ReportAssertions.assertNoEdgesTo(CATEGORY, SLUG, StoryNames.PROJECTS_SERVICE);
 
     // No count: the request count of a clone and a push is the client's (protocol v2 splits the
-    // fetch in two; a chunked push may re-send). The actor set is this repository's promise.
-    ReportAssertions.assertOnlyEdgesFrom(CATEGORY, SLUG, List.of(ACTOR, StoryAccessLog.SERVICE));
+    // fetch in two; a chunked push may re-send). The actor set is this repository's promise, and
+    // this service is not in it: it initiated nothing.
+    ReportAssertions.assertOnlyEdgesFrom(CATEGORY, SLUG, List.of(ACTOR));
     ReportAssertions.assertNotLeaked(CATEGORY, SLUG, token);
   }
 }

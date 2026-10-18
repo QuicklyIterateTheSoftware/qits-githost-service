@@ -54,12 +54,10 @@
 #     -e QITS_RESOURCE_DB_USERNAME=... -e QITS_RESOURCE_DB_PASSWORD=... \
 #     -e QITS_RESOURCE_EVENTSTREAM_URL=jdbc:postgresql://some-postgres:5432/qits_githost_eventstream \
 #     -e QITS_RESOURCE_EVENTSTREAM_USERNAME=... -e QITS_RESOURCE_EVENTSTREAM_PASSWORD=... \
-#     -e QITS_PROJECTS_NAME_RESOLVER_URL=http://<env>-qits-projects:8080/projects/api/projects \
 #     qits/githost:latest
 #
-# The last one is the name-addressed scheme's resolver and is the only entry here that is optional:
-# unset, `/git/:projectId/:repoName` answers 404 and the id-addressed routes keep serving. See
-# README.md for the whole configuration surface.
+# The name-addressed scheme needs nothing here: `/git/:projectId/:repoName` answers from this host's
+# own name index, which qits-projects fills. See README.md for the whole configuration surface.
 #
 # --- stage `build`: native-compile ----------------------------------------------------------------
 # The builder JDK MUST be 25: native-image cannot read bytecode newer than its own JDK, and this

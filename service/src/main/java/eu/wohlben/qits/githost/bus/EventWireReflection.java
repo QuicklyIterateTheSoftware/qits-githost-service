@@ -29,11 +29,9 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
  *
  * <p><b>Why these types.</b> The four {@code SCM*} records are the whole of this service's
  * vocabulary and every one of them is serialized on a push; {@link EventEnvelope} is the {@code PUT}
- * body. {@code EventFrame} is deliberately absent even though {@link RepositoryRenamedListener}
- * now reads frames off {@code /events/stream}: the library's record carries its own
- * {@code @RegisterForReflection}, and that listener walks the payload as a {@code JsonNode} rather
- * than binding a record, so nothing it reads is a type this list has to name. A listener that binds
- * an event class adds that class here, and {@link eu.wohlben.qits.githost.bus} is where it goes.
+ * body. This service consumes no event, so nothing it reads is a type this list has to name. A
+ * listener that binds an event class adds that class here, and {@link eu.wohlben.qits.githost.bus}
+ * is where it goes.
  *
  * <p><b>An event this service only publishes is exactly as dependent on this list</b>, which is
  * worth stating because "nothing binds it back" reads like a reason to skip it. The failure is on

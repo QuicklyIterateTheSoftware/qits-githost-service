@@ -78,9 +78,9 @@ import java.util.regex.Pattern;
  *   <li><b>Probes.</b> This service's non-application root is {@code /githost/q}, so the check is
  *       on the {@code /q/} <b>segment</b> rather than a prefix, and a diagram in which every node
  *       hangs off {@code /githost/q/health/ready} never happens.
- *   <li><b>The storage plane.</b> {@code /git/:repoId} and its three smart-HTTP shapes are
- *       qits-projects' own client's wire, and in these stories that client is {@link StoryOrigin}
- *       provisioning and seeding a fixture. It is setup, not a walk anybody takes — and the
+ *   <li><b>The storage plane.</b> {@code /git/:repoId}, its three smart-HTTP shapes and its name
+ *       door ({@code /names}) are qits-projects' own client's wire, and in these stories that
+ *       client is {@link StoryOrigin} provisioning, naming and seeding a fixture. It is setup, not a walk anybody takes — and the
  *       distinction is the service's own: the PUBLIC scheme carries one more path segment, so the
  *       two never collide here any more than they do in the router.
  * </ul>
@@ -104,12 +104,14 @@ public final class StoryAccessLog {
   private static final String LOG_SUFFIX = ".log";
 
   /**
-   * The internal storage scheme, exactly: the lifecycle path and its three smart-HTTP shapes. The
-   * PUBLIC scheme ({@code /git/:projectId/:repoName/…}) carries one more segment and {@code [^/]+}
-   * cannot swallow a slash, so nothing a story drives is matched here.
+   * The internal storage scheme, exactly: the lifecycle path, its three smart-HTTP shapes and the
+   * name door. The PUBLIC scheme ({@code /git/:projectId/:repoName/…}) carries one more segment
+   * and {@code [^/]+} cannot swallow a slash, so nothing a story drives is matched here — a story
+   * never requests a bare {@code /git/:projectId/:repoName}, the only public path {@code
+   * /git/x/names} could be.
    */
   private static final Pattern STORAGE_PLANE =
-      Pattern.compile("/git/[^/]+(/info/refs|/git-upload-pack|/git-receive-pack)?");
+      Pattern.compile("/git/[^/]+(/info/refs|/git-upload-pack|/git-receive-pack|/names)?");
 
   /** The three shapes that ARE the git protocol; everything else this host serves is plain HTTP. */
   private static final List<String> GIT_PROTOCOL =
