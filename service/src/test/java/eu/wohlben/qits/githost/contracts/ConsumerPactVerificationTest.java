@@ -31,9 +31,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * a changed pact. {@link ClasspathPactLoader} finds them all.
  *
  * <p><b>The pinned pacts</b> are the test-scope {@code eu.wohlben.qits:<consumer>-pacts-qits-githost-service}
- * dependencies in {@code service/pom.xml} — today qits-projects-service's. {@link
- * ClasspathPactLoader#REQUIRED} is true, so a classpath that lost them fails rather than verifying
- * nothing. A consumer that starts committing {@code pacts/<consumer>_qits-githost-service.json} is
+ * dependencies in {@code service/pom.xml} — today qits-projects-service's and qits-ci-service's.
+ * {@link ClasspathPactLoader#REQUIRED} is true, so a classpath that lost them fails rather than
+ * verifying nothing. A consumer that starts committing {@code pacts/<consumer>_qits-githost-service.json} is
  * pinned there once its jar is published; a state its pact names that this class does not answer
  * fails {@link #target} and is added to {@link ProviderStates}, with its golden master.
  *
@@ -217,5 +217,15 @@ class ConsumerPactVerificationTest {
   @State(ProviderStates.A_REPOSITORY_DECLARING_NO_CONFIGURATION)
   Map<String, String> aRepositoryDeclaringNoConfiguration() {
     return states.params(ProviderStates.A_REPOSITORY_DECLARING_NO_CONFIGURATION);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_DECLARING_AN_EVENT_TRIGGER)
+  Map<String, String> aRepositoryDeclaringAnEventTrigger() {
+    return states.params(ProviderStates.A_REPOSITORY_DECLARING_AN_EVENT_TRIGGER);
+  }
+
+  @State(ProviderStates.A_REPOSITORY_WITHOUT_A_CONFIG_DIRECTORY)
+  Map<String, String> aRepositoryWithoutAConfigDirectory() {
+    return states.params(ProviderStates.A_REPOSITORY_WITHOUT_A_CONFIG_DIRECTORY);
   }
 }

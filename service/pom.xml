@@ -236,6 +236,11 @@
                  pacts/<consumer>_qits-githost-service.json, read off the classpath. The pinned jar
                  IS the source of the pact; nothing is copied into this tree. -->
             <groupId>${project.groupId}</groupId>
+            <artifactId>qits-ci-service-pacts-qits-githost-service</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
             <artifactId>qits-projects-service-pacts-qits-githost-service</artifactId>
             <scope>test</scope>
         </dependency>

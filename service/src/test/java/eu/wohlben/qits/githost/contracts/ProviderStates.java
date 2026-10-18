@@ -93,6 +93,10 @@ public class ProviderStates {
       "a repository declaring its configuration";
   public static final String A_REPOSITORY_DECLARING_NO_CONFIGURATION =
       "a repository declaring no configuration";
+  public static final String A_REPOSITORY_DECLARING_AN_EVENT_TRIGGER =
+      "a repository declaring an event trigger";
+  public static final String A_REPOSITORY_WITHOUT_A_CONFIG_DIRECTORY =
+      "a repository without a config directory";
 
   /** The project every name-addressed state registers its repository under, with this name. */
   static final String REPO_NAME = "contract-service";
@@ -110,6 +114,21 @@ public class ProviderStates {
   static final String DEPLOYMENTS_PATH = ".config/qits/deployments.yml";
 
   static final String CONFIGURATION_PATH = ".config/qits/configuration.yml";
+
+  /** The directory qits-ci lists for its event triggers, and the one trigger a state declares. */
+  static final String CONFIG_DIRECTORY = ".config/qits";
+
+  static final String EVENT_TRIGGER_PATH = ".config/qits/ci-event-upstream.yml";
+
+  /** The trigger's body, a well-formed {@code ci-event-*.yml} (qits-ci's CiEventTriggerParser). */
+  static final String EVENT_TRIGGER =
+      "event: BuildSuccessful\n"
+          + "when:\n"
+          + "  - repoId: { exact: contract-upstream }\n"
+          + "    branch: { exact: main }\n"
+          + "steps:\n"
+          + "  - image: qits/build-images/java-base:latest\n"
+          + "    script: ./bump.sh\n";
 
   /** A well-formed commit sha no seeded repository holds. */
   static final String ABSENT_SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -194,6 +213,8 @@ public class ProviderStates {
     states.put(
         A_REPOSITORY_DECLARING_ITS_CONFIGURATION, this::aRepositoryDeclaringItsConfiguration);
     states.put(A_REPOSITORY_DECLARING_NO_CONFIGURATION, this::aRepositoryDeclaringNoConfiguration);
+    states.put(A_REPOSITORY_DECLARING_AN_EVENT_TRIGGER, this::aRepositoryDeclaringAnEventTrigger);
+    states.put(A_REPOSITORY_WITHOUT_A_CONFIG_DIRECTORY, this::aRepositoryWithoutAConfigDirectory);
   }
 
   /** Every state name this provider answers for. */
@@ -455,6 +476,39 @@ public class ProviderStates {
   private Setup aRepositoryDeclaringNoConfiguration() {
     Named repo = namedContentRepository();
     return new Setup(repo.params("rev", "main", "path", CONFIGURATION_PATH), List.of());
+  }
+
+  /**
+   * {@link #CONTENT_FILES} plus {@link #EVENT_TRIGGER_PATH}: qits-ci lists {@code directory} at
+   * {@code rev} and reads {@code path} at the listing's {@code sha}. {@code body} is the trigger's
+   * content, the bytes that blob answers.
+   */
+  private Setup aRepositoryDeclaringAnEventTrigger() {
+    Map<String, String> files = new TreeMap<>(CONTENT_FILES);
+    files.put(EVENT_TRIGGER_PATH, EVENT_TRIGGER);
+    Named repo = namedRepository(files, true);
+    return new Setup(
+        repo.params(
+            "rev", "main",
+            "sha", repo.commit().name(),
+            "directory", CONFIG_DIRECTORY,
+            "path", EVENT_TRIGGER_PATH,
+            "body", EVENT_TRIGGER),
+        List.of());
+  }
+
+  /**
+   * {@link #CONTENT_FILES} without anything under {@link #CONFIG_DIRECTORY}: listing it is a 404,
+   * and the root tree at {@code rev} answers {@code sha} — the repository is there and declares
+   * nothing (qits-ci's fallback).
+   */
+  private Setup aRepositoryWithoutAConfigDirectory() {
+    Map<String, String> files = new TreeMap<>(CONTENT_FILES);
+    files.keySet().removeIf(path -> path.startsWith(CONFIG_DIRECTORY + "/"));
+    Named repo = namedRepository(files, true);
+    return new Setup(
+        repo.params("rev", "main", "sha", repo.commit().name(), "directory", CONFIG_DIRECTORY),
+        List.of());
   }
 
   // --- the content repository ------------------------------------------------------------------

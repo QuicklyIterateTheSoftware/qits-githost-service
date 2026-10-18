@@ -432,6 +432,32 @@ class GoldenMasterRecordingTest {
               STORED + "/blob/{rev}/{path}",
               404,
               true),
+          // --- the event triggers: the directory at the branch, each trigger at the sha the
+          // listing answered; no directory, then the root tree (qits-ci's HttpGitConfigSource) ----
+          raw(
+              ProviderStates.A_REPOSITORY_DECLARING_AN_EVENT_TRIGGER,
+              "getTree",
+              NAMED + "/tree/{rev}/{directory}",
+              200,
+              false),
+          raw(
+              ProviderStates.A_REPOSITORY_DECLARING_AN_EVENT_TRIGGER,
+              "getBlob",
+              NAMED + "/blob/{sha}/{path}",
+              200,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_WITHOUT_A_CONFIG_DIRECTORY,
+              "getTree",
+              NAMED + "/tree/{rev}/{directory}",
+              404,
+              true),
+          raw(
+              ProviderStates.A_REPOSITORY_WITHOUT_A_CONFIG_DIRECTORY,
+              "getRootTree",
+              NAMED + "/tree/{rev}",
+              200,
+              false),
           // --- the REST reads and ref writes (qits-projects, qits-maintenance) ------------------
           new Interaction(
               ProviderStates.A_REPOSITORY_WITH_A_SIDE_BRANCH,
