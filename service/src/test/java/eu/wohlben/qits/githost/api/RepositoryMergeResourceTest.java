@@ -11,6 +11,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 
+import eu.wohlben.qits.githost.FakeRepositoryNameResolver;
 import eu.wohlben.qits.githost.GitRepositoryProvider;
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
@@ -44,6 +45,9 @@ public class RepositoryMergeResourceTest {
   static final String API = "/githost/api/repositories/";
 
   @Inject GitRepositoryProvider repositories;
+
+  /** qits-projects' name lookup, played by a map — the gitlink-pin rule resolves names through it. */
+  @Inject FakeRepositoryNameResolver projectRepositories;
 
   @TestHTTPResource("/git")
   URL gitBase;
@@ -1049,6 +1053,361 @@ public class RepositoryMergeResourceTest {
   private static Map<String, Object> rebuild(Map<String, Object> body) {
     body.put("rebuild", true);
     return body;
+  }
+
+  // --- the gitlink-pin rule -----------------------------------------------------------------
+
+  /**
+   * The sibling the gitlink-pin tests pin: one release line and a side branch, with every tag
+   * the rule has to tell apart.
+   *
+   * <pre>
+   *   r0 2026.930.1 ─ r1 2026.930.9 ─ r2 2026.930.10 ─ r3 2026.1001.6 + 2026.1001.7 ─ r4 (untagged) ─ r5 2026.900.1
+   *                       └─ s1 2026.1001.5 (side branch: newer, contains none of r2)
+   * </pre>
+   */
+  private record Sibling(
+      String repoId, String r0, String r1, String r2, String r3, String r4, String r5, String s1) {}
+
+  private Sibling seedSibling() throws Exception {
+    String repoId = UUID.randomUUID().toString();
+    repositories.create(repoId, "main");
+    Path work = Files.createTempDirectory("qits-merge-sibling");
+    git(work, "init", "-q", "-b", "main", ".");
+    String r0 = release(work, "r0", "2026.930.1", false);
+    String r1 = release(work, "r1", "2026.930.9", true);
+    String r2 = release(work, "r2", "2026.930.10", false);
+    String r3 = release(work, "r3", "2026.1001.6", true);
+    git(work, "-c", "user.email=qits@local", "-c", "user.name=qits", "tag", "-a", "-m", "again", "2026.1001.7");
+    git(work, "tag", "not-a-version");
+    write(work, "r4.txt", "r4\n");
+    commit(work, "r4");
+    String r4 = git(work, "rev-parse", "HEAD").trim();
+    String r5 = release(work, "r5", "2026.900.1", true);
+    git(work, "checkout", "-q", "-b", "side", r1);
+    String s1 = release(work, "s1", "2026.1001.5", true);
+    git(work, "checkout", "-q", "main");
+    git(work, "push", "-q", gitBase + "/" + repoId, "main", "side", "--tags");
+    return new Sibling(repoId, r0, r1, r2, r3, r4, r5, s1);
+  }
+
+  /** One commit on the current branch, tagged — annotated or lightweight — and its sha. */
+  private static String release(Path work, String file, String tag, boolean annotated)
+      throws Exception {
+    write(work, file + ".txt", file + "\n");
+    commit(work, file);
+    if (annotated) {
+      git(work, "-c", "user.email=qits@local", "-c", "user.name=qits", "tag", "-a", "-m", tag, tag);
+    } else {
+      git(work, "tag", tag);
+    }
+    return git(work, "rev-parse", "HEAD").trim();
+  }
+
+  /**
+   * A wrapper whose {@code main} declares submodule {@code sib} at {@code sub} and pins it at
+   * {@code base}, plus one branch {@code feature/p<i>} per pin. The section name is not the path,
+   * so a rule that looked the path up as a name would find nothing.
+   */
+  private String seedWrapper(String base, String... pins) throws Exception {
+    String repoId = UUID.randomUUID().toString();
+    repositories.create(repoId, "main");
+    Path work = Files.createTempDirectory("qits-merge-wrapper");
+    git(work, "init", "-q", "-b", "main", ".");
+    write(work, ".gitmodules", "[submodule \"sib\"]\n\tpath = sub\n\turl = ../sib.git\n");
+    git(work, "add", ".gitmodules");
+    pin(work, "sub", base);
+    commitIndex(work, "base");
+    List<String> refs = new java.util.ArrayList<>(List.of("main"));
+    for (int i = 0; i < pins.length; i++) {
+      git(work, "checkout", "-q", "-b", "feature/p" + i, "main");
+      pin(work, "sub", pins[i]);
+      commitIndex(work, "p" + i);
+      refs.add("feature/p" + i);
+    }
+    git(work, "checkout", "-q", "main");
+    push(work, repoId, refs.toArray(String[]::new));
+    return repoId;
+  }
+
+  /** A fresh project in which {@code sib} names the sibling. */
+  private String projectNaming(Sibling sibling) {
+    String projectId = "proj-" + UUID.randomUUID();
+    projectRepositories.register(projectId, "sib", sibling.repoId());
+    return projectId;
+  }
+
+  /** The same body, asking for the gitlink-pin rule in {@code projectId}. */
+  private static Map<String, Object> gitlinked(Map<String, Object> body, String projectId) {
+    body.put("gitlinkPins", true);
+    if (projectId != null) {
+      body.put("projectId", projectId);
+    }
+    return body;
+  }
+
+  @Test
+  public void twoReleasesOfOneSubmoduleFoldToTheNewerDescendant() throws Exception {
+    Sibling sibling = seedSibling();
+    String wrapper = seedWrapper(sibling.r0(), sibling.r3(), sibling.r2());
+    Map<String, Object> body =
+        gitlinked(request("refs/heads/release/gp1", "feature/p0", "feature/p1"), projectNaming(sibling));
+    body.put("message", "Release request 21\n\nRelease-Request: 21\n");
+    JsonPath merged = merge(wrapper, body).then().statusCode(200).extract().jsonPath();
+
+    assertThat(merged.getString("outcome"), is("merged"));
+    assertThat(merged.getList("resolved", String.class), contains("sub"));
+    assertThat(merged.getList("resolvedGitlinks.path", String.class), contains("sub"));
+    assertThat(merged.getList("resolvedGitlinks.name", String.class), contains("sib"));
+    assertThat(merged.getList("resolvedGitlinks.from", String.class), contains(sibling.r2()));
+    assertThat(merged.getList("resolvedGitlinks.to", String.class), contains(sibling.r3()));
+    // r3 carries two release tags; the higher one names it.
+    assertThat(merged.getList("resolvedGitlinks.tag", String.class), contains("2026.1001.7"));
+    assertThat(merged.getList("resolvedVersions"), hasSize(0));
+
+    Path clone = clone(wrapper);
+    String sha = merged.getString("sha");
+    assertThat(treeEntry(clone, sha, "sub"), startsWith("160000 commit " + sibling.r3()));
+    assertThat(
+        parentsOf(clone, sha),
+        contains(remoteSha(wrapper, "refs/heads/feature/p0"), remoteSha(wrapper, "refs/heads/feature/p1")));
+    assertThat(
+        message(clone, sha),
+        is(
+            "Release request 21\n\nRelease-Request: 21\n"
+                + "Resolved-Gitlink: sub "
+                + sibling.r2()
+                + " -> "
+                + sibling.r3()
+                + " (sib 2026.1001.7)\n"));
+  }
+
+  @Test
+  public void aNewerReleaseCutFromASideBranchIsDeclined() throws Exception {
+    Sibling sibling = seedSibling();
+    String wrapper = seedWrapper(sibling.r0(), sibling.r2(), sibling.s1());
+    JsonPath conflict =
+        merge(
+                wrapper,
+                gitlinked(
+                    request("refs/heads/release/gp2", "feature/p0", "feature/p1"),
+                    projectNaming(sibling)))
+            .then()
+            .statusCode(409)
+            .extract()
+            .jsonPath();
+    assertThat(conflict.getList("conflicts.path", String.class), contains("sub"));
+    assertThat(conflict.getList("conflicts.reason", String.class), contains("content"));
+    assertThat(
+        conflict.getString("conflicts[0].declined"),
+        is(
+            "the conflict at sub is not one this service can decide: 2026.1001.5 of 'sib' is the"
+                + " later release but does not contain 2026.930.10, so pinning it would drop"
+                + " released work"));
+    assertThat(remoteSha(wrapper, "refs/heads/release/gp2"), is(nullSha()));
+  }
+
+  @Test
+  public void aDescendantCarryingTheLowerVersionIsDeclined() throws Exception {
+    Sibling sibling = seedSibling();
+    String wrapper = seedWrapper(sibling.r0(), sibling.r3(), sibling.r5());
+    String declined =
+        merge(
+                wrapper,
+                gitlinked(
+                    request("refs/heads/release/gp3", "feature/p0", "feature/p1"),
+                    projectNaming(sibling)))
+            .then()
+            .statusCode(409)
+            .extract()
+            .path("conflicts[0].declined");
+    assertThat(
+        declined,
+        is(
+            "the conflict at sub is not one this service can decide: 2026.900.1 of 'sib' contains"
+                + " 2026.1001.7 but carries the lower version, so ancestry and version disagree"));
+  }
+
+  @Test
+  public void anUntaggedPinIsDeclined() throws Exception {
+    Sibling sibling = seedSibling();
+    String wrapper = seedWrapper(sibling.r0(), sibling.r2(), sibling.r4());
+    String declined =
+        merge(
+                wrapper,
+                gitlinked(
+                    request("refs/heads/release/gp4", "feature/p0", "feature/p1"),
+                    projectNaming(sibling)))
+            .then()
+            .statusCode(409)
+            .extract()
+            .path("conflicts[0].declined");
+    assertThat(
+        declined,
+        is(
+            "the conflict at sub is not one this service can decide: "
+                + sibling.r4().substring(0, 10)
+                + " is not a release tag of 'sib'"));
+  }
+
+  @Test
+  public void anUnknownNameOrNoProjectIsDeclined() throws Exception {
+    Sibling sibling = seedSibling();
+    String wrapper = seedWrapper(sibling.r0(), sibling.r3(), sibling.r2());
+    merge(
+            wrapper,
+            gitlinked(
+                request("refs/heads/release/gp5", "feature/p0", "feature/p1"),
+                "proj-" + UUID.randomUUID()))
+        .then()
+        .statusCode(409)
+        .body(
+            "conflicts[0].declined",
+            is(
+                "the conflict at sub is not one this service can decide: 'sib' names no"
+                    + " repository of this project"));
+    merge(wrapper, gitlinked(request("refs/heads/release/gp5", "feature/p0", "feature/p1"), null))
+        .then()
+        .statusCode(409)
+        .body(
+            "conflicts[0].declined",
+            is(
+                "the conflict at sub is not one this service can decide: the fold names no"
+                    + " project, so 'sib' resolves to no repository"));
+    assertThat(remoteSha(wrapper, "refs/heads/release/gp5"), is(nullSha()));
+  }
+
+  @Test
+  public void threeReleasesOfOnePathEndAtTheNewestWhicheverOrderTheyFold() throws Exception {
+    Sibling sibling = seedSibling();
+    String wrapper = seedWrapper(sibling.r0(), sibling.r3(), sibling.r1(), sibling.r2());
+    String projectId = projectNaming(sibling);
+    for (List<String> order :
+        List.of(
+            List.of("feature/p0", "feature/p1", "feature/p2"),
+            List.of("feature/p1", "feature/p2", "feature/p0"),
+            List.of("feature/p2", "feature/p0", "feature/p1"))) {
+      String target = "refs/heads/release/gp6-" + order.get(0).substring(9);
+      JsonPath merged =
+          merge(wrapper, gitlinked(request(target, order.toArray(String[]::new)), projectId))
+              .then()
+              .statusCode(200)
+              .extract()
+              .jsonPath();
+      // Every step that met the conflict decided it, and each decision is reported.
+      assertThat(merged.getList("resolvedGitlinks"), hasSize(2));
+      assertThat(
+          merged.getList("resolvedGitlinks.to", String.class).get(1), is(sibling.r3()));
+      assertThat(merged.getList("resolved", String.class), contains("sub"));
+      assertThat(
+          treeEntry(clone(wrapper), merged.getString("sha"), "sub"),
+          startsWith("160000 commit " + sibling.r3()));
+    }
+  }
+
+  @Test
+  public void anExplicitResolutionWinsOverTheRule() throws Exception {
+    Sibling sibling = seedSibling();
+    String wrapper = seedWrapper(sibling.r0(), sibling.r3(), sibling.r2());
+    JsonPath merged =
+        merge(
+                wrapper,
+                directed(
+                    gitlinked(
+                        request("refs/heads/release/gp7", "feature/p0", "feature/p1"),
+                        projectNaming(sibling)),
+                    "sub",
+                    sibling.r2()))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getList("resolved", String.class), contains("sub"));
+    assertThat(merged.getList("resolvedGitlinks"), hasSize(0));
+    Path clone = clone(wrapper);
+    assertThat(treeEntry(clone, merged.getString("sha"), "sub"), startsWith("160000 commit " + sibling.r2()));
+    assertThat(message(clone, merged.getString("sha")), not(org.hamcrest.Matchers.containsString("Resolved-Gitlink")));
+  }
+
+  @Test
+  public void withoutTheFlagTwoReleasesAreTheConflictTheyAlwaysWere() throws Exception {
+    Sibling sibling = seedSibling();
+    String wrapper = seedWrapper(sibling.r0(), sibling.r3(), sibling.r2());
+    Map<String, Object> body = request("refs/heads/release/gp8", "feature/p0", "feature/p1");
+    body.put("projectId", projectNaming(sibling));
+    JsonPath conflict = merge(wrapper, body).then().statusCode(409).extract().jsonPath();
+    assertThat(conflict.getList("conflicts.path", String.class), contains("sub"));
+    assertThat(conflict.getList("conflicts.kind", String.class), contains("gitlink"));
+    assertThat(conflict.getString("conflicts[0].declined"), is(org.hamcrest.Matchers.nullValue()));
+    assertThat(conflict.getMap("conflicts[0]").containsKey("declined"), is(true));
+  }
+
+  @Test
+  public void gitlinkPinsAndVersionPinsDecideOneFoldTogether() throws Exception {
+    Sibling sibling = seedSibling();
+    String wrapper = UUID.randomUUID().toString();
+    repositories.create(wrapper, "main");
+    Path work = Files.createTempDirectory("qits-merge-both-rules");
+    git(work, "init", "-q", "-b", "main", ".");
+    write(work, ".gitmodules", "[submodule \"sib\"]\n\tpath = sub\n\turl = ../sib.git\n");
+    write(work, "pom.xml", pom("demo", "1.0.0", "1.4.0"));
+    git(work, "add", ".gitmodules", "pom.xml");
+    pin(work, "sub", sibling.r0());
+    commitIndex(work, "base");
+    git(work, "checkout", "-q", "-b", "feature/left", "main");
+    write(work, "pom.xml", pom("demo", "1.1.0", "1.4.0"));
+    git(work, "add", "pom.xml");
+    pin(work, "sub", sibling.r1());
+    commitIndex(work, "left");
+    git(work, "checkout", "-q", "-b", "feature/right", "main");
+    write(work, "pom.xml", pom("demo", "1.0.1", "1.4.0"));
+    git(work, "add", "pom.xml");
+    pin(work, "sub", sibling.r2());
+    commitIndex(work, "right");
+    git(work, "checkout", "-q", "main");
+    push(work, wrapper, "main", "feature/left", "feature/right");
+    String projectId = projectNaming(sibling);
+
+    // Each rule alone leaves the other's path, and declines nothing it did not examine.
+    merge(wrapper, gitlinked(request("refs/heads/release/gp9", "feature/left", "feature/right"), projectId))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("pom.xml"))
+        .body("conflicts[0].declined", is(org.hamcrest.Matchers.nullValue()));
+    merge(wrapper, pinned(request("refs/heads/release/gp9", "feature/left", "feature/right")))
+        .then()
+        .statusCode(409)
+        .body("conflicts.path", contains("sub"));
+
+    JsonPath merged =
+        merge(
+                wrapper,
+                pinned(
+                    gitlinked(
+                        request("refs/heads/release/gp9", "feature/left", "feature/right"),
+                        projectId)))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getList("resolved", String.class), contains("pom.xml", "sub"));
+    assertThat(merged.getList("resolvedVersions.chosen", String.class), contains("1.1.0"));
+    assertThat(merged.getList("resolvedGitlinks.to", String.class), contains(sibling.r2()));
+    Path clone = clone(wrapper);
+    String sha = merged.getString("sha");
+    assertThat(blob(clone, sha, "pom.xml"), is(pom("demo", "1.1.0", "1.4.0")));
+    assertThat(treeEntry(clone, sha, "sub"), startsWith("160000 commit " + sibling.r2()));
+    // One trailer block holds both kinds.
+    assertThat(
+        message(clone, sha),
+        is(
+            "Merge feature/right into refs/heads/release/gp9\n\n"
+                + "Resolved-Version: pom.xml:5 ours=1.1.0 theirs=1.0.1 -> 1.1.0\n"
+                + "Resolved-Gitlink: sub "
+                + sibling.r1()
+                + " -> "
+                + sibling.r2()
+                + " (sib 2026.930.10)\n"));
   }
 
   // --- the plumbing -------------------------------------------------------------------------
