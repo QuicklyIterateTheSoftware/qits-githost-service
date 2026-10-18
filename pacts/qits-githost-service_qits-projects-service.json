@@ -18,6 +18,85 @@
         }
       },
       "description": "GET /git/{projectId}/{repoName}/blob/{rev}/{path}: resolveRepositoryName",
+      "key": "35bfa7d",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "a repository exists",
+          "params": {
+            "projectId": "00000000-0000-4000-8000-000000000001",
+            "repoName": "contract-service",
+            "repositoryId": "00000000-0000-4000-8000-000000000002"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "dataType": "RAW",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/${repoName}",
+            "type": "ProviderState"
+          }
+        },
+        "method": "GET",
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/contract-service"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "repositoryId": "00000000-0000-4000-8000-000000000002"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.repositoryId": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Content-Type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "application/json.*"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "comments": {
+        "references": {
+          "qits-call": {
+            "app": "qits-projects-service",
+            "operationId": "resolveRepositoryName"
+          },
+          "qits-trigger": {
+            "app": "qits-githost-service",
+            "kind": "operation",
+            "operationId": "GET /git/{projectId}/{repoName}/blob/{rev}/{path}"
+          }
+        }
+      },
+      "description": "GET /git/{projectId}/{repoName}/blob/{rev}/{path}: resolveRepositoryName",
       "key": "f3dbb9cc",
       "pending": false,
       "providerStates": [
@@ -42,6 +121,85 @@
       },
       "response": {
         "status": 404
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "comments": {
+        "references": {
+          "qits-call": {
+            "app": "qits-projects-service",
+            "operationId": "resolveRepositoryName"
+          },
+          "qits-trigger": {
+            "app": "qits-githost-service",
+            "kind": "operation",
+            "operationId": "GET /git/{projectId}/{repoName}/info/refs"
+          }
+        }
+      },
+      "description": "GET /git/{projectId}/{repoName}/info/refs: resolveRepositoryName",
+      "key": "8efc4b5",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "a repository exists",
+          "params": {
+            "projectId": "00000000-0000-4000-8000-000000000001",
+            "repoName": "contract-service",
+            "repositoryId": "00000000-0000-4000-8000-000000000002"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "dataType": "RAW",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/${repoName}",
+            "type": "ProviderState"
+          }
+        },
+        "method": "GET",
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/contract-service"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "repositoryId": "00000000-0000-4000-8000-000000000002"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.repositoryId": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Content-Type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "application/json.*"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
       },
       "type": "Synchronous/HTTP"
     },
@@ -102,6 +260,85 @@
         }
       },
       "description": "GET /git/{projectId}/{repoName}/tree/{rev}/{path}: resolveRepositoryName",
+      "key": "ede6fd08",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "a repository exists",
+          "params": {
+            "projectId": "00000000-0000-4000-8000-000000000001",
+            "repoName": "contract-service",
+            "repositoryId": "00000000-0000-4000-8000-000000000002"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "dataType": "RAW",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/${repoName}",
+            "type": "ProviderState"
+          }
+        },
+        "method": "GET",
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/contract-service"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "repositoryId": "00000000-0000-4000-8000-000000000002"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.repositoryId": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Content-Type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "application/json.*"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "comments": {
+        "references": {
+          "qits-call": {
+            "app": "qits-projects-service",
+            "operationId": "resolveRepositoryName"
+          },
+          "qits-trigger": {
+            "app": "qits-githost-service",
+            "kind": "operation",
+            "operationId": "GET /git/{projectId}/{repoName}/tree/{rev}/{path}"
+          }
+        }
+      },
+      "description": "GET /git/{projectId}/{repoName}/tree/{rev}/{path}: resolveRepositoryName",
       "key": "de66bc57",
       "pending": false,
       "providerStates": [
@@ -144,6 +381,85 @@
         }
       },
       "description": "POST /git/{projectId}/{repoName}/git-receive-pack: resolveRepositoryName",
+      "key": "6cd53c06",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "a repository exists",
+          "params": {
+            "projectId": "00000000-0000-4000-8000-000000000001",
+            "repoName": "contract-service",
+            "repositoryId": "00000000-0000-4000-8000-000000000002"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "dataType": "RAW",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/${repoName}",
+            "type": "ProviderState"
+          }
+        },
+        "method": "GET",
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/contract-service"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "repositoryId": "00000000-0000-4000-8000-000000000002"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.repositoryId": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Content-Type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "application/json.*"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "comments": {
+        "references": {
+          "qits-call": {
+            "app": "qits-projects-service",
+            "operationId": "resolveRepositoryName"
+          },
+          "qits-trigger": {
+            "app": "qits-githost-service",
+            "kind": "operation",
+            "operationId": "POST /git/{projectId}/{repoName}/git-receive-pack"
+          }
+        }
+      },
+      "description": "POST /git/{projectId}/{repoName}/git-receive-pack: resolveRepositoryName",
       "key": "5d54fb55",
       "pending": false,
       "providerStates": [
@@ -168,6 +484,85 @@
       },
       "response": {
         "status": 404
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "comments": {
+        "references": {
+          "qits-call": {
+            "app": "qits-projects-service",
+            "operationId": "resolveRepositoryName"
+          },
+          "qits-trigger": {
+            "app": "qits-githost-service",
+            "kind": "operation",
+            "operationId": "POST /git/{projectId}/{repoName}/git-upload-pack"
+          }
+        }
+      },
+      "description": "POST /git/{projectId}/{repoName}/git-upload-pack: resolveRepositoryName",
+      "key": "25b45ac4",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "a repository exists",
+          "params": {
+            "projectId": "00000000-0000-4000-8000-000000000001",
+            "repoName": "contract-service",
+            "repositoryId": "00000000-0000-4000-8000-000000000002"
+          }
+        }
+      ],
+      "request": {
+        "generators": {
+          "path": {
+            "dataType": "RAW",
+            "expression": "/projects/api/projects/${projectId}/repositories/by-name/${repoName}",
+            "type": "ProviderState"
+          }
+        },
+        "method": "GET",
+        "path": "/projects/api/projects/00000000-0000-4000-8000-000000000001/repositories/by-name/contract-service"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "repositoryId": "00000000-0000-4000-8000-000000000002"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.repositoryId": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Content-Type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "application/json.*"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
       },
       "type": "Synchronous/HTTP"
     },
