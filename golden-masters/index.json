@@ -581,7 +581,8 @@
             },
             "projectId": "{projectId}",
             "repoName": "{repoName}",
-            "versionPins": true
+            "versionPins": true,
+            "gitlinkPins": true
           },
           "status": 409,
           "file": "a-repository-with-a-branch-that-conflicts-with-main/mergeBranches.json",
@@ -628,7 +629,8 @@
             },
             "projectId": "{projectId}",
             "repoName": "{repoName}",
-            "versionPins": true
+            "versionPins": true,
+            "gitlinkPins": true
           },
           "status": 200,
           "file": "a-repository-with-a-branch-to-fold/mergeBranches.json",
@@ -1098,7 +1100,8 @@
             },
             "projectId": "{projectId}",
             "repoName": "{repoName}",
-            "versionPins": true
+            "versionPins": true,
+            "gitlinkPins": true
           },
           "status": 404,
           "file": "a-repository-without-the-branch-to-fold/mergeBranches.json",

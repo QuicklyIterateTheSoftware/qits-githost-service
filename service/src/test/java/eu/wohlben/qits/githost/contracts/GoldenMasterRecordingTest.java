@@ -111,10 +111,12 @@ class GoldenMasterRecordingTest {
           + AUTHOR
           + ",\"projectId\":\"{projectId}\",\"repoName\":\"{repoName}\"}";
 
+  /** The fold as qits-projects sends it: both pin rules on (gitlinkPins since qits-958). */
   private static final String MERGE_BODY =
       "{\"target\":\"{target}\",\"sources\":[\"{source}\"],\"message\":\"fold the branch\","
           + AUTHOR
-          + ",\"projectId\":\"{projectId}\",\"repoName\":\"{repoName}\",\"versionPins\":true}";
+          + ",\"projectId\":\"{projectId}\",\"repoName\":\"{repoName}\",\"versionPins\":true"
+          + ",\"gitlinkPins\":true}";
 
   /**
    * The name door's statement, as qits-projects sends it. Literal project coordinates: the state
