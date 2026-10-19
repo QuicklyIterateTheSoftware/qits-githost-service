@@ -130,7 +130,7 @@
              commits pacts/<consumer>_qits-githost-service.json, read off the test classpath by
              contracts/ClasspathPactLoader. qits-maintenance bumps each when the consumer releases a
              changed pact. -->
-        <qits.ci-service-pacts-qits-githost-service.version>2026.1018.180637</qits.ci-service-pacts-qits-githost-service.version>
+        <qits.ci-service-pacts-qits-githost-service.version>2026.1019.5831</qits.ci-service-pacts-qits-githost-service.version>
         <qits.projects-service-pacts-qits-githost-service.version>2026.1018.195756</qits.projects-service-pacts-qits-githost-service.version>
 
         <!-- Quinoa is a Quarkiverse extension: not in quarkus-bom either, and its version does NOT
