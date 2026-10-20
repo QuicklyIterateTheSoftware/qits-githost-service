@@ -96,6 +96,9 @@ class GoldenMasterRecordingTest {
   /** The one response header the raw content reads carry: the commit the revision resolved to. */
   static final String COMMIT_SHA_HEADER = "Git-Commit-Sha";
 
+  /** What a binary answer is, when its consumer reads it: the raw read's image type. */
+  static final String CONTENT_TYPE_HEADER = "Content-Type";
+
   /** Who the release writes are made by, as qits-projects sends it. */
   private static final String AUTHOR =
       "\"author\":{\"name\":\"qits-projects\",\"email\":\"qits-projects@qits.internal\"}";
@@ -485,6 +488,45 @@ class GoldenMasterRecordingTest {
               200,
               null,
               null),
+          // the file read's three misses, each its own error code (@qits/ui-components' source
+          // view tells them apart)
+          new Interaction(
+              ProviderStates.NO_REPOSITORY_WITH_THE_GIVEN_ID,
+              "getRepositoryFile",
+              "GET",
+              BY_ID + "/file?rev={rev}&path={path}",
+              404,
+              null,
+              null),
+          new Interaction(
+              ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_COMMIT,
+              "getRepositoryFile",
+              "GET",
+              BY_ID + "/file?rev={sha}&path={path}",
+              404,
+              null,
+              null),
+          new Interaction(
+              ProviderStates.A_REPOSITORY_MISSING_THE_REQUESTED_PATH,
+              "getRepositoryFile",
+              "GET",
+              BY_ID + "/file?rev={rev}&path={path}",
+              404,
+              null,
+              null),
+          // an image's bytes for a browser to show (@qits/ui-components): no file, the body is the
+          // state's base64 {body} param, and Content-Type is the one header recorded
+          new Interaction(
+              ProviderStates.A_REPOSITORY_WITH_AN_IMAGE_ON_MAIN,
+              "getRaw",
+              "GET",
+              BY_ID + "/raw?rev={rev}&path={path}",
+              200,
+              null,
+              null,
+              null,
+              List.of(CONTENT_TYPE_HEADER),
+              true),
           new Interaction(
               ProviderStates.A_REPOSITORY_WHOSE_MAIN_CONTAINS_A_COMMIT,
               "containsCommit",

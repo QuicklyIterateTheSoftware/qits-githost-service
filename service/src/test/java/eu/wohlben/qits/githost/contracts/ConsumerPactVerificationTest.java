@@ -229,4 +229,9 @@ class ConsumerPactVerificationTest {
   Map<String, String> aRepositoryWithoutAConfigDirectory() {
     return states.params(ProviderStates.A_REPOSITORY_WITHOUT_A_CONFIG_DIRECTORY);
   }
+
+  @State(ProviderStates.A_REPOSITORY_WITH_AN_IMAGE_ON_MAIN)
+  Map<String, String> aRepositoryWithAnImageOnMain() {
+    return states.params(ProviderStates.A_REPOSITORY_WITH_AN_IMAGE_ON_MAIN);
+  }
 }

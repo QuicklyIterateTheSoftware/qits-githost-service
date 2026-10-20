@@ -13,6 +13,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -97,6 +98,8 @@ public class ProviderStates {
       "a repository declaring an event trigger";
   public static final String A_REPOSITORY_WITHOUT_A_CONFIG_DIRECTORY =
       "a repository without a config directory";
+  public static final String A_REPOSITORY_WITH_AN_IMAGE_ON_MAIN =
+      "a repository with an image on main";
 
   /** The project every name-addressed state registers its repository under, with this name. */
   static final String REPO_NAME = "contract-service";
@@ -129,6 +132,16 @@ public class ProviderStates {
           + "steps:\n"
           + "  - image: qits/build-images/java-base:latest\n"
           + "    script: ./bump.sh\n";
+
+  /** Where the image state commits {@link #IMAGE_BASE64}: a screenshot, as a qits page links one. */
+  static final String IMAGE_PATH = "docs/screenshot.png";
+
+  /**
+   * A complete 1x1 PNG (signature, IHDR, IDAT, IEND), base64: the smallest real image, so the raw
+   * read answers bytes a browser decodes. Fixed, so the blob — and the commit — never move.
+   */
+  static final String IMAGE_BASE64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mPQqr8CAAJUAX5kvxnrAAAAAElFTkSuQmCC";
 
   /** A well-formed commit sha no seeded repository holds. */
   static final String ABSENT_SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -215,6 +228,7 @@ public class ProviderStates {
     states.put(A_REPOSITORY_DECLARING_NO_CONFIGURATION, this::aRepositoryDeclaringNoConfiguration);
     states.put(A_REPOSITORY_DECLARING_AN_EVENT_TRIGGER, this::aRepositoryDeclaringAnEventTrigger);
     states.put(A_REPOSITORY_WITHOUT_A_CONFIG_DIRECTORY, this::aRepositoryWithoutAConfigDirectory);
+    states.put(A_REPOSITORY_WITH_AN_IMAGE_ON_MAIN, this::aRepositoryWithAnImageOnMain);
   }
 
   /** Every state name this provider answers for. */
@@ -293,8 +307,17 @@ public class ProviderStates {
     return new Setup(params("repositoryId", id), List.of());
   }
 
+  /**
+   * A fresh id nothing was created under. {@code rev} and {@code path} are a well-formed revision
+   * and file to ask it for, so a content read reaches the repository lookup and misses there.
+   */
   private Setup noRepositoryWithTheGivenId() {
-    return new Setup(params("repositoryId", UUID.randomUUID().toString()), List.of());
+    return new Setup(
+        params(
+            "repositoryId", UUID.randomUUID().toString(),
+            "rev", "main",
+            "path", ".config/qits/release.yml"),
+        List.of());
   }
 
   private Setup aRepositoryExists() {
@@ -338,10 +361,13 @@ public class ProviderStates {
         List.of());
   }
 
-  /** The content repository, asked for a well-formed commit it does not hold. */
+  /**
+   * The content repository, asked for a well-formed commit it does not hold; {@code path} is a file
+   * it holds on main, so a file read misses on the commit and nothing else.
+   */
   private Setup aRepositoryMissingTheRequestedCommit() {
     Named repo = namedContentRepository();
-    return new Setup(repo.params("sha", ABSENT_SHA), List.of());
+    return new Setup(repo.params("sha", ABSENT_SHA, "path", ".config/qits/release.yml"), List.of());
   }
 
   /** A superproject: one submodule gitlink at {@code <directory>/<submodule>}, as the wrapper has. */
@@ -511,6 +537,33 @@ public class ProviderStates {
         List.of());
   }
 
+  /**
+   * {@link #CONTENT_FILES} plus {@link #IMAGE_BASE64} at {@link #IMAGE_PATH}, in one commit on main: the
+   * raw read answers its bytes as {@code image/png}. {@code rev} is main and {@code sha} its commit,
+   * either one addresses the image; {@code body} is the image's bytes, base64, so a consumer can
+   * bind the exact answer (the golden master records no file for a binary body).
+   */
+  private Setup aRepositoryWithAnImageOnMain() {
+    Map<String, byte[]> files = new TreeMap<>();
+    CONTENT_FILES.forEach((path, text) -> files.put(path, text.getBytes(StandardCharsets.UTF_8)));
+    files.put(IMAGE_PATH, Base64.getDecoder().decode(IMAGE_BASE64));
+    String id = UUID.randomUUID().toString();
+    String projectId = UUID.randomUUID().toString();
+    create(id);
+    RevCommit commit =
+        commitBytes(id, null, files, Map.of(), "docs(contract-1): add the screenshot\n");
+    move(id, "main", null, commit);
+    names.register(projectId, REPO_NAME, id);
+    return new Setup(
+        new Named(id, projectId, commit)
+            .params(
+                "rev", "main",
+                "sha", commit.name(),
+                "path", IMAGE_PATH,
+                "body", IMAGE_BASE64),
+        List.of());
+  }
+
   // --- the content repository ------------------------------------------------------------------
 
   /** A repository with {@link #CONTENT_FILES} on main, registered under a fresh project. */
@@ -570,6 +623,18 @@ public class ProviderStates {
       Map<String, String> files,
       Map<String, String> gitlinks,
       String message) {
+    Map<String, byte[]> bytes = new TreeMap<>();
+    files.forEach((path, text) -> bytes.put(path, text.getBytes(StandardCharsets.UTF_8)));
+    return commitBytes(id, parent, bytes, gitlinks, message);
+  }
+
+  /** {@link #commit} with each file's content as bytes, for a file that is not text. */
+  private RevCommit commitBytes(
+      String id,
+      RevCommit parent,
+      Map<String, byte[]> files,
+      Map<String, String> gitlinks,
+      String message) {
     try (Repository repo = repositories.open(id);
         ObjectInserter inserter = repo.newObjectInserter()) {
       DirCache index = DirCache.newInCore();
@@ -594,11 +659,10 @@ public class ProviderStates {
           }
         }
       }
-      for (Map.Entry<String, String> file : files.entrySet()) {
+      for (Map.Entry<String, byte[]> file : files.entrySet()) {
         DirCacheEntry entry = new DirCacheEntry(file.getKey());
         entry.setFileMode(FileMode.REGULAR_FILE);
-        entry.setObjectId(
-            inserter.insert(Constants.OBJ_BLOB, file.getValue().getBytes(StandardCharsets.UTF_8)));
+        entry.setObjectId(inserter.insert(Constants.OBJ_BLOB, file.getValue()));
         builder.add(entry);
       }
       for (Map.Entry<String, String> gitlink : gitlinks.entrySet()) {

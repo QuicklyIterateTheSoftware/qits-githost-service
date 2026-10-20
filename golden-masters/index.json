@@ -367,6 +367,7 @@
       "name": "a repository missing the requested commit",
       "slug": "a-repository-missing-the-requested-commit",
       "params": {
+        "path": ".config/qits/release.yml",
         "projectId": "00000000-0000-4000-8000-000000000001",
         "repoName": "contract-service",
         "repositoryId": "00000000-0000-4000-8000-000000000002",
@@ -374,6 +375,23 @@
       },
       "dependsOn": [],
       "operations": [
+        {
+          "operationId": "getRepositoryFile",
+          "method": "GET",
+          "path": "/githost/api/repositories/{repositoryId}/file",
+          "query": {
+            "rev": "{sha}",
+            "path": "{path}"
+          },
+          "status": 404,
+          "file": "a-repository-missing-the-requested-commit/getRepositoryFile.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
         {
           "operationId": "getRootTree",
           "method": "GET",
@@ -434,6 +452,23 @@
           "path": "/git/{repositoryId}/blob/{rev}/{path}",
           "status": 404,
           "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getRepositoryFile",
+          "method": "GET",
+          "path": "/githost/api/repositories/{repositoryId}/file",
+          "query": {
+            "rev": "{rev}",
+            "path": "{path}"
+          },
+          "status": 404,
+          "file": "a-repository-missing-the-requested-path/getRepositoryFile.json",
           "frozen": {
             "ids": [],
             "instants": [],
@@ -687,6 +722,45 @@
             ],
             "instants": [],
             "strings": [],
+            "listFilteredTo": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "a repository with an image on main",
+      "slug": "a-repository-with-an-image-on-main",
+      "params": {
+        "body": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mPQqr8CAAJUAX5kvxnrAAAAAElFTkSuQmCC",
+        "path": "docs/screenshot.png",
+        "projectId": "00000000-0000-4000-8000-000000000001",
+        "repoName": "contract-service",
+        "repositoryId": "00000000-0000-4000-8000-000000000002",
+        "rev": "main",
+        "sha": "0000000000000000000000000000000000000001"
+      },
+      "dependsOn": [],
+      "operations": [
+        {
+          "operationId": "getRaw",
+          "method": "GET",
+          "path": "/githost/api/repositories/{repositoryId}/raw",
+          "query": {
+            "rev": "{rev}",
+            "path": "{path}"
+          },
+          "status": 200,
+          "responseHeaders": {
+            "Content-Type": "image/png"
+          },
+          "file": null,
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "responseHeaders": [
+              "Content-Type"
+            ],
             "listFilteredTo": null
           }
         }
@@ -1256,7 +1330,9 @@
       "name": "no repository with the given id",
       "slug": "no-repository-with-the-given-id",
       "params": {
-        "repositoryId": "00000000-0000-4000-8000-000000000001"
+        "path": ".config/qits/release.yml",
+        "repositoryId": "00000000-0000-4000-8000-000000000001",
+        "rev": "main"
       },
       "dependsOn": [],
       "operations": [
@@ -1310,6 +1386,23 @@
           "path": "/githost/api/repositories/{repositoryId}/loc",
           "status": 404,
           "file": "no-repository-with-the-given-id/getLoc.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getRepositoryFile",
+          "method": "GET",
+          "path": "/githost/api/repositories/{repositoryId}/file",
+          "query": {
+            "rev": "{rev}",
+            "path": "{path}"
+          },
+          "status": 404,
+          "file": "no-repository-with-the-given-id/getRepositoryFile.json",
           "frozen": {
             "ids": [],
             "instants": [],
