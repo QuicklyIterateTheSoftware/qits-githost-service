@@ -31,8 +31,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * a changed pact. {@link ClasspathPactLoader} finds them all.
  *
  * <p><b>The pinned pacts</b> are the test-scope {@code eu.wohlben.qits:<consumer>-pacts-qits-githost-service}
- * dependencies in {@code service/pom.xml} — today qits-projects-service's, qits-ci-service's,
- * qits-deployments-service's, qits-maintenance-service's and qits-bootstrap-cli's.
+ * dependencies in {@code service/pom.xml} — today seven: qits-projects-service's, qits-ci-service's,
+ * qits-deployments-service's, qits-maintenance-service's and qits-bootstrap-cli's, and the two
+ * frontends that render a repository file through {@code @qits/ui-components}, qits-ci-frontend's
+ * and qits-projects-frontend's (ticket qits-1284). A frontend's jar holds the pact the library
+ * writes on its behalf, {@code pacts/<frontend>_qits-ui-components-jslib_qits-githost-service.json}:
+ * the consumer is still the frontend, and the library shows only in the file name and in each
+ * interaction's {@code comments.references.qits-via}.
  * {@link ClasspathPactLoader#REQUIRED} is true, so a classpath that lost them fails rather than
  * verifying nothing. A consumer that starts committing {@code pacts/<consumer>_qits-githost-service.json} is
  * pinned there once its jar is published; a state its pact names that this class does not answer

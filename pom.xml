@@ -129,12 +129,16 @@
         <!-- THE CONSUMER PACTS this provider verifies (ticket qits-1149): one jar per consumer that
              commits pacts/<consumer>_qits-githost-service.json, read off the test classpath by
              contracts/ClasspathPactLoader. qits-maintenance bumps each when the consumer releases a
-             changed pact. -->
+             changed pact. The two frontends' jars (ticket qits-1284) hold the pact their copy of
+             @qits/ui-components writes, pacts/<frontend>_qits-ui-components-jslib_qits-githost-service.json:
+             the repository file viewer's reads, carried by the library rather than the app. -->
         <qits.ci-service-pacts-qits-githost-service.version>2026.1019.5831</qits.ci-service-pacts-qits-githost-service.version>
         <qits.projects-service-pacts-qits-githost-service.version>2026.1021.34024</qits.projects-service-pacts-qits-githost-service.version>
         <qits.bootstrap-cli-pacts-qits-githost-service.version>2026.1018.185226</qits.bootstrap-cli-pacts-qits-githost-service.version>
         <qits.deployments-service-pacts-qits-githost-service.version>2026.1018.190212</qits.deployments-service-pacts-qits-githost-service.version>
         <qits.maintenance-service-pacts-qits-githost-service.version>2026.1021.154504</qits.maintenance-service-pacts-qits-githost-service.version>
+        <qits.ci-frontend-pacts-qits-githost-service.version>2026.1021.191659</qits.ci-frontend-pacts-qits-githost-service.version>
+        <qits.projects-frontend-pacts-qits-githost-service.version>2026.1021.193038</qits.projects-frontend-pacts-qits-githost-service.version>
 
         <!-- Quinoa is a Quarkiverse extension: not in quarkus-bom either, and its version does NOT
              track the platform's. 2.8.2 is built against Quarkus 3.27.3 LTS — older than the 3.34.6
@@ -237,6 +241,16 @@
                 <groupId>${project.groupId}</groupId>
                 <artifactId>qits-maintenance-service-pacts-qits-githost-service</artifactId>
                 <version>${qits.maintenance-service-pacts-qits-githost-service.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>qits-ci-frontend-pacts-qits-githost-service</artifactId>
+                <version>${qits.ci-frontend-pacts-qits-githost-service.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>qits-projects-frontend-pacts-qits-githost-service</artifactId>
+                <version>${qits.projects-frontend-pacts-qits-githost-service.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.quarkiverse.quinoa</groupId>
