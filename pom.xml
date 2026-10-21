@@ -131,7 +131,7 @@
              contracts/ClasspathPactLoader. qits-maintenance bumps each when the consumer releases a
              changed pact. -->
         <qits.ci-service-pacts-qits-githost-service.version>2026.1019.5831</qits.ci-service-pacts-qits-githost-service.version>
-        <qits.projects-service-pacts-qits-githost-service.version>2026.1019.40426</qits.projects-service-pacts-qits-githost-service.version>
+        <qits.projects-service-pacts-qits-githost-service.version>2026.1021.34024</qits.projects-service-pacts-qits-githost-service.version>
         <qits.bootstrap-cli-pacts-qits-githost-service.version>2026.1018.185226</qits.bootstrap-cli-pacts-qits-githost-service.version>
         <qits.deployments-service-pacts-qits-githost-service.version>2026.1018.190212</qits.deployments-service-pacts-qits-githost-service.version>
         <qits.maintenance-service-pacts-qits-githost-service.version>2026.1019.73752</qits.maintenance-service-pacts-qits-githost-service.version>
