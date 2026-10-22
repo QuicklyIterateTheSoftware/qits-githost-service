@@ -122,7 +122,7 @@
         <pact.version>4.6.21</pact.version>
         <!-- qits-idp's recorded answers (test scope), read through qits-pact-consumer by
              IdpConsumerPactTest: the quarkus-oidc tenant's JWKS read (ticket qits-1149). -->
-        <qits.idp-golden-masters.version>2026.1019.100619</qits.idp-golden-masters.version>
+        <qits.idp-golden-masters.version>2026.1021.194347</qits.idp-golden-masters.version>
         <!-- The shared consumer-pact helper (golden-master reader, row builder), released out of
              libs/qits-integrations-quarkus with its own string. -->
         <qits.pact-consumer.version>2026.1019.82625</qits.pact-consumer.version>
@@ -132,9 +132,9 @@
              changed pact. The two frontends' jars (ticket qits-1284) hold the pact their copy of
              @qits/ui-components writes, pacts/<frontend>_qits-ui-components-jslib_qits-githost-service.json:
              the repository file viewer's reads, carried by the library rather than the app. -->
-        <qits.ci-service-pacts-qits-githost-service.version>2026.1019.5831</qits.ci-service-pacts-qits-githost-service.version>
+        <qits.ci-service-pacts-qits-githost-service.version>2026.1022.1113</qits.ci-service-pacts-qits-githost-service.version>
         <qits.projects-service-pacts-qits-githost-service.version>2026.1021.34024</qits.projects-service-pacts-qits-githost-service.version>
-        <qits.bootstrap-cli-pacts-qits-githost-service.version>2026.1018.185226</qits.bootstrap-cli-pacts-qits-githost-service.version>
+        <qits.bootstrap-cli-pacts-qits-githost-service.version>2026.1021.223102</qits.bootstrap-cli-pacts-qits-githost-service.version>
         <qits.deployments-service-pacts-qits-githost-service.version>2026.1018.190212</qits.deployments-service-pacts-qits-githost-service.version>
         <qits.maintenance-service-pacts-qits-githost-service.version>2026.1021.154504</qits.maintenance-service-pacts-qits-githost-service.version>
         <qits.ci-frontend-pacts-qits-githost-service.version>2026.1021.191659</qits.ci-frontend-pacts-qits-githost-service.version>
