@@ -706,6 +706,7 @@ paths:
         - qits:admin-agent
         - qits:system
         - qits:agent
+        - qits:desk-admin
   /githost/api/repositories/{repoId}/commits:
     post:
       summary: Commit file changes onto a branch
