@@ -79,7 +79,7 @@
              move together — the rule names the driver as a string, so a driver that moved without
              the rule would pass a build it should fail. -->
         <qits.db-core.version>2026.1002.70617</qits.db-core.version>
-        <qits.arch-rules.version>2026.1011.185745</qits.arch-rules.version>
+        <qits.arch-rules.version>2026.1026.133840</qits.arch-rules.version>
         <!-- The user-story framework (test scope): TokenValidationBootstrapIT is a userflow, so a
              `mvn verify` also regenerates service/target/userstories/ — the stories' documentation,
              network diagram included. The diagram is OBSERVED rather than narrated: this version
