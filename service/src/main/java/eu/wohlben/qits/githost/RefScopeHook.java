@@ -37,6 +37,12 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
  *       unrestricted just because it lost the owner's roles.
  * </ol>
  *
+ * <p>Before all four rules, and before even the maintenance-branch ownership check below: a token
+ * whose groups contain {@value #DESK_ADMIN_ROLE} (the delivery desk's admin commission, qits-1621)
+ * is refused outright, with {@value #DESK_ADMIN_REFUSAL}. This is checked first because the
+ * commission also holds {@code qits:agent}, which would otherwise land it in rule 1 (with a {@value
+ * #GIT_REFS_CLAIM} list) or rule 4 (without one) above.
+ *
  * <p>Before all four, one ref family has an owner: {@value #MAINTENANCE_BRANCH_PREFIX}{@code *}
  * belongs to qits-maintenance. Only the {@value #MAINTENANCE_AUTOMATIONS_PREFIX}{@code *} slice of
  * it is reachable at all now (qits-1133): qits-maintenance's own branches are {@code
@@ -75,6 +81,15 @@ final class RefScopeHook {
 
   static final String EXTERNAL_BRANCH_PREFIX = "refs/heads/external/";
   static final String EXTERNAL_BRANCH_PATTERN = EXTERNAL_BRANCH_PREFIX + "*";
+
+  /**
+   * The delivery desk's admin role (qits-1621). It is checked before every other rule and whatever
+   * {@value #GIT_REFS_CLAIM} the token states: the desk-admin commission never pushes, full stop —
+   * see {@link #DESK_ADMIN_REFUSAL}.
+   */
+  static final String DESK_ADMIN_ROLE = "qits:desk-admin";
+
+  static final String DESK_ADMIN_REFUSAL = "qits:desk-admin never pushes (qits-1621)";
 
   /** The list of refs a credential may push (contract C1). Absent means no scope is stated. */
   static final String GIT_REFS_CLAIM = "git_refs";
@@ -147,7 +162,9 @@ final class RefScopeHook {
     /** Rule 4 without {@link #SYSTEM_ROLE}: a client token that states no scope. Refuses everything. */
     UNSCOPED_CLIENT,
     /** No verified identity, or no captured scope. Refuses everything. */
-    NONE
+    NONE,
+    /** Rule 0: the token's groups contain {@link #DESK_ADMIN_ROLE}. Refuses everything (qits-1621). */
+    DESK_ADMIN
   }
 
   /**
@@ -242,13 +259,25 @@ final class RefScopeHook {
     return new Scope(Rule.NONE, "this push", List.of(), NO_IDENTITY_REFUSAL);
   }
 
+  /** Rule 0's scope: a token holding {@link #DESK_ADMIN_ROLE}. Refuses every command outright. */
+  private static Scope deskAdmin() {
+    return new Scope(Rule.DESK_ADMIN, "qits:desk-admin", List.of(), DESK_ADMIN_REFUSAL);
+  }
+
   /**
    * Applies the four rules to the verified identity. Call it on the event loop, while the request
    * still carries its identity.
+   *
+   * <p>Rule 0 runs first, before the identity's {@value #GIT_REFS_CLAIM} (or any other claim) is
+   * even read: a token whose groups contain {@value #DESK_ADMIN_ROLE} is refused outright, whatever
+   * scope it states (qits-1621).
    */
   static Scope scopeOf(SecurityIdentity identity) {
     if (identity == null || identity.isAnonymous()) {
       return nothing();
+    }
+    if (identity.hasRole(DESK_ADMIN_ROLE)) {
+      return deskAdmin();
     }
     if (!(identity.getPrincipal() instanceof JsonWebToken jwt)) {
       // An identity from the forwarded X-Qits-User / X-Qits-Roles headers: a browser session, which
@@ -358,6 +387,9 @@ final class RefScopeHook {
    * @return {@code true} when every command was rejected, so the caller must not run further hooks
    */
   static boolean rejectOutsideScope(Collection<ReceiveCommand> commands, Scope scope) {
+    if (rejectDeskAdmin(commands, scope)) {
+      return true;
+    }
     if (rejectMaintenance(commands, scope)) {
       return true;
     }
@@ -388,6 +420,21 @@ final class RefScopeHook {
               ? "refused with the whole push, because " + firstRefused + " is outside the push"
                   + " scope: " + allowance
               : ref + " is outside the push scope: " + allowance);
+    }
+    return true;
+  }
+
+  /**
+   * Rejects every command outright when the scope is {@link Rule#DESK_ADMIN}, before even the
+   * maintenance-branch check: a desk-admin token is refused the same way whatever ref it names,
+   * {@value #MAINTENANCE_BRANCH_PREFIX} included.
+   */
+  private static boolean rejectDeskAdmin(Collection<ReceiveCommand> commands, Scope scope) {
+    if (scope.rule() != Rule.DESK_ADMIN) {
+      return false;
+    }
+    for (ReceiveCommand command : commands) {
+      command.setResult(ReceiveCommand.Result.REJECTED_OTHER_REASON, DESK_ADMIN_REFUSAL);
     }
     return true;
   }

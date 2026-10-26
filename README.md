@@ -160,6 +160,13 @@ the credential's scope, never from its roles** — `RefScopeHook`, contract C3 o
 `qits:admin`, `qits:admin-agent` and `qits:system` widen none of rows 1 to 3. A push with no verified identity pushes
 nothing. The bootstrap ingress keeps row 2's check with the pattern it is configured with.
 
+**`qits:desk-admin` never pushes**, whatever `git_refs` it carries (qits-1621). The delivery desk's
+admin token holds `qits:agent` too, which would otherwise fall into row 1 or row 4 above — so this
+check runs before all four rows, from the token's groups alone, and refuses the whole push with
+`qits:desk-admin never pushes (qits-1621)`. The role is not added to
+`quarkus.http.auth.policy.git.roles-allowed` above: the desk already fetches through `qits:agent`,
+and this rule is what stops the push, not the path policy.
+
 **`refs/heads/maintenance/*` belongs to qits-maintenance**, and that check comes before every row
 above, row 4 included. Its bump runs (`MaintenanceBump`, `ReleaseRequestAutomation`) rebuild those
 branches and may force them, so a create, update, force-update or delete there is admitted only
@@ -239,7 +246,7 @@ qits-projects.
 |---|---|
 | `GET /githost/api/repositories` | `{"repositories":[{"id", "protectDefaultBranch"}, …]}` — every repository this host serves, sorted, as records. |
 | `GET /githost/api/loc[?repositoryId=…]` | `{"entries":[{"repositoryId", "commitSha", "status", "languages":[{"language", "mainLines", "testLines"}]}, …]}` — the lines of code of every repository's default branch, in one request, sorted by id. `repositoryId` (repeatable) narrows it; a named id this host does not hold is left out, an invalid one is a 400. Answered from the stored counts only: `COUNTED` carries the numbers, `PENDING` means the tip is not counted yet and this call queued its count, `EMPTY` means no commit yet. Same roles as the per-repository `/loc`. |
-| `GET /githost/api/repositories/{repoId}/commit-subject-bypasses` | `{"bypasses":[{"id", "repositoryId", "pusher", "reason", "refs", "commits", "usedAt"}, …]}` — every recorded use of the commit-subject break-glass on one repository, newest first. `qits:admin`, `qits:admin-agent`, `qits:system` or `qits:agent`; an unknown repository answers an empty list. |
+| `GET /githost/api/repositories/{repoId}/commit-subject-bypasses` | `{"bypasses":[{"id", "repositoryId", "pusher", "reason", "refs", "commits", "usedAt"}, …]}` — every recorded use of the commit-subject break-glass on one repository, newest first. `qits:admin`, `qits:admin-agent`, `qits:system`, `qits:agent` or `qits:desk-admin`; an unknown repository answers an empty list. |
 
 It answers the same question as `GET /git` and is not a duplicate of it: that one is a wire the
 platform's machines read and its shape is fixed by them, this one is the browser's and may grow a

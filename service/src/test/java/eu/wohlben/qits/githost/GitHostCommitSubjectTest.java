@@ -130,6 +130,21 @@ public class GitHostCommitSubjectTest {
     assertEquals("dyn-x", body.getString("bypasses[0].pusher"));
     assertEquals(List.of(offending), body.getList("bypasses[0].commits"));
     assertEquals(List.of("refs/heads/main"), body.getList("bypasses[0].refs"));
+
+    // qits:desk-admin reads the same list (qits-1621): a read, not a push, so the parity rule
+    // admits it even though it does not reach RefScopeHook at all.
+    assertEquals(
+        1,
+        given()
+            .header("X-Qits-User", "dyn-desk-admin")
+            .header("X-Qits-Roles", "qits:desk-admin")
+            .get("/githost/api/repositories/" + repoId + "/commit-subject-bypasses")
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath()
+            .getList("bypasses")
+            .size());
   }
 
   @Test

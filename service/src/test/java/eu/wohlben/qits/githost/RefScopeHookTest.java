@@ -375,6 +375,54 @@ class RefScopeHookTest {
     assertFalse(scopeOf(null).tokenBypassAllowed());
   }
 
+  // --- rule 0: qits:desk-admin --------------------------------------------------------------------
+
+  @Test
+  void aDeskAdminTokenNeverPushesWhateverItsRefs() {
+    Scope withoutRefs = scopeOf(jwt(List.of("qits:agent", "qits:desk-admin"), Map.of()));
+    assertEquals(Rule.DESK_ADMIN, withoutRefs.rule());
+    ReceiveCommand noRefsCommand = create(TICKET);
+    assertTrue(rejectOutsideScope(List.of(noRefsCommand), withoutRefs));
+    assertEquals(ReceiveCommand.Result.REJECTED_OTHER_REASON, noRefsCommand.getResult());
+    assertEquals(RefScopeHook.DESK_ADMIN_REFUSAL, noRefsCommand.getMessage());
+
+    Scope withRefs =
+        scopeOf(jwt(List.of("qits:agent", "qits:desk-admin"), Map.of("git_refs", List.of(TICKET))));
+    assertEquals(Rule.DESK_ADMIN, withRefs.rule());
+    ReceiveCommand withRefsCommand = create(TICKET);
+    assertTrue(rejectOutsideScope(List.of(withRefsCommand), withRefs));
+    assertEquals(ReceiveCommand.Result.REJECTED_OTHER_REASON, withRefsCommand.getResult());
+    assertEquals(RefScopeHook.DESK_ADMIN_REFUSAL, withRefsCommand.getMessage());
+
+    // Not unrestricted, and not eligible for the push-token bypass either.
+    assertFalse(withRefs.unrestricted());
+    assertFalse(withRefs.tokenBypassAllowed());
+  }
+
+  @Test
+  void aDeskAdminTokenIsRefusedWholeEvenOnAMaintenanceBranch() {
+    Scope scope =
+        scopeOf(
+            jwt(
+                List.of("qits:agent", "qits:desk-admin"),
+                Map.of("git_refs", List.of(MAINTENANCE))));
+
+    ReceiveCommand command = create(MAINTENANCE);
+    assertTrue(rejectOutsideScope(List.of(command), scope));
+    assertEquals(RefScopeHook.DESK_ADMIN_REFUSAL, command.getMessage());
+  }
+
+  @Test
+  void aPlainAgentTokenWithRefsStillPushes() {
+    // Without qits:desk-admin, an agent commission with a git_refs list is unaffected by rule 0.
+    Scope scope = scopeOf(jwt(List.of("qits:agent"), Map.of("git_refs", List.of(TICKET))));
+
+    assertEquals(Rule.GIT_REFS, scope.rule());
+    ReceiveCommand command = create(TICKET);
+    assertFalse(rejectOutsideScope(List.of(command), scope));
+    assertEquals(ReceiveCommand.Result.NOT_ATTEMPTED, command.getResult());
+  }
+
   // --- no identity ------------------------------------------------------------------------------
 
   @Test
