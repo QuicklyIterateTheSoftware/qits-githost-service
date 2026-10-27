@@ -225,6 +225,56 @@ public class RepositoryRefsResourceTest {
         .statusCode(400);
   }
 
+  /**
+   * A release pins its bump commit to the gated fold (qits-1647): the branch must still be at
+   * {@code expectedOld}, and the commit's parent is {@code parent}, not whatever the tip is.
+   */
+  @Test
+  public void aPinnedCommitSitsOnItsParentAndRefusesAMovedBranch() throws Exception {
+    String repo = seed();
+    String fold = lsRemote(repo, "refs/heads/release/1", "refs/heads/release/1");
+
+    // The fold moves on: a newer commit lands on the branch.
+    Map<String, Object> refold = commitBody("refs/heads/release/1", "a newer fold");
+    refold.put("files", Map.of("late.txt", "late\n"));
+    String newer =
+        post(repo, "/commits", refold).then().statusCode(200).extract().jsonPath().getString("sha");
+
+    // Pinned to the old fold: refused, and nothing moves.
+    Map<String, Object> pinned = commitBody("refs/heads/release/1", "release(1): stamp");
+    pinned.put("files", Map.of("pom.xml", "<version>1</version>\n"));
+    pinned.put("parent", fold);
+    pinned.put("expectedOld", fold);
+    post(repo, "/commits", pinned).then().statusCode(409).body("error", is("ref-moved"));
+    assertThat(lsRemote(repo, "refs/heads/release/1", "refs/heads/release/1"), is(newer));
+
+    // Expecting the branch where it is, but with the old fold as parent: the commit sits on the
+    // fold, and the newer commit is not in it.
+    pinned.put("expectedOld", newer);
+    JsonPath committed = post(repo, "/commits", pinned).then().statusCode(200).extract().jsonPath();
+    assertThat(committed.getString("outcome"), is("committed"));
+    assertThat(committed.getString("parent"), is(fold));
+    assertThat(
+        lsRemote(repo, "refs/heads/release/1", "refs/heads/release/1"),
+        is(committed.getString("sha")));
+    assertThat(
+        given()
+            .queryParam("rev", committed.getString("sha"))
+            .when()
+            .get(API + repo + "/tree")
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath()
+            .getList("paths", String.class),
+        not(hasItem("late.txt")));
+
+    Map<String, Object> malformed = commitBody("refs/heads/release/1", "x");
+    malformed.put("files", Map.of("a.txt", "a\n"));
+    malformed.put("parent", "main");
+    post(repo, "/commits", malformed).then().statusCode(400);
+  }
+
   // --- the branch delete ---------------------------------------------------------------------
 
   @Test
@@ -242,6 +292,34 @@ public class RepositoryRefsResourceTest {
         .then()
         .statusCode(404)
         .body("error", is("no-such-branch"));
+  }
+
+  /** A delete with {@code expectedSha} keeps a branch that moved since it was checked (qits-1647). */
+  @Test
+  public void aDeleteExpectingAnOldShaKeepsAMovedBranch() throws Exception {
+    String repo = seed();
+    String checked = lsRemote(repo, "refs/heads/release/1", "refs/heads/release/1");
+    Map<String, Object> push = commitBody("refs/heads/release/1", "a late push");
+    push.put("files", Map.of("late.txt", "late\n"));
+    String moved =
+        post(repo, "/commits", push).then().statusCode(200).extract().jsonPath().getString("sha");
+
+    given()
+        .queryParam("expectedSha", checked)
+        .when()
+        .delete(API + repo + "/branches/release/1")
+        .then()
+        .statusCode(409)
+        .body("error", is("ref-moved"));
+    assertThat(lsRemote(repo, "refs/heads/release/1", "refs/heads/release/1"), is(moved));
+
+    given()
+        .queryParam("expectedSha", moved)
+        .when()
+        .delete(API + repo + "/branches/release/1")
+        .then()
+        .statusCode(204);
+    assertThat(lsRemote(repo, "refs/heads/release/1", "refs/heads/release/1"), nullValue());
   }
 
   @Test

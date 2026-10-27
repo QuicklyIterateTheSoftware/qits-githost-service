@@ -242,6 +242,10 @@ components:
           type: string
         repoName:
           type: string
+        parent:
+          type: string
+        expectedOld:
+          type: string
     ErrorBody:
       type: object
       properties:
@@ -625,6 +629,10 @@ paths:
         required: true
         schema:
           type: string
+      - name: expectedSha
+        in: query
+        schema:
+          type: string
       - name: projectId
         in: query
         schema:
@@ -988,4 +996,4 @@ paths:
       - Repository Browse Resource
 info:
   title: qits-githost API
-  version: 2026.1016.120433
+  version: 2026.1026.181411

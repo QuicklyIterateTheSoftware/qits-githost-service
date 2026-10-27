@@ -525,6 +525,12 @@ public class RepositoryRefsResource {
    * hex digits) is checked. qits-projects banks a wrapper's submodule pins with this on release.
    *
    * <p>{@code projectId} and {@code repoName} are the optional address the move is announced under.
+   *
+   * <p>{@code parent} and {@code expectedOld} are optional full shas (qits-1647). {@code parent} is
+   * the commit the edits apply to and the new commit's one parent; without it, that is the branch
+   * tip. {@code expectedOld} is where the branch must point now; if it points elsewhere, the answer
+   * is a 409 {@code ref-moved} and nothing is written. A release passes both, so its version bump
+   * sits on the gated fold and never on a newer one.
    */
   @RegisterForReflection
   public record CommitRequest(
@@ -535,7 +541,22 @@ public class RepositoryRefsResource {
       Map<String, String> gitlinks,
       Author author,
       String projectId,
-      String repoName) {
+      String repoName,
+      String parent,
+      String expectedOld) {
+    /** The form before {@code parent} and {@code expectedOld} existed. */
+    public CommitRequest(
+        String ref,
+        String message,
+        Map<String, String> files,
+        List<String> deletePaths,
+        Map<String, String> gitlinks,
+        Author author,
+        String projectId,
+        String repoName) {
+      this(ref, message, files, deletePaths, gitlinks, author, projectId, repoName, null, null);
+    }
+
     /** The form before the announced address existed. */
     public CommitRequest(
         String ref,
@@ -1139,7 +1160,9 @@ public class RepositoryRefsResource {
    * bump after a timeout is free rather than a second empty commit.
    *
    * <p>The ref moves as a compare-and-swap against the tip this request read, so a branch that moved
-   * underneath a slow caller is a 409 rather than a lost commit.
+   * underneath a slow caller is a 409 rather than a lost commit. A caller that names {@code
+   * expectedOld} and {@code parent} pins both: the branch must be at {@code expectedOld}, and the
+   * commit sits on {@code parent} whatever the tip is (qits-1647).
    */
   @Operation(operationId = "commitFiles", summary = "Commit file changes onto a branch")
   @POST
@@ -1196,6 +1219,12 @@ public class RepositoryRefsResource {
     if (request.message() == null || request.message().isBlank()) {
       return badRequest("a commit needs a message");
     }
+    if (request.parent() != null && !GITLINK_SHA.matcher(request.parent()).matches()) {
+      return badRequest("parent must be a full 40-hex commit sha");
+    }
+    if (request.expectedOld() != null && !GITLINK_SHA.matcher(request.expectedOld()).matches()) {
+      return badRequest("expectedOld must be a full 40-hex commit sha");
+    }
 
     try (Repository repo = repositories.open(repoId)) {
       if (repo == null) {
@@ -1206,10 +1235,27 @@ public class RepositoryRefsResource {
         return notFound("no-such-ref", request.ref());
       }
       ObjectId tip = branch.getObjectId();
+      if (request.expectedOld() != null && !tip.equals(ObjectId.fromString(request.expectedOld()))) {
+        return Response.status(Response.Status.CONFLICT)
+            .entity(
+                new ErrorBody(
+                    "ref-moved",
+                    request.ref() + " is at " + tip.name() + ", not " + request.expectedOld()))
+            .build();
+      }
       try (ObjectInserter inserter = repo.newObjectInserter();
           ObjectReader reader = inserter.newReader();
           RevWalk walk = new RevWalk(reader)) {
-        RevCommit parent = walk.parseCommit(tip);
+        RevCommit parent;
+        try {
+          parent =
+              walk.parseCommit(
+                  request.parent() == null ? tip : ObjectId.fromString(request.parent()));
+        } catch (MissingObjectException e) {
+          return notFound("no-such-commit", request.parent());
+        } catch (IncorrectObjectTypeException e) {
+          return badRequest("parent does not name a commit: " + request.parent());
+        }
         ObjectId tree = editedTree(inserter, reader, parent, files, deletions, gitlinks, Map.of());
         if (tree.equals(parent.getTree())) {
           return Response.ok(
@@ -1220,7 +1266,7 @@ public class RepositoryRefsResource {
             insertCommit(
                 inserter,
                 tree,
-                List.of(tip),
+                List.of(parent),
                 authorOf(request.author()),
                 request.message());
         inserter.flush();
@@ -1385,6 +1431,10 @@ public class RepositoryRefsResource {
    * <p>{@code projectId} and {@code repoName} are optional query parameters — a {@code DELETE}
    * carries no body — naming the address the deletion is announced under as {@code
    * SCMDeleteBranch}.
+   *
+   * <p>{@code expectedSha}, also optional, is a full sha the branch must still point at (qits-1647).
+   * If it points elsewhere, the answer is a 409 {@code ref-moved} and the branch stays. A release
+   * passes it, so a push that lands after the release checked a branch is never deleted with it.
    */
   @Operation(operationId = "deleteBranch", summary = "Delete a branch")
   @DELETE
@@ -1393,9 +1443,13 @@ public class RepositoryRefsResource {
       @PathParam("repoId") String repoId,
       @PathParam("name") String name,
       @QueryParam("projectId") String projectId,
-      @QueryParam("repoName") String repoName) {
+      @QueryParam("repoName") String repoName,
+      @QueryParam("expectedSha") String expectedSha) {
     if (!isValidRepoId(repoId)) {
       return badRequest("repoId must match " + REPO_ID_PATTERN);
+    }
+    if (expectedSha != null && !GITLINK_SHA.matcher(expectedSha).matches()) {
+      return badRequest("expectedSha must be a full 40-hex commit sha");
     }
     String ref = branchRef(name);
     if (ref == null) {
@@ -1413,6 +1467,13 @@ public class RepositoryRefsResource {
       Ref branch = repo.getRefDatabase().exactRef(ref);
       if (branch == null) {
         return notFound("no-such-branch", ref);
+      }
+      if (expectedSha != null && !branch.getObjectId().equals(ObjectId.fromString(expectedSha))) {
+        return Response.status(Response.Status.CONFLICT)
+            .entity(
+                new ErrorBody(
+                    "ref-moved", ref + " is at " + branch.getObjectId().name() + ", not " + expectedSha))
+            .build();
       }
       RefUpdate update = repo.updateRef(ref);
       update.setExpectedOldObjectId(branch.getObjectId());
