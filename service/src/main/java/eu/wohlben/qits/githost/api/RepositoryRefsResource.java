@@ -493,9 +493,12 @@ public class RepositoryRefsResource {
   @RegisterForReflection
   public record TagResponse(String tag, String sha, String object) {}
 
-  /** Where a branch stands right now: the full ref name and the commit it points at. */
+  /**
+   * Where a branch stands right now: the full ref name, the commit it points at, and that commit's
+   * parents and message (qits-1647: a release tells its own earlier bump commit from a re-fold).
+   */
   @RegisterForReflection
-  public record BranchResponse(String ref, String sha) {}
+  public record BranchResponse(String ref, String sha, List<String> parents, String message) {}
 
   /**
    * Whether one commit is an ancestor of another — the question echoed back with its answer, so a
@@ -1318,7 +1321,13 @@ public class RepositoryRefsResource {
       if (branch == null || branch.getObjectId() == null) {
         return notFound("no-such-branch", ref);
       }
-      return Response.ok(new BranchResponse(ref, branch.getObjectId().name())).build();
+      RevCommit tip;
+      try (RevWalk walk = new RevWalk(repo)) {
+        tip = walk.parseCommit(branch.getObjectId());
+      }
+      return Response.ok(
+              new BranchResponse(ref, tip.name(), parentNames(tip), tip.getFullMessage()))
+          .build();
     } catch (Exception e) {
       throw unavailable("could not read " + ref + " of repository " + repoId, e);
     }

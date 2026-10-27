@@ -388,8 +388,24 @@ public class RepositoryRefsResourceTest {
         .then()
         .statusCode(200)
         .body("ref", is("refs/heads/main"))
-        .body("sha", is(tip));
+        .body("sha", is(tip))
+        .body("parents", is(List.of()))
+        .body("message", is("seed\n"));
     given().when().get(API + repo + "/branches/never-was-there").then().statusCode(404);
+
+    // A commit's parents and message come back too (qits-1647).
+    Map<String, Object> bump = commitBody("refs/heads/release/1", "release(1): stamp");
+    bump.put("files", Map.of("pom.xml", "<version>1</version>\n"));
+    String bumped =
+        post(repo, "/commits", bump).then().statusCode(200).extract().jsonPath().getString("sha");
+    given()
+        .when()
+        .get(API + repo + "/branches/release/1")
+        .then()
+        .statusCode(200)
+        .body("sha", is(bumped))
+        .body("parents", is(List.of(tip)))
+        .body("message", is("release(1): stamp\n"));
   }
 
   @Test
