@@ -97,3 +97,12 @@ hiding it, so nobody schedules a repack to save space.
   are no-ops, so a per-repository setting written there is read back as the platform default.
   Anything that was a line in a bare's own `config` — `[qits] protectDefaultBranch`, for one — needs
   a row somewhere else.
+
+## `info/attributes` is a value
+
+A bare on a disk reads `$GIT_DIR/info/attributes`; `DfsRepository` inherits a provider that answers
+nothing, so an in-core merge saw only the `.gitattributes` committed in its trees. `QitsDfsRepository`
+answers the info node from the text given to `QitsDfsRepositoryBuilder.setInfoAttributes(String)`
+(qits-1691) and has no global node. The module still reads no configuration: the service passes
+`qits.githost.merge.info-attributes`, shipped as `memory/MEMORY.md merge=union`, so two branches that
+each append a line to the memory index fold cleanly. `InfoAttributesMergeTest` shows both sides.

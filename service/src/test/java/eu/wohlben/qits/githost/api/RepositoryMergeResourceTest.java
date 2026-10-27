@@ -221,6 +221,41 @@ public class RepositoryMergeResourceTest {
   }
 
   @Test
+  public void twoAppendsToTheMemoryIndexFoldCleanlyAndKeepBothLines() throws Exception {
+    // qits-1691: every agent appends its line to the end of memory/MEMORY.md, so two branches that
+    // each did conflicted on every fold. The shipped qits.githost.merge.info-attributes makes that
+    // path a union merge — both lines kept, the target's side first.
+    String repo = seedTwoAppends("memory/MEMORY.md");
+    JsonPath merged =
+        merge(repo, request("refs/heads/release/m1", "feature/left", "feature/right"))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getString("outcome"), is("merged"));
+    // Read back from the served repository, not from the answer under test.
+    Path clone = clone(repo);
+    assertThat(
+        git(clone, "show", merged.getString("sha") + ":memory/MEMORY.md"),
+        is(MEMORY_BASE + MEMORY_LEFT + MEMORY_RIGHT));
+  }
+
+  @Test
+  public void theSameTwoAppendsToAnyOtherFileStillConflict() throws Exception {
+    // The rule names one path. README.md in the same shape is the conflict it always was.
+    String repo = seedTwoAppends("README.md");
+    JsonPath conflict =
+        merge(repo, request("refs/heads/release/m2", "feature/left", "feature/right"))
+            .then()
+            .statusCode(409)
+            .extract()
+            .jsonPath();
+    assertThat(conflict.getString("error"), is("merge-conflict"));
+    assertThat(conflict.getList("conflicts.path", String.class), contains("README.md"));
+    assertThat(remoteSha(repo, "refs/heads/release/m2"), is(nullSha()));
+  }
+
+  @Test
   public void aGitlinkConflictSaysSoAndNamesWhatAllThreeSidesPin() throws Exception {
     // The conflict a caller CAN decide without a worktree, and the reason the report grew: four flat
     // strings could not tell a submodule pin from a text file, so qits-projects had to guess.
@@ -1516,6 +1551,29 @@ public class RepositoryMergeResourceTest {
     pin(work, "sub", PIN_BASE);
     commitIndex(work, "base");
     return work;
+  }
+
+  private static final String MEMORY_BASE = "- [one](one.md) — the first memory\n";
+  private static final String MEMORY_LEFT = "- [left](left.md) — appended on one branch\n";
+  private static final String MEMORY_RIGHT = "- [right](right.md) — appended on the other\n";
+
+  /** Two heads over one base that each append one line of their own to the end of {@code path}. */
+  private String seedTwoAppends(String path) throws Exception {
+    String repoId = UUID.randomUUID().toString();
+    repositories.create(repoId, "main");
+    Path work = Files.createTempDirectory("qits-merge-append");
+    git(work, "init", "-q", "-b", "main", ".");
+    write(work, path, MEMORY_BASE);
+    commit(work, "base");
+    git(work, "checkout", "-q", "-b", "feature/left", "main");
+    write(work, path, MEMORY_BASE + MEMORY_LEFT);
+    commit(work, "left");
+    git(work, "checkout", "-q", "-b", "feature/right", "main");
+    write(work, path, MEMORY_BASE + MEMORY_RIGHT);
+    commit(work, "right");
+    git(work, "checkout", "-q", "main");
+    push(work, repoId, "main", "feature/left", "feature/right");
+    return repoId;
   }
 
   /** Two heads that rewrite the same line, for the report's "this is a plain file" half. */

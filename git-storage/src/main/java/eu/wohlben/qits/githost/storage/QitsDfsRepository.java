@@ -1,6 +1,11 @@
 package eu.wohlben.qits.githost.storage;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import org.eclipse.jgit.attributes.AttributesNode;
+import org.eclipse.jgit.attributes.AttributesNodeProvider;
 import org.eclipse.jgit.internal.storage.dfs.DfsRepository;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.RefDatabase;
@@ -26,12 +31,28 @@ import org.eclipse.jgit.lib.RefUpdate;
  *       forgotten immediately and read back as the platform default. Anything that was a line in a
  *       bare's {@code config} needs a row somewhere else.
  * </ul>
+ *
+ * <p><b>Its {@code info/attributes} is a value, not a file</b> (qits-1691). A bare on a disk reads
+ * {@code $GIT_DIR/info/attributes} and every in-process merge honours it; {@code DfsRepository}
+ * inherits an attributes provider that answers nothing, so an in-core {@code ResolveMerger} saw only
+ * the attributes committed in the trees it merges. The rule text handed to {@link
+ * QitsDfsRepositoryBuilder#setInfoAttributes(String)} is that file's replacement — the platform's
+ * {@code memory/MEMORY.md merge=union}, which turns two branches that each append a line to the
+ * memory index from a guaranteed fold conflict into a merge that keeps both lines.
  */
 public class QitsDfsRepository extends DfsRepository {
 
   private final String repositoryId;
   private final QitsDfsObjDatabase objects;
   private final QitsDfsReftableDatabase refs;
+
+  /**
+   * The repository-wide attribute rules, parsed once, or {@code null} when none were given. Null is
+   * JGit's own spelling of "no {@code info/attributes} file" and is what the inherited provider
+   * answered before qits-1691, so a repository built without the rule behaves byte for byte as one
+   * always did.
+   */
+  private final AttributesNode infoAttributes;
 
   QitsDfsRepository(QitsDfsRepositoryBuilder builder) {
     super(builder);
@@ -42,6 +63,46 @@ public class QitsDfsRepository extends DfsRepository {
     // Constructed once, here. A getRefDatabase() that returns a new instance per call compiles,
     // serves an advertisement, and then reads refs wrong — the ref cache is per instance.
     this.refs = new QitsDfsReftableDatabase(this);
+    this.infoAttributes = parseAttributes(builder.getInfoAttributes());
+  }
+
+  /** {@code null} for no text or blank text; otherwise the rules, in gitattributes syntax. */
+  private static AttributesNode parseAttributes(String text) {
+    if (text == null || text.isBlank()) {
+      return null;
+    }
+    AttributesNode node = new AttributesNode();
+    try {
+      node.parse(new ByteArrayInputStream(text.getBytes(StandardCharsets.UTF_8)));
+    } catch (IOException e) {
+      // A byte array does not fail to read; the checked exception is the stream's signature only.
+      throw new UncheckedIOException("cannot parse the info attributes", e);
+    }
+    return node;
+  }
+
+  /**
+   * The {@code info/attributes} a disk bare would have read, answered from the builder's rule text
+   * (qits-1691). There is <b>no global node</b>: a {@code core.attributesFile} lives in a user's
+   * home, and a host serving every repository on the platform has no user whose home should decide
+   * how a fold merges.
+   *
+   * <p>A new provider per call is what {@code Repository} expects of this factory method; both
+   * answers are the one node parsed at construction, which nothing mutates after {@code parse}.
+   */
+  @Override
+  public AttributesNodeProvider createAttributesNodeProvider() {
+    return new AttributesNodeProvider() {
+      @Override
+      public AttributesNode getInfoAttributesNode() {
+        return infoAttributes;
+      }
+
+      @Override
+      public AttributesNode getGlobalAttributesNode() {
+        return null;
+      }
+    };
   }
 
   /** The key both ports address this repository by. */

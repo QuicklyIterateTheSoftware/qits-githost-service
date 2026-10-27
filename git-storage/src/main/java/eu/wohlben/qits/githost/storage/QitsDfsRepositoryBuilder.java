@@ -22,6 +22,7 @@ public class QitsDfsRepositoryBuilder
   private String repositoryId;
   private PackBlobStore blobs;
   private PackCatalog catalog;
+  private String infoAttributes;
 
   /** Also becomes the repository description, which keys JGit's block cache. */
   public QitsDfsRepositoryBuilder setRepositoryId(String repositoryId) {
@@ -49,6 +50,24 @@ public class QitsDfsRepositoryBuilder
 
   public PackCatalog getPackCatalog() {
     return catalog;
+  }
+
+  /**
+   * The repository's {@code info/attributes}, as text in gitattributes syntax — one rule per line,
+   * for example {@code memory/MEMORY.md merge=union} (qits-1691). {@code null} or blank means no
+   * rules, which is what a repository built without this call has.
+   *
+   * <p>A value and not a lookup: this module has one compile dependency, JGit, and reads no
+   * configuration of its own. Whoever opens the repository decides the text; in the service that is
+   * {@code DfsGitRepositoryProvider}, from {@code qits.githost.merge.info-attributes}.
+   */
+  public QitsDfsRepositoryBuilder setInfoAttributes(String infoAttributes) {
+    this.infoAttributes = infoAttributes;
+    return self();
+  }
+
+  public String getInfoAttributes() {
+    return infoAttributes;
   }
 
   @Override

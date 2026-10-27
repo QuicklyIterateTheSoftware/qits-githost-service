@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
@@ -46,6 +47,24 @@ public class DfsGitRepositoryProvider implements GitRepositoryProvider {
    */
   @ConfigProperty(name = "qits.githost.db-retry-deadline", defaultValue = "15S")
   Duration dbRetryDeadline;
+
+  /**
+   * Every repository's {@code info/attributes}, in gitattributes syntax (qits-1691). The shipped
+   * value, in application.properties, is {@code memory/MEMORY.md merge=union}: every agent appends
+   * its line to the end of the memory index, so two branches that each did conflicted on every
+   * release-request fold, and the union driver keeps both lines instead.
+   *
+   * <p>It reaches the in-core merger of {@code RepositoryRefsResource.fold} and nothing about the
+   * wire — {@code UploadPack} and {@code ReceivePack} read no attributes. A rule committed in a
+   * repository's own {@code .gitattributes} still applies beside it, as it would beside a disk
+   * bare's {@code $GIT_DIR/info/attributes}.
+   *
+   * <p><b>Optional, never a String with a {@code defaultValue}</b>: a configured-empty value reads as
+   * absent to SmallRye, so an empty {@code QITS_GITHOST_MERGE_INFO_ATTRIBUTES} is how a deployment
+   * says "no rule" — and that has to arrive here as empty rather than fall back to the default.
+   */
+  @ConfigProperty(name = "qits.githost.merge.info-attributes")
+  Optional<String> infoAttributes;
 
   /**
    * Existence is answered by the ref database, not by a table of its own: a repository that has ever
@@ -138,6 +157,7 @@ public class DfsGitRepositoryProvider implements GitRepositoryProvider {
         .setRepositoryId(repoId)
         .setPackBlobStore(blobs)
         .setPackCatalog(catalog)
+        .setInfoAttributes(infoAttributes.orElse(null))
         .build();
   }
 }
