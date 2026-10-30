@@ -121,6 +121,12 @@ public class TokenValidationBootstrapIT {
       // dark outside a deployment, like %dev/%test — both are runtime keys
       overrides.put("quarkus.otel.sdk.disabled", "true");
       overrides.put("qits.eventstream.enabled", "false");
+      // The prod profile ships the storage client and the default-branch seatbelt ON (qits-1391).
+      // The stories provision through the id-addressed scheme as qits:system and push their
+      // default branches, the compat arm described above, so both are put back to that arm here:
+      // an empty storage client reads as unset.
+      overrides.put("qits.githost.storage-client", "");
+      overrides.put("qits.repositories.git.protect-default-branch", "false");
       overrides.putAll(StoryAccessLog.configOverrides());
       return overrides;
     }
