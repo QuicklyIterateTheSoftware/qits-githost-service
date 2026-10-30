@@ -135,7 +135,7 @@
         <qits.ci-service-pacts-qits-githost-service.version>2026.1022.1113</qits.ci-service-pacts-qits-githost-service.version>
         <qits.projects-service-pacts-qits-githost-service.version>2026.1027.154457</qits.projects-service-pacts-qits-githost-service.version>
         <qits.bootstrap-cli-pacts-qits-githost-service.version>2026.1021.223102</qits.bootstrap-cli-pacts-qits-githost-service.version>
-        <qits.deployments-service-pacts-qits-githost-service.version>2026.1018.190212</qits.deployments-service-pacts-qits-githost-service.version>
+        <qits.deployments-service-pacts-qits-githost-service.version>2026.1030.164656</qits.deployments-service-pacts-qits-githost-service.version>
         <qits.maintenance-service-pacts-qits-githost-service.version>2026.1021.154504</qits.maintenance-service-pacts-qits-githost-service.version>
         <qits.ci-frontend-pacts-qits-githost-service.version>2026.1021.191659</qits.ci-frontend-pacts-qits-githost-service.version>
         <qits.projects-frontend-pacts-qits-githost-service.version>2026.1021.193038</qits.projects-frontend-pacts-qits-githost-service.version>
