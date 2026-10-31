@@ -59,7 +59,7 @@
              exists: none of the three is on Maven Central or built in this reactor. -->
         <qits.eventstream.version>2026.1027.101950</qits.eventstream.version>
         <!-- Shared OIDC and forwarded-header authentication. -->
-        <qits.integrations-quarkus.version>2026.1012.173247</qits.integrations-quarkus.version>
+        <qits.integrations-quarkus.version>2026.1031.63225</qits.integrations-quarkus.version>
         <!-- qits-http-core, pinned with its OWN property rather than riding
              qits.integrations-quarkus.version above: its CallerServerFilter and CallerRouteRecorder
              attribute every inbound request to the X-Qits-Caller that sent it. (This service makes
