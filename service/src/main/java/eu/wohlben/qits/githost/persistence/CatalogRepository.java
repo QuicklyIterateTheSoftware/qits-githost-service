@@ -10,7 +10,10 @@ import jakarta.enterprise.context.control.ActivateRequestContext;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -184,22 +187,59 @@ public class CatalogRepository implements PackCatalog {
         names.size(), repositoryId, names);
   }
 
+  /**
+   * One repository's catalog, read in <b>one statement</b> — packs and their files together, from
+   * one snapshot.
+   *
+   * <p><b>Why one statement and not two (qits-1823).</b> This used to be two SELECTs, the packs and
+   * then the files, inside one transaction. Postgres runs at READ COMMITTED, where a transaction
+   * does not hold a snapshot: <i>each statement</i> takes its own. So a {@link #commit} landing
+   * between the two reads was half-visible — the pack list from before it, the file list from after
+   * it — and the packs it removed came back with no files at all. That is not a harmless race on a
+   * DFS repository, because refs are a reftable stack and <i>any</i> ref update may compact its top
+   * ({@code DfsReftableBatchRefUpdate.compactTopOfStack}): one commit that adds the compacted table
+   * and removes the tables it replaced. A reader caught in the middle saw neither — the removed
+   * tables without a {@code REFTABLE} extension, which {@code DfsObjDatabase.scanPacks} drops
+   * silently, and not yet the compacted one — and resolved refs from the lower tables alone. Live,
+   * that read {@code refs/heads/main} as a commit two days old, one second after a push.
+   *
+   * <p>A single statement is the snapshot by construction, at any isolation level, and needs no
+   * relationship between the entities: an ad-hoc entity join on the shared key. It is a <b>left</b>
+   * join so a pack with no file rows still reads back as a pack with no files, exactly as before;
+   * {@code f} is then {@code null} on its one row. Raising the isolation to REPEATABLE READ for two
+   * statements would have closed the race too, but as a property of the transaction rather than of
+   * the read, which is one more thing a later refactor of {@link #list} could quietly lose.
+   *
+   * <p>Pack order is the database's, as it always was; the map only folds the join's rows back into
+   * one description per pack.
+   */
   private List<PackDescription> read(String repositoryId) {
-    List<GitPack> packs = GitPack.list("repositoryId", repositoryId);
-    if (packs.isEmpty()) {
+    List<Object[]> rows =
+        GitPack.getEntityManager()
+            .createQuery(
+                "select p, f from GitPack p left join GitPackFile f"
+                    + " on f.repositoryId = p.repositoryId and f.packName = p.packName"
+                    + " where p.repositoryId = :repositoryId",
+                Object[].class)
+            .setParameter("repositoryId", repositoryId)
+            .getResultList();
+    if (rows.isEmpty()) {
       // An unknown repository has no packs. That is an empty list rather than an error, and it is
       // how a repository that has never been pushed to reads.
       return List.of();
     }
-    List<GitPackFile> files = GitPackFile.list("repositoryId", repositoryId);
-    List<PackDescription> descriptions = new ArrayList<>(packs.size());
-    for (GitPack pack : packs) {
-      List<PackFile> packFiles = new ArrayList<>(2);
-      for (GitPackFile file : files) {
-        if (file.packName.equals(pack.packName)) {
-          packFiles.add(new PackFile(file.extension, file.blobId, file.size, file.blockSize));
-        }
+    Map<String, GitPack> packs = new LinkedHashMap<>();
+    Map<String, List<PackFile>> files = new HashMap<>();
+    for (Object[] row : rows) {
+      GitPack pack = (GitPack) row[0];
+      packs.putIfAbsent(pack.packName, pack);
+      List<PackFile> packFiles = files.computeIfAbsent(pack.packName, name -> new ArrayList<>(2));
+      if (row[1] instanceof GitPackFile file) {
+        packFiles.add(new PackFile(file.extension, file.blobId, file.size, file.blockSize));
       }
+    }
+    List<PackDescription> descriptions = new ArrayList<>(packs.size());
+    for (GitPack pack : packs.values()) {
       descriptions.add(
           new PackDescription(
               pack.packName,
@@ -210,7 +250,7 @@ public class CatalogRepository implements PackCatalog {
               pack.minUpdateIndex,
               pack.maxUpdateIndex,
               pack.indexVersion,
-              packFiles));
+              files.get(pack.packName)));
     }
     return descriptions;
   }
