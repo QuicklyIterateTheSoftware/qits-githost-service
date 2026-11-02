@@ -2,6 +2,7 @@ package eu.wohlben.qits.githost;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -35,9 +36,10 @@ import org.junit.jupiter.api.Test;
  *       per-request check that went with that lookup is brought back for it (see this file's
  *       history).
  *   <li><b>What the libraries send for it.</b> quarkus-oidc's reads follow from
- *       application.properties: an enabled tenant needs the JWKS row, discovery enabled would need a
- *       discovery row, and a {@code quarkus-oidc-client} on the classpath (a token mint) would need
- *       a token row.
+ *       application.properties: an enabled tenant needs the JWKS row, discovery enabled (what
+ *       ships, qits-708) needs the discovery row, an issuer pinned in configuration is refused —
+ *       discovery publishes it — and a {@code quarkus-oidc-client} on the classpath (a token
+ *       mint) would need a token row.
  * </ol>
  *
  * <p><b>Named exclusions</b>, and only these: the qits-eventstream library's publish ({@code PUT
@@ -97,6 +99,9 @@ class ConsumerGuardTest {
         IdpConsumerPactTest.PACT.rows().stream()
             .map(GoldenInteraction::operationId)
             .collect(Collectors.toCollection(TreeSet::new));
+    assertNull(
+        properties.getProperty("quarkus.oidc.token.issuer"),
+        "the issuer is never configuration: discovery publishes it (qits-730, qits-708)");
     if (Boolean.parseBoolean(properties.getProperty("quarkus.oidc.tenant-enabled", "true"))) {
       assertTrue(rowed.contains("getJwks"), "the tenant reads the JWKS: row getJwks");
       if (Boolean.parseBoolean(properties.getProperty("quarkus.oidc.discovery-enabled", "true"))) {

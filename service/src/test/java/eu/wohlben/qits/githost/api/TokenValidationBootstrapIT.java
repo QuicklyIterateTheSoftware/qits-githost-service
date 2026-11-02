@@ -29,9 +29,10 @@ import org.junit.jupiter.api.TestMethodOrder;
 /**
  * The whole service as it is <b>packaged</b> — like the idp's {@code IdpPackagedSurfaceIT}, but
  * with the OIDC tenant <b>on</b>, which no {@code @QuarkusTest} here can prove: {@code %test}
- * disables the tenant outright, so the shipped {@code quarkus.oidc.*} block (auth-server-url +
- * jwks-path against a real listener, audience enforcement, groups→roles mapping) is exercised
- * nowhere else. The far side is {@link MockIdp}, whose recordings make the interaction assertable
+ * disables the tenant outright (only {@code BearerIssuerTest}, the in-JVM issuer pin of qits-708,
+ * turns it back on), so the shipped {@code quarkus.oidc.*} block (auth-server-url, the discovery
+ * document read from it and the JWKS that document names, against a real listener; audience
+ * enforcement; groups→roles mapping) is exercised on the packaged artifact nowhere else. The far side is {@link MockIdp}, whose recordings make the interaction assertable
  * on <b>both ends</b>.
  *
  * <p>It is also this repo's first <b>userflow</b>, and the {@code authentication} category's whole
@@ -116,7 +117,8 @@ public class TokenValidationBootstrapIT {
       overrides.put("QITS_RESOURCE_EVENTSTREAM_USERNAME", EmbeddedPg.USER);
       overrides.put("QITS_RESOURCE_EVENTSTREAM_PASSWORD", EmbeddedPg.PASSWORD);
       // the one seam this test moves: where the idp is. Runtime key, so the packaged artifact
-      // is otherwise exactly what ships.
+      // is otherwise exactly what ships — discovery on, the issuer and the JWKS address taken from
+      // the mock's discovery document (qits-708).
       overrides.put("quarkus.oidc.auth-server-url", idp.baseUrl());
       // dark outside a deployment, like %dev/%test — both are runtime keys
       overrides.put("quarkus.otel.sdk.disabled", "true");
@@ -172,9 +174,9 @@ public class TokenValidationBootstrapIT {
   @UserStoryDescription(
       """
       A freshly deployed qits-githost must validate service bearers before any caller arrives:
-      at startup it fetches the signing keys (JWKS) from qits-platform-idp — discovery stays
-      off, the path is configured — so the very first `git` request carrying a platform token
-      is accepted.
+      at startup it reads qits-idp's discovery document and fetches the signing keys (JWKS) it
+      names, so the very first `git` request carrying a platform token is judged on the
+      platform's own keys and issuer.
       """)
   @Order(1)
   void serviceBootFetchesJwksAndAcceptsPlatformTokens(Interactions story) {
@@ -186,6 +188,10 @@ public class TokenValidationBootstrapIT {
     // End (a), the idp side: the JWKS was served during startup — before this story presented
     // any token at all. The edge itself is drained from the mock's recording; what is asserted here
     // is that it happened, and the note is the one thing the recording cannot carry — WHEN.
+    assertTrue(
+        idp.recordedRequests().stream()
+            .anyMatch(r -> "/idp/.well-known/openid-configuration".equals(r.path())),
+        "the packaged service never read the idp's discovery document at startup");
     assertTrue(
         idp.recordedRequests().stream().anyMatch(r -> "/idp/jwks".equals(r.path())),
         "the packaged service never fetched /idp/jwks at startup");

@@ -281,8 +281,8 @@ This service is a pact provider, set up the way qits-projects-service is:
   (`ClasspathPactLoader.REQUIRED`), and so does a state a pinned pact names that `ProviderStates`
   does not answer.
 - **This service's own consumer pacts** sit in `pacts/`: against qits-idp (`IdpConsumerPactTest`,
-  the oidc tenant's JWKS read), built from its pinned golden masters. There is none against
-  qits-projects: this service calls it for nothing. `ConsumerGuardTest` fails when a class starts
+  the oidc tenant's discovery read, issuer bound by value, and its JWKS read), built from its
+  pinned golden masters. There is none against qits-projects: this service calls it for nothing. `ConsumerGuardTest` fails when a class starts
   calling out that no pact describes.
 - From the qits-eventstream kit (qits-1163), `EventstreamPactTest` writes this service's pact of the
   outbox publish to qits-events, `pacts/qits-githost-service_qits-eventstream-javalib_qits-events-service.json`.
@@ -655,7 +655,7 @@ artifact, so neither can go stale without the build going red.
 
 | category | story | what it proves |
 | --- | --- | --- |
-| `authentication` | On start, the git host fetches the platform's signing keys | the shipped `quarkus.oidc.*` block against a real listener — the one thing no `@QuarkusTest` here can exercise, since `%test` disables the tenant outright |
+| `authentication` | On start, the git host fetches the platform's signing keys | the shipped `quarkus.oidc.*` block against a real listener — the one thing no `@QuarkusTest` here can exercise, since `%test` disables the tenant outright (`BearerIssuerTest` turns it on in-JVM for the issuer pin, qits-708) |
 | `authentication` | A stranger's token never opens the git host | an unknown key and a wrong audience are both refused at the door |
 | `git` | A developer clones a repository | the PUBLIC clone url serves a real `git clone`, and the clone's HEAD is the commit the origin was given |
 | `git` | A push lands new history | receive-pack moved the ref, and the origin now advertises AND serves what the push carried |
@@ -673,8 +673,8 @@ artifact, so neither can go stale without the build going red.
 for the whole IT phase. That is not a speed optimisation: the git stories' only possible network tap
 is the server's own access log, and one process means one log to attribute.
 
-**One mock stands in for the platform.** `idp.MockIdp` serves the JWKS and mints every bearer a
-story presents — validation is real, and a token minted for another audience is refused by the same
+**One mock stands in for the platform.** `idp.MockIdp` serves the discovery document and the JWKS
+and mints every bearer a story presents — validation is real, and a token minted for another audience is refused by the same
 code path a deployment runs. Its recording is registered as a `NetworkCapture` source, so the far
 half of that diagram is observed on the far side rather than claimed here. Nothing plays
 qits-projects: the fixture states each story repository's name through `PUT /git/<repoId>/names`

@@ -26,11 +26,14 @@ import org.junit.jupiter.api.Test;
  * pacts/qits-githost-service_qits-idp-service.json}: what the quarkus-oidc tenant that validates
  * every bearer reads, the way qits-configuration-service's test of the same name pacts its own.
  *
- * <p><b>One row, the JWKS.</b> application.properties sets {@code
- * quarkus.oidc.discovery-enabled=false} and {@code quarkus.oidc.jwks-path=jwks}, so the tenant never
- * reads the discovery document: it fetches {@code <auth-server-url>/jwks} when it starts (and again
- * on a key it does not know, the same request). {@link ConsumerGuardTest} holds the properties to
- * that, so a tenant that starts discovering fails there until a discovery row is added here.
+ * <p><b>Two rows, the tenant's two startup reads</b> (qits-708). Discovery is on — the default, and
+ * what application.properties ships — so the tenant first reads {@code
+ * <auth-server-url>/.well-known/openid-configuration}, takes from it the {@code issuer} every
+ * bearer's {@code iss} is checked against and the {@code jwks_uri} it then fetches the keys from (and
+ * again on a key it does not know, the same request). The issuer is bound <b>by value</b>: an idp
+ * answering another issuer would refuse every token this service accepts, so its type alone is not
+ * the contract. {@link ConsumerGuardTest} holds the properties to these rows, so turning discovery
+ * off again, or pinning an issuer in configuration, fails there.
  *
  * <p>This service mints no token: it has no {@code quarkus-oidc-client}, and it makes no peer call
  * that would present one — it answers repository names from its own index rather than asking
@@ -47,17 +50,41 @@ class IdpConsumerPactTest {
 
   static final GoldenMasters IDP = GoldenMasters.of("qits-idp-service", "qits-idp");
 
+  /** The quarkus-oidc tenant's startup reads, as qits-idp's consumers trigger them. */
+  static final Trigger STARTUP = Trigger.event("StartupEvent");
+
+  /** The discovery document: the issuer every {@code iss} is checked against, and the keys. */
+  static final GoldenInteraction DISCOVERY =
+      GoldenInteraction.of(STARTUP, STATE, "getOpenIdConfiguration")
+          .consumes("issuer", "jwks_uri", "token_endpoint")
+          .exact("issuer");
+
   static final GoldenInteraction JWKS =
-      GoldenInteraction.of(Trigger.event("StartupEvent"), STATE, "getJwks")
+      GoldenInteraction.of(STARTUP, STATE, "getJwks")
           .consumes("keys[].kid", "keys[].kty", "keys[].n", "keys[].e", "keys[].alg", "keys[].use");
 
   /** This repository, as every pact names its consumer. */
   static final String CONSUMER = "qits-githost-service";
 
-  static final ConsumerPact PACT = ConsumerPact.of(CONSUMER, IDP, JWKS);
+  static final ConsumerPact PACT = ConsumerPact.of(CONSUMER, IDP, DISCOVERY, JWKS);
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final HttpClient HTTP = HttpClient.newHttpClient();
+
+  @Test
+  void readsTheDiscoveryDocument() {
+    PACT.run(
+        DISCOVERY,
+        (url, recorded) -> {
+          JsonNode document = get(url + recorded.examplePath());
+          assertEquals(
+              IDP.json(STATE, "getOpenIdConfiguration").path("issuer").asText(),
+              document.path("issuer").asText(),
+              "the issuer every bearer's iss is checked against");
+          URI.create(document.path("jwks_uri").asText());
+          URI.create(document.path("token_endpoint").asText());
+        });
+  }
 
   @Test
   void readsTheSigningKeys() {
