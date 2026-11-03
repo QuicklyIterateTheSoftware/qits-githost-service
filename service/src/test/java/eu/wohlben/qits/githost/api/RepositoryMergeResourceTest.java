@@ -850,6 +850,101 @@ public class RepositoryMergeResourceTest {
     assertThat(blob(clone, merged.getString("sha"), "a.txt"), is("a\n"));
   }
 
+  /**
+   * qits-1850: {@code feature/left} and {@code feature/right} with TWO merge bases. Each is its own
+   * merge of {@code main} with {@code feature/x} — the two folds of one release request that each
+   * carried a separate merge of main and an epic — with one more commit on top writing {@code path}.
+   * {@code main} and {@code feature/x} both moved since they forked, so neither base contains the
+   * other and the recursive merger has to synthesise a virtual base commit from the two: one that
+   * lives in memory only and was never written into the repository.
+   */
+  private String seedCrissCross(String path, String base, String left, String right)
+      throws Exception {
+    String repoId = UUID.randomUUID().toString();
+    repositories.create(repoId, "main");
+    Path work = Files.createTempDirectory("qits-merge-criss-cross");
+    git(work, "init", "-q", "-b", "main", ".");
+    write(work, path, base);
+    commit(work, "base");
+    git(work, "checkout", "-q", "-b", "feature/x", "main");
+    write(work, "x.txt", "x\n");
+    commit(work, "x");
+    git(work, "checkout", "-q", "main");
+    write(work, "main.txt", "main\n");
+    commit(work, "main moves on");
+    git(work, "checkout", "-q", "-b", "feature/left", "main");
+    git(work, "-c", "user.email=qits@local", "-c", "user.name=qits",
+        "merge", "-q", "--no-ff", "-m", "left merges x", "feature/x");
+    write(work, path, left);
+    commit(work, "left");
+    git(work, "checkout", "-q", "-b", "feature/right", "feature/x");
+    git(work, "-c", "user.email=qits@local", "-c", "user.name=qits",
+        "merge", "-q", "--no-ff", "-m", "right merges main", "main");
+    write(work, path, right);
+    commit(work, "right");
+    // The premise, checked rather than assumed: two bases, or this test proves nothing.
+    assertThat(
+        git(work, "merge-base", "--all", "feature/left", "feature/right").trim().split("\n").length,
+        is(2));
+    git(work, "checkout", "-q", "main");
+    push(work, repoId, "main", "feature/x", "feature/left", "feature/right");
+    return repoId;
+  }
+
+  @Test
+  public void aVersionBumpAcrossTwoMergeBasesIsDecidedByTheRule() throws Exception {
+    // qits-1850: the fold of qits-projects-service-rr-427 met exactly this, and answered 500 for
+    // good — the side reading parsed the merger's virtual base as if it were in the repository.
+    String repo =
+        seedCrissCross(
+            "pom.xml",
+            pom("demo", "2026.1005.191755", "1.4.0"),
+            pom("demo", "2026.1006.55511", "1.4.0"),
+            pom("demo", "2026.1006.64435", "1.4.0"));
+    JsonPath merged =
+        merge(repo, pinned(request("refs/heads/release/v13", "feature/left", "feature/right")))
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath();
+    assertThat(merged.getString("outcome"), is("merged"));
+    assertThat(merged.getList("resolved", String.class), contains("pom.xml"));
+    assertThat(merged.getList("resolvedVersions.chosen", String.class), contains("2026.1006.64435"));
+    Path clone = clone(repo);
+    assertThat(
+        merged.getList("parents", String.class),
+        is(
+            List.of(
+                remoteSha(repo, "refs/heads/feature/left"),
+                remoteSha(repo, "refs/heads/feature/right"))));
+    assertThat(
+        blob(clone, merged.getString("sha"), "pom.xml"),
+        is(pom("demo", "2026.1006.64435", "1.4.0")));
+    assertThat(blob(clone, merged.getString("sha"), "x.txt"), is("x\n"));
+    assertThat(blob(clone, merged.getString("sha"), "main.txt"), is("main\n"));
+  }
+
+  @Test
+  public void aConflictAcrossTwoMergeBasesIsTheOrdinaryConflict() throws Exception {
+    // qits-1850: the same history with a real content conflict is the caller's 409, with all three
+    // sides described — base being the virtual base's blob — whether or not a rule was asked for.
+    String repo = seedCrissCross("shared.txt", "base\n", "left\n", "right\n");
+    for (Map<String, Object> body :
+        List.of(
+            request("refs/heads/release/v14", "feature/left", "feature/right"),
+            pinned(request("refs/heads/release/v14", "feature/left", "feature/right")))) {
+      JsonPath conflict = merge(repo, body).then().statusCode(409).extract().jsonPath();
+      assertThat(conflict.getString("error"), is("merge-conflict"));
+      assertThat(conflict.getList("conflicts.path", String.class), contains("shared.txt"));
+      assertThat(conflict.getList("conflicts.head", String.class), contains("feature/right"));
+      assertThat(conflict.getList("conflicts.kind", String.class), contains("file"));
+      assertThat(
+          conflict.getList("conflicts.base", String.class),
+          contains(git(clone(repo), "rev-parse", "main:shared.txt").trim()));
+    }
+    assertThat(remoteSha(repo, "refs/heads/release/v14"), is(nullSha()));
+  }
+
   @Test
   public void twoBumpsOfADockerfileFromTagFoldToTheNewerOnes() throws Exception {
     // The pins qits-maintenance bumps in a Dockerfile are FROM tags. The registry's port is not one,

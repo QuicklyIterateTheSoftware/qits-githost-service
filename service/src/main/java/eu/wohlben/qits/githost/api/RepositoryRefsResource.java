@@ -51,6 +51,7 @@ import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.TagBuilder;
 import org.eclipse.jgit.merge.MergeStrategy;
+import org.eclipse.jgit.merge.RecursiveMerger;
 import org.eclipse.jgit.merge.ResolveMerger;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
@@ -602,6 +603,52 @@ public class RepositoryRefsResource {
   private record Head(String spelling, RevCommit commit) {}
 
   /**
+   * {@link MergeStrategy#RECURSIVE}'s in-core merger, exactly — {@code StrategyRecursive} answers
+   * {@code new RecursiveMerger(repo, true)} and nothing more — that also keeps the TREE of the base
+   * it merged against, for {@link #sidesOf} to read the base side from.
+   *
+   * <p>qits-1850: the base used to be read back as {@code walk.parseCommit(getBaseCommitId())}, and
+   * that only works when the two heads have one merge base. With two or more (a criss-cross: two
+   * folds that each carry their own merge of main and an epic, and a commit on top of each), the
+   * recursive merger merges the bases into a VIRTUAL base commit that it builds in memory and never
+   * inserts. Its id names nothing in the repository, the parse threw {@link MissingObjectException},
+   * and a conflict the version-pin rule would have settled — or a plain one the caller should have
+   * seen as a 409 — answered 500 instead, for every re-fold, for good.
+   *
+   * <p>The virtual base's TREE, unlike its commit, is real: the merger writes it through its object
+   * inserter, which is the fold's shared one, so the fold's reader (that inserter's own) reads it
+   * back unflushed, and it is discarded with everything else the fold wrote. Keeping the tree the
+   * merge actually used is also what keeps the side reading honest, rather than a fallback to one of
+   * the real bases: "base" is what decides which side changed a path, and the directed fold must
+   * judge that against the same three sides git merged, or a path one base has and the other lacks
+   * reads as a change git never saw.
+   *
+   * <p>Only the two-argument {@code getBaseCommit} is captured: it is the top-level call {@code
+   * ThreeWayMerger.mergeBase} makes once per merge; the recursion over the bases themselves goes
+   * through the three-argument one and must not overwrite it.
+   */
+  private static final class BaseKeepingMerger extends RecursiveMerger {
+    private ObjectId baseTree;
+
+    BaseKeepingMerger(Repository repo) {
+      super(repo, true);
+    }
+
+    @Override
+    protected RevCommit getBaseCommit(RevCommit a, RevCommit b) throws IOException {
+      RevCommit base = super.getBaseCommit(a, b);
+      // null is an unrelated-histories merge, which sidesOf answers with an empty tree.
+      baseTree = base == null ? null : base.getTree().toObjectId();
+      return base;
+    }
+
+    /** The tree of the base this merger merged against, or {@code null} where there was none. */
+    ObjectId baseTree() {
+      return baseTree;
+    }
+  }
+
+  /**
    * The in-core octopus merge.
    *
    * <p><b>The target's own tip is the first head.</b> That is what makes this git's octopus and not
@@ -863,7 +910,7 @@ public class RepositoryRefsResource {
       List<ResolvedVersion> resolvedVersions = new ArrayList<>();
       for (int i = 1; i < effective.size(); i++) {
         Head next = effective.get(i);
-        ResolveMerger merger = (ResolveMerger) MergeStrategy.RECURSIVE.newMerger(repo, true);
+        BaseKeepingMerger merger = new BaseKeepingMerger(repo);
         // The shared inserter, so every fold reads what the previous one wrote and nothing is
         // flushed until the whole octopus succeeded. It closes the merger's own inserter for us.
         merger.setObjectInserter(inserter);
@@ -890,7 +937,7 @@ public class RepositoryRefsResource {
           // all over again. Identical on both sides is the only rewriting whose result is the
           // caller's answer whatever the three sides held.
           Set<String> disputed = disputedPaths(merger);
-          Map<String, Sides> sides = sidesOf(walk, merger.getBaseCommitId(), accumulator, theirs, disputed);
+          Map<String, Sides> sides = sidesOf(walk, merger.baseTree(), accumulator, theirs, disputed);
           Map<String, String> applies = new TreeMap<>();
           for (String path : disputed) {
             String pin = directed.get(path);
@@ -976,7 +1023,7 @@ public class RepositoryRefsResource {
           RevCommit directedTheirs =
               directedHead(
                   inserter, reader, walk, person, theirs, applies, rewritten, next.spelling());
-          ResolveMerger retry = (ResolveMerger) MergeStrategy.RECURSIVE.newMerger(repo, true);
+          BaseKeepingMerger retry = new BaseKeepingMerger(repo);
           retry.setObjectInserter(inserter);
           retry.setCommitNames(new String[] {"BASE", target, next.spelling()});
           if (!retry.merge(false, directedOurs, directedTheirs)) {
@@ -1698,7 +1745,7 @@ public class RepositoryRefsResource {
    * step; a path absent from it reports {@code declined} {@code null}.
    */
   private static List<ConflictedPath> conflictsOf(
-      ResolveMerger merger,
+      BaseKeepingMerger merger,
       RevWalk walk,
       RevCommit ours,
       RevCommit theirs,
@@ -1712,7 +1759,7 @@ public class RepositoryRefsResource {
     if (only != null) {
       reported.retainAll(only);
     }
-    Map<String, Sides> sides = sidesOf(walk, merger.getBaseCommitId(), ours, theirs, reported);
+    Map<String, Sides> sides = sidesOf(walk, merger.baseTree(), ours, theirs, reported);
     List<ConflictedPath> conflicts = new ArrayList<>();
     for (String path : paths) {
       if (reported.contains(path)) {
@@ -1782,12 +1829,16 @@ public class RepositoryRefsResource {
    * spelling of it: every {@code base} comes back null because there genuinely is no common ancestor
    * to hold anything, which is what the caller needs to know rather than an error.
    *
+   * <p>{@code baseTree} is a TREE, never a commit to parse: across two merge bases the base is the
+   * recursive merger's virtual commit, which exists nowhere but in that merger (qits-1850, {@link
+   * BaseKeepingMerger}).
+   *
    * <p>The gitlink test asks all three sides because a submodule added on one side and absent on
    * another is still a submodule conflict — the caller deciding whether it may direct this needs
    * git's reading of the entry, not the reading of whichever side happens to have it.
    */
   private static Map<String, Sides> sidesOf(
-      RevWalk walk, ObjectId baseCommit, RevCommit ours, RevCommit theirs, Set<String> paths)
+      RevWalk walk, ObjectId baseTree, RevCommit ours, RevCommit theirs, Set<String> paths)
       throws IOException {
     Map<String, Sides> sides = new LinkedHashMap<>();
     if (paths.isEmpty()) {
@@ -1795,10 +1846,10 @@ public class RepositoryRefsResource {
     }
     ObjectReader reader = walk.getObjectReader();
     try (TreeWalk tree = new TreeWalk(reader)) {
-      if (baseCommit == null) {
+      if (baseTree == null) {
         tree.addTree(new EmptyTreeIterator());
       } else {
-        tree.addTree(walk.parseCommit(baseCommit).getTree());
+        tree.addTree(baseTree);
       }
       tree.addTree(ours.getTree());
       tree.addTree(theirs.getTree());
