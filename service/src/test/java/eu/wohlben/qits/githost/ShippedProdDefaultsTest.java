@@ -67,6 +67,34 @@ class ShippedProdDefaultsTest {
         config.getValue("qits.observability.url", String.class));
   }
 
+  /**
+   * The qits client's idp address, where the deployer injected no {@code QITS_RESOURCE_IDP_URL}:
+   * the idp through the edge, composed from {@code QITS_DOMAIN} — never the {@code <env>-qits-idp}
+   * wire alias (owner ruling on qits-533, qits-1330).
+   */
+  @Test
+  void theQitsClientFallsBackToTheIdpThroughTheEdge() {
+    SmallRyeConfig config =
+        shipped("prod", Map.of("QITS_ENVIRONMENT", "dev", "QITS_DOMAIN", "example.test"));
+    assertEquals(
+        "https://idp.qits.example.test/idp",
+        config.getValue("quarkus.oidc-client.qits.auth-server-url", String.class));
+  }
+
+  @Test
+  void theDeployersIdpAddressWinsOverTheFallback() {
+    SmallRyeConfig config =
+        shipped(
+            "prod",
+            Map.of(
+                "QITS_ENVIRONMENT", "dev",
+                "QITS_DOMAIN", "example.test",
+                "QITS_RESOURCE_IDP_URL", "https://idp.qits.elsewhere.test/idp"));
+    assertEquals(
+        "https://idp.qits.elsewhere.test/idp",
+        config.getValue("quarkus.oidc-client.qits.auth-server-url", String.class));
+  }
+
   @Test
   void theStorageClientFollowsTheEnvironment() {
     SmallRyeConfig config = shipped("prod", Map.of("QITS_ENVIRONMENT", "prod"));
