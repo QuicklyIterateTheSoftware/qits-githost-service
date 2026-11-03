@@ -57,7 +57,7 @@
              libs/qits-eventstream into the platform Maven repository — the same place the blob
              store above and qits-db-core below come from, and why the <repositories> block below
              exists: none of the three is on Maven Central or built in this reactor. -->
-        <qits.eventstream.version>2026.1031.131702</qits.eventstream.version>
+        <qits.eventstream.version>2026.1103.140652</qits.eventstream.version>
         <!-- Shared OIDC and forwarded-header authentication. -->
         <qits.integrations-quarkus.version>2026.1031.63225</qits.integrations-quarkus.version>
         <!-- qits-http-core, pinned with its OWN property rather than riding
@@ -138,7 +138,7 @@
         <qits.deployments-service-pacts-qits-githost-service.version>2026.1031.45509</qits.deployments-service-pacts-qits-githost-service.version>
         <qits.maintenance-service-pacts-qits-githost-service.version>2026.1021.154504</qits.maintenance-service-pacts-qits-githost-service.version>
         <qits.ci-frontend-pacts-qits-githost-service.version>2026.1021.191659</qits.ci-frontend-pacts-qits-githost-service.version>
-        <qits.projects-frontend-pacts-qits-githost-service.version>2026.1021.193038</qits.projects-frontend-pacts-qits-githost-service.version>
+        <qits.projects-frontend-pacts-qits-githost-service.version>2026.1103.141410</qits.projects-frontend-pacts-qits-githost-service.version>
 
         <!-- Quinoa is a Quarkiverse extension: not in quarkus-bom either, and its version does NOT
              track the platform's. 2.8.2 is built against Quarkus 3.27.3 LTS — older than the 3.34.6
