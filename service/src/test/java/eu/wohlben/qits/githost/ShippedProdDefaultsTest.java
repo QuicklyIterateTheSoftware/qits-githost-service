@@ -64,9 +64,6 @@ class ShippedProdDefaultsTest {
     assertEquals(
         "true", config.getValue("qits.repositories.git.protect-default-branch", String.class));
     assertEquals("true", config.getValue("qits.auth.machine.required", String.class));
-    assertEquals(
-        "http://dev-qits-observability:8080",
-        config.getValue("qits.observability.url", String.class));
   }
 
   /**
