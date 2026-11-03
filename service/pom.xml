@@ -383,6 +383,13 @@
                         <quarkus.http.test-port>0</quarkus.http.test-port>
                         <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
                     </systemPropertyVariables>
+                    <environmentVariables>
+                        <!-- QITS_DOMAIN carries no default (qits-1421) and the LAUNCHED packaged
+                             artifact reads no test resource, so without it the process refuses to
+                             boot. Never dialled: each story profile points auth-server-url at its
+                             own mock idp. -->
+                        <QITS_DOMAIN>wohlben.eu</QITS_DOMAIN>
+                    </environmentVariables>
                 </configuration>
             </plugin>
             <plugin>

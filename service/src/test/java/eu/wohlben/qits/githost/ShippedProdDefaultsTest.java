@@ -2,6 +2,7 @@ package eu.wohlben.qits.githost;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.smallrye.config.EnvConfigSource;
@@ -14,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -79,6 +81,30 @@ class ShippedProdDefaultsTest {
     assertEquals(
         "https://idp.qits.example.test/idp",
         config.getValue("quarkus.oidc-client.qits.auth-server-url", String.class));
+  }
+
+  /**
+   * The tenant that validates every bearer reads the idp at its edge host, composed from {@code
+   * QITS_DOMAIN} — never the {@code <env>-qits-idp} wire alias (qits-1421, feature qits-1406).
+   */
+  @Test
+  void theTenantReadsTheIdpThroughTheEdge() {
+    SmallRyeConfig config =
+        shipped("prod", Map.of("QITS_ENVIRONMENT", "dev", "QITS_DOMAIN", "example.test"));
+    assertEquals(
+        "https://idp.qits.example.test/idp",
+        config.getValue("quarkus.oidc.auth-server-url", String.class));
+  }
+
+  /** No domain, no idp address: the expression has no fallback, so the process cannot start. */
+  @Test
+  void withoutADomainNeitherIdpAddressResolves() {
+    SmallRyeConfig config = shipped("prod", Map.of("QITS_ENVIRONMENT", "dev"));
+    for (String key :
+        List.of("quarkus.oidc.auth-server-url", "quarkus.oidc-client.qits.auth-server-url")) {
+      assertThrows(
+          NoSuchElementException.class, () -> config.getValue(key, String.class), key);
+    }
   }
 
   @Test
