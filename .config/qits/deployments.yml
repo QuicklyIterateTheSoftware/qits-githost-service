@@ -66,7 +66,15 @@ navigation-entries: system.Githost:5, services.details.Code:4, daemons.details.C
 #
 # It NAMES its database, and has to: the default is derived from the application, so both entries
 # would otherwise have asked for qits_githost and the parser refuses that after resolution.
-resources: postgresql:db, postgresql:eventstream:qits_githost_eventstream
+#
+# idp:client ASKS QITS-DEPLOYMENTS TO PROVISION THIS APPLICATION'S OWN QITS-IDP SERVICE CLIENT — id
+# `<env>-qits-githost` (derived from env + application), roles fixed in qits-idp code. The deployer
+# stores the secret the way it stores a database password, and injects QITS_RESOURCE_IDP_URL,
+# QITS_RESOURCE_IDP_CLIENT_ID and QITS_RESOURCE_IDP_CLIENT_SECRET, which the `qits` oidc client in
+# application.properties reads (qits-1330; epic qits-543, dossier page "Plan (as of 2026-09-13)").
+# It is the bearer the qits-eventstream library's calls carry once they stop sending an
+# X-Qits-User / X-Qits-Roles pair (qits-1328).
+resources: postgresql:db, postgresql:eventstream:qits_githost_eventstream, idp:client
 
 # THE PROBE THE DEPLOY GATES ON. It is the derived default — /githost/q/health/ready, the repository
 # name minus `qits-` — and it is spelled out anyway, because it was NOT the default for most of this

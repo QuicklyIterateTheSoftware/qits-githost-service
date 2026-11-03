@@ -88,6 +88,14 @@
             <artifactId>quarkus-oidc</artifactId>
         </dependency>
         <dependency>
+            <!-- The token this service PRESENTS (qits-1330): the named client `qits`, its own
+                 qits-idp service client by client credentials, configured in
+                 application.properties from the deployer's idp:client resource. The qits-eventstream
+                 library asks it for the bearer its calls carry (qits-1328). -->
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-oidc-client</artifactId>
+        </dependency>
+        <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-hibernate-orm-panache</artifactId>
         </dependency>

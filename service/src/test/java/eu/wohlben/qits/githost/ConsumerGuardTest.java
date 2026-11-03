@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 
 import eu.wohlben.qits.pact.consumer.GoldenInteraction;
 import java.io.IOException;
@@ -38,8 +37,8 @@ import org.junit.jupiter.api.Test;
  *   <li><b>What the libraries send for it.</b> quarkus-oidc's reads follow from
  *       application.properties: an enabled tenant needs the JWKS row, discovery enabled (what
  *       ships, qits-708) needs the discovery row, an issuer pinned in configuration is refused —
- *       discovery publishes it — and a {@code quarkus-oidc-client} on the classpath (a token
- *       mint) would need a token row.
+ *       discovery publishes it — and the {@code quarkus-oidc-client} named {@code qits} (the
+ *       token this service presents, qits-1330) needs the token row.
  * </ol>
  *
  * <p><b>Named exclusions</b>, and only these: the qits-eventstream library's publish ({@code PUT
@@ -114,18 +113,40 @@ class ConsumerGuardTest {
             "discovery is off, so the tenant never reads the discovery document: drop its row");
       }
     }
-    assertEquals(
-        Set.of(),
+  }
+
+  /**
+   * The one token mint this service makes is the named client {@code qits} (qits-1330), and it is
+   * rowed: {@code issueToken} in {@link IdpConsumerPactTest}, run through the real client by {@link
+   * IdpTokenMintPactTest}. Any other client name would be a second identity nobody pacted.
+   */
+  @Test
+  void theQitsClientIsTheOnlyMintAndItIsRowed() throws Exception {
+    Properties properties = new Properties();
+    try (InputStream in = Files.newInputStream(mainClasses().resolve("application.properties"))) {
+      properties.load(in);
+    }
+    Class.forName("io.quarkus.oidc.client.OidcClient");
+    Set<String> clientKeys =
         properties.stringPropertyNames().stream()
             .filter(name -> name.startsWith("quarkus.oidc-client."))
+            .collect(Collectors.toCollection(TreeSet::new));
+    assertFalse(clientKeys.isEmpty(), "the qits client is configured in application.properties");
+    assertEquals(
+        Set.of(),
+        clientKeys.stream()
+            .filter(name -> !name.startsWith("quarkus.oidc-client.qits."))
             .collect(Collectors.toSet()),
-        "a quarkus-oidc-client mints tokens at qits-idp: row POST /idp/token in IdpConsumerPactTest");
-    try {
-      Class.forName("io.quarkus.oidc.client.OidcClient");
-      fail("quarkus-oidc-client is on the classpath: row its POST /idp/token in IdpConsumerPactTest");
-    } catch (ClassNotFoundException expected) {
-      // no token mint: nothing to row
-    }
+        "only the named client `qits` mints tokens here");
+    assertEquals("client", properties.getProperty("quarkus.oidc-client.qits.grant.type"));
+    assertEquals(
+        "qits-platform",
+        properties.getProperty("quarkus.oidc-client.qits.grant-options.client.audience"));
+    assertEquals("token", properties.getProperty("quarkus.oidc-client.qits.token-path"));
+    assertTrue(
+        IdpConsumerPactTest.PACT.rows().stream()
+            .anyMatch(row -> row.operationId().equals("issueToken")),
+        "the qits client mints at qits-idp: row POST /idp/token (issueToken) in IdpConsumerPactTest");
   }
 
   /** The main classes that reference an HTTP client type, by class name (nested ones folded in). */

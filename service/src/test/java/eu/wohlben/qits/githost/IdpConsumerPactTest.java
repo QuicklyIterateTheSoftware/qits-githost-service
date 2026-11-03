@@ -35,9 +35,13 @@ import org.junit.jupiter.api.Test;
  * the contract. {@link ConsumerGuardTest} holds the properties to these rows, so turning discovery
  * off again, or pinning an issuer in configuration, fails there.
  *
- * <p>This service mints no token: it has no {@code quarkus-oidc-client}, and it makes no peer call
- * that would present one — it answers repository names from its own index rather than asking
- * qits-projects (qits-1215).
+ * <p><b>And the token this service presents</b> (qits-1330): the client-credentials mint of the
+ * named client {@code qits} — {@code POST /idp/token} with HTTP Basic, {@code
+ * grant_type=client_credentials} and {@code audience=qits-platform} — recorded by qits-idp as {@code
+ * issueToken} in {@value #A_SERVICE_CLIENT_CALLING_ITS_PEERS}. No class of this source tree spends
+ * the token: the qits-eventstream library's calls do, asking {@code OidcClients} for {@code qits}
+ * (qits-1328), so that is the row's trigger. {@link IdpTokenMintPactTest} runs it through the real
+ * oidc client, because the client only exists inside the application.
  */
 class IdpConsumerPactTest {
 
@@ -59,6 +63,21 @@ class IdpConsumerPactTest {
           .consumes("issuer", "jwks_uri", "token_endpoint")
           .exact("issuer");
 
+  /** The qits-idp state that records the client-credentials mint of a service client. */
+  static final String A_SERVICE_CLIENT_CALLING_ITS_PEERS = "a service client calling its peers";
+
+  /**
+   * The mint, caused by whichever qits-eventstream call needs a bearer first (qits-1328): the
+   * subscriber's stream, the publisher's PUT or the query's read.
+   */
+  static final GoldenInteraction MINT =
+      GoldenInteraction.of(
+              Trigger.of("call", "call", "qits-eventstream (subscriber, publisher, query)"),
+              A_SERVICE_CLIENT_CALLING_ITS_PEERS,
+              "issueToken")
+          .header("Authorization", "{authorization}")
+          .consumes("access_token", "expires_in");
+
   static final GoldenInteraction JWKS =
       GoldenInteraction.of(STARTUP, STATE, "getJwks")
           .consumes("keys[].kid", "keys[].kty", "keys[].n", "keys[].e", "keys[].alg", "keys[].use");
@@ -66,7 +85,7 @@ class IdpConsumerPactTest {
   /** This repository, as every pact names its consumer. */
   static final String CONSUMER = "qits-githost-service";
 
-  static final ConsumerPact PACT = ConsumerPact.of(CONSUMER, IDP, DISCOVERY, JWKS);
+  static final ConsumerPact PACT = ConsumerPact.of(CONSUMER, IDP, MINT, DISCOVERY, JWKS);
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final HttpClient HTTP = HttpClient.newHttpClient();

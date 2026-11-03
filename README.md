@@ -588,6 +588,7 @@ lineage, the retry budget). What this service owns is in
 |---|---|
 | `QITS_RESOURCE_DB_URL` / `_USERNAME` / `_PASSWORD` | This service's PostgreSQL database (pack catalog, protection overrides, commit-subject bypass records). No defaults — an unset variable fails the boot. |
 | `QITS_RESOURCE_EVENTSTREAM_URL` / `_USERNAME` / `_PASSWORD` | The outbox's own database, from the qits-eventstream jar. |
+| `QITS_RESOURCE_IDP_URL` / `_CLIENT_ID` / `_CLIENT_SECRET` | This service's own qits-idp service client, from the `idp:client` resource: the `qits` oidc client (`quarkus.oidc-client.qits`) mints its `qits:system` bearer from them by client credentials. The id defaults to `dev-qits-githost`, the secret to empty — a token request is then refused. Off under `%dev` and `%test`. |
 | `QITS_EVENTS_URL` | Where qits-events answers. Scheme, host and port, no path. |
 | `QITS_GITHOST_STORAGE_CLIENT` | The client id whose self-role (`clients/<value>`) opens the id-addressed scheme. Set it to qits-projects' service client and nothing else opens those routes — not `qits:admin`, not `qits:system`. Unset (shipped) leaves the scheme exactly as it was. |
 | `QITS_REPOSITORIES_GIT_PROTECT_DEFAULT_BRANCH` | The default branch's seatbelt. Ships `false`. |
@@ -634,10 +635,12 @@ boots and serves `/` as a 404.
 
 `.config/qits/deployments.yml` is the deploy answer: **an environment service** — every tier
 runs its own git host, and a released version is deployed into a tier by a Deployment Request, never
-by a branch — with `resources: postgresql:db, postgresql:eventstream:qits_githost_eventstream` and the health gate
+by a branch — with `resources: postgresql:db, postgresql:eventstream:qits_githost_eventstream, idp:client` and the health gate
 at `/githost/q/health/ready`. Those two resource **names** are load-bearing: they are what makes
 `QITS_RESOURCE_DB_*` and `QITS_RESOURCE_EVENTSTREAM_*` exist, and neither triple has a default, so a
-missing one kills the boot at Flyway rather than opening a store nobody meant. **There is no blobs
+missing one kills the boot at Flyway rather than opening a store nobody meant. `idp:client` is this
+application's own qits-idp service client (`<env>-qits-githost`), which qits-deployments provisions
+and whose secret it stores and injects as `QITS_RESOURCE_IDP_*` (qits-1330). **There is no blobs
 volume any more**: the container is stateless except for its two databases, so a deployment still
 mounting one is carrying dead bytes. Deploy this service alone: replacing it blinks the host every
 other repository's build clones from.
