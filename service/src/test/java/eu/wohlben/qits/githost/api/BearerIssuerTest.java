@@ -25,8 +25,7 @@ import org.junit.jupiter.api.Test;
  * <p>The far side is qits-service-mock's {@link MockIdp}: it serves a discovery document whose
  * {@code issuer} is the {@code iss} it mints, and a JWKS at the {@code jwks_uri} that document
  * names. {@code %test} turns the tenant off and opens the git policy, so this profile turns both back
- * to what ships, clears qits-auth-core's synthetic {@code %test} user (otherwise every request is an
- * admin before a bearer is looked at), and points {@code auth-server-url} at the mock — nothing else
+ * to what ships and points {@code auth-server-url} at the mock — nothing else
  * moves, so the tenant under test is the shipped one: discovery, the published issuer, the shipped
  * audience, keys by {@code kid}.
  *
@@ -49,7 +48,7 @@ class BearerIssuerTest {
   /** Another environment's idp address: an issuer this service trusts under no name. */
   private static final String FOREIGN_ISSUER = "http://dev-qits-idp:8080/idp";
 
-  /** The tenant on and pointed at the mock idp, the shipped git policy, no synthetic user. */
+  /** The tenant on and pointed at the mock idp, the shipped git policy. */
   public static class DiscoveringTheMockIdp implements QuarkusTestProfile {
     @Override
     public Map<String, String> getConfigOverrides() {
@@ -57,7 +56,6 @@ class BearerIssuerTest {
       return Map.of(
           "quarkus.oidc.tenant-enabled", "true",
           "qits.auth.machine.required", "true",
-          "qits.auth.forward.dev-user", "",
           "quarkus.http.auth.permission.git.policy", "git",
           "quarkus.oidc.auth-server-url", idp.baseUrl());
     }

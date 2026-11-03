@@ -118,8 +118,8 @@ public class GitHostCommitSubjectTest {
 
     JsonPath body =
         given()
-            .header("X-Qits-User", "dyn-reader")
-            .header("X-Qits-Roles", "qits:agent")
+            .header(
+                TestTokenMechanism.HEADER, TestTokenMechanism.claims("dyn-reader", "qits:agent"))
             .get("/githost/api/repositories/" + repoId + "/commit-subject-bypasses")
             .then()
             .statusCode(200)
@@ -136,8 +136,8 @@ public class GitHostCommitSubjectTest {
     assertEquals(
         1,
         given()
-            .header("X-Qits-User", "dyn-desk-admin")
-            .header("X-Qits-Roles", "qits:desk-admin")
+            .header(
+                TestTokenMechanism.HEADER, TestTokenMechanism.claims("dyn-desk-admin", "qits:desk-admin"))
             .get("/githost/api/repositories/" + repoId + "/commit-subject-bypasses")
             .then()
             .statusCode(200)
@@ -157,8 +157,7 @@ public class GitHostCommitSubjectTest {
 
     assertTrue(
         given()
-            .header("X-Qits-User", "alice")
-            .header("X-Qits-Roles", "qits:admin")
+            .header(TestTokenMechanism.HEADER, TestTokenMechanism.claims("alice", "qits:admin"))
             .get("/githost/api/repositories/" + repoId + "/commit-subject-bypasses")
             .jsonPath()
             .getList("bypasses")

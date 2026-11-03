@@ -153,12 +153,13 @@ epic qits-543, dossier page "Plan (as of 2026-09-13)". The first row that fits d
 |---|---|---|
 | 1 | carries `git_refs` (a JSON array) | only refs that match an entry: the exact ref, or any ref that starts with what precedes the `*` of an entry that ends in `*` (`refs/heads/t-1-*` covers `refs/heads/t-1-fix`, not `refs/heads/t-1`). An empty list pushes nothing. |
 | 2 | carries `git_ref_pattern` (the workstation token), or holds `qits:git:external` | only `refs/heads/external/*`. Any other pattern, or the role without the claim, pushes nothing. |
-| 3 | is a person: a JWT with `credential_type` (the `qits` CLI token), or a browser session from the forwarded `X-Qits-*` headers | only `refs/heads/external/*` |
+| 3 | is a person: a JWT with `credential_type` (the `qits` CLI token) | only `refs/heads/external/*` |
 | 4 | is a client token with none of those claims that holds `qits:system` — a platform service, or a commission that still inherits its owner's roles | anything. The default branch's seatbelt still applies. |
 | 4 | is a client token with none of those claims, without `qits:system` — a `qits:agent` or `qits:ci-run` commission with no list | nothing |
 
 `qits:admin`, `qits:admin-agent` and `qits:system` widen none of rows 1 to 3. A push with no verified identity pushes
-nothing. The bootstrap ingress keeps row 2's check with the pattern it is configured with.
+nothing, and neither does an identity that is not a JWT: the forwarded `X-Qits-*` browser session
+that row 3 used to cover is gone with forward-auth (qits-1338, qits-1364). The bootstrap ingress keeps row 2's check with the pattern it is configured with.
 
 **`qits:desk-admin` never pushes**, whatever `git_refs` it carries (qits-1621). The delivery desk's
 admin token holds `qits:agent` too, which would otherwise fall into row 1 or row 4 above — so this
@@ -778,6 +779,16 @@ git submodule update --init service/src/main/webui
 (cd service/src/main/webui && npm ci)
 ./mvnw -B verify
 ```
+
+**Who a request is, in the suite and in `quarkus:dev`.** Forward-auth and its `%dev`/`%test` dev
+user leave qits-auth-core with qits-1338, and the suite already runs without them (qits-1364): the
+test `application.properties` blanks the dev user and renames the forward headers
+(`%test.qits.auth.forward.*`, which go with qits-1338), so a request that names no caller is
+anonymous. A test names its caller with `TestTokenMechanism`'s `X-Test-Token` — per request
+(`TestTokenMechanism.claims`), per class (`defaultCaller` as REST-assured's default specification),
+or per git client (`gitAs`). `quarkus:dev` needs a bearer for the same reason, for example
+`curl -H "Authorization: Bearer $(qits-token qits-platform)" ...` or the `qits` CLI — with the
+tenant switched back on (`-Dquarkus.oidc.tenant-enabled=true`; the shipped `%dev` turns it off).
 
 `mvn test` alone needs neither node nor the submodule: Quinoa is disabled by default in test mode.
 That is also why no `@QuarkusTest` can prove anything about what `/` serves — only the packaged

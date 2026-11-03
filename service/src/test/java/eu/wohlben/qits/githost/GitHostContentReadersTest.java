@@ -41,7 +41,7 @@ public class GitHostContentReadersTest {
 
   static final String STORAGE_ROLE = "clients/" + STORAGE_CLIENT;
 
-  /** The forwarded-header identity the platform's deployer actually arrives as. */
+  /** The role the platform's deployer arrives with, in its own bearer's groups. */
   static final String SYSTEM_ROLE = "qits:system";
 
   /** The other spelling a reader may take: a peer presenting its own bearer, by self-role. */
@@ -86,7 +86,8 @@ public class GitHostContentReadersTest {
 
   /** See {@link GitHostStorageClientTest#withRoles} for why the identity arrives this way. */
   private static io.restassured.specification.RequestSpecification withRoles(String roles) {
-    return given().header("X-Qits-User", "content-readers-test").header("X-Qits-Roles", roles);
+    return given()
+        .header(TestTokenMechanism.HEADER, TestTokenMechanism.claims("content-readers-test", roles));
   }
 
   private void assertContentReadsAnswer(String roles, int status) {

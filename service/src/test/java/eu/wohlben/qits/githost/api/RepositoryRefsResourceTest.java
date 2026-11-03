@@ -1,7 +1,5 @@
 package eu.wohlben.qits.githost.api;
 
-import eu.wohlben.qits.githost.TestTokenMechanism;
-
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasItem;
@@ -11,8 +9,10 @@ import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
 import eu.wohlben.qits.githost.GitRepositoryProvider;
+import eu.wohlben.qits.githost.TestTokenMechanism;
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.path.json.JsonPath;
 import jakarta.inject.Inject;
@@ -23,6 +23,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -35,6 +37,18 @@ import org.junit.jupiter.api.Test;
  */
 @QuarkusTest
 public class RepositoryRefsResourceTest {
+
+  /** A platform service calling the git primitives: qits:system, named by the test token (qits-1364). */
+  @BeforeEach
+  void nameTheCaller() {
+    RestAssured.requestSpecification =
+        TestTokenMechanism.defaultCaller(TestTokenMechanism.PLATFORM_SERVICE_CLAIMS);
+  }
+
+  @AfterEach
+  void forgetTheCaller() {
+    RestAssured.requestSpecification = null;
+  }
 
   static final String API = "/githost/api/repositories/";
 
@@ -412,8 +426,7 @@ public class RepositoryRefsResourceTest {
   public void aBrowserSessionIsNotAMachineOnAnyOfThem() throws Exception {
     String repo = seed();
     given()
-        .header("X-Qits-User", "a-person")
-        .header("X-Qits-Roles", "qits:admin")
+        .header(TestTokenMechanism.HEADER, TestTokenMechanism.claims("a-person", "qits:admin"))
         .contentType(ContentType.JSON)
         .body(tag("2026.903.150000", "refs/heads/main", "x"))
         .when()
@@ -421,8 +434,7 @@ public class RepositoryRefsResourceTest {
         .then()
         .statusCode(403);
     given()
-        .header("X-Qits-User", "a-person")
-        .header("X-Qits-Roles", "qits:admin")
+        .header(TestTokenMechanism.HEADER, TestTokenMechanism.claims("a-person", "qits:admin"))
         .when()
         .delete(API + repo + "/branches/release/1")
         .then()

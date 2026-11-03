@@ -28,8 +28,8 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
  *       identity has. A JWT with the {@value #EXTERNAL_GIT_ROLE} role and no such claim may push
  *       nothing, as before.
  *   <li>Else it is a person: a JWT with a {@value #CREDENTIAL_TYPE_CLAIM} claim (the {@code qits}
- *       CLI token), or an identity from the forwarded headers (no JWT). A person may push only
- *       {@value #EXTERNAL_BRANCH_PATTERN}, whatever roles the person has.
+ *       CLI token). A person may push only {@value #EXTERNAL_BRANCH_PATTERN}, whatever roles the
+ *       person has.
  *   <li>Else it is a client token that states no scope. If it holds {@value #SYSTEM_ROLE} — a static
  *       platform service, or a commission that still inherits its owner's roles — nothing here
  *       restricts it. Without {@value #SYSTEM_ROLE} (a {@code qits:agent} or {@code qits:ci-run}
@@ -280,9 +280,10 @@ final class RefScopeHook {
       return deskAdmin();
     }
     if (!(identity.getPrincipal() instanceof JsonWebToken jwt)) {
-      // An identity from the forwarded X-Qits-User / X-Qits-Roles headers: a browser session, which
-      // is a person.
-      return person();
+      // Every credential that reaches this service is a verified JWT: the forwarded X-Qits-User /
+      // X-Qits-Roles identity that used to land here as a person is gone with forward-auth
+      // (qits-1338, qits-1364). Anything else is not an identity a scope can be read from.
+      return nothing();
     }
     if (jwt.containsClaim(GIT_REFS_CLAIM)) {
       Scope scope = gitRefs(jwt.getClaim(GIT_REFS_CLAIM));

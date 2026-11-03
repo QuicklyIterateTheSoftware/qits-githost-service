@@ -230,7 +230,7 @@ final class GitHostFixture {
 
   /**
    * {@link #git}, with the client sending {@code headers} instead of the suite's service client. An
-   * empty list sends none: the request then carries the {@code %test} synthetic user, a person.
+   * empty list sends none: the request then carries no identity at all.
    */
   static String gitAs(List<String> headers, Path cwd, String... command) throws Exception {
     Result result = run(cwd, headers, Map.of(), command);

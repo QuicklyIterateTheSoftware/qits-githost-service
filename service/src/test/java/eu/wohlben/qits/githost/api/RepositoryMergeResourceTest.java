@@ -1,7 +1,5 @@
 package eu.wohlben.qits.githost.api;
 
-import eu.wohlben.qits.githost.TestTokenMechanism;
-
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -13,8 +11,10 @@ import static org.hamcrest.Matchers.startsWith;
 
 import eu.wohlben.qits.githost.RepositoryNameSeeder;
 import eu.wohlben.qits.githost.GitRepositoryProvider;
+import eu.wohlben.qits.githost.TestTokenMechanism;
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.path.json.JsonPath;
 import jakarta.inject.Inject;
@@ -25,6 +25,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -41,6 +43,18 @@ import org.junit.jupiter.api.Test;
  */
 @QuarkusTest
 public class RepositoryMergeResourceTest {
+
+  /** A platform service calling the git primitives: qits:system, named by the test token (qits-1364). */
+  @BeforeEach
+  void nameTheCaller() {
+    RestAssured.requestSpecification =
+        TestTokenMechanism.defaultCaller(TestTokenMechanism.PLATFORM_SERVICE_CLAIMS);
+  }
+
+  @AfterEach
+  void forgetTheCaller() {
+    RestAssured.requestSpecification = null;
+  }
 
   static final String API = "/githost/api/repositories/";
 
@@ -976,12 +990,10 @@ public class RepositoryMergeResourceTest {
   @Test
   public void aBrowserSessionIsNotAMachine() throws Exception {
     String repo = seedThreeBranches();
-    // The everyday suite runs as qits-auth-core's synthetic %test identity, which carries both
-    // roles; a present forwarded header outranks it, which is how a caller holding only the
-    // browser role is spelled (the measured idiom — see GitHostStorageClientTest).
+    // A caller holding only the browser role, named by the test token (the measured idiom — see
+    // GitHostStorageClientTest).
     given()
-        .header("X-Qits-User", "a-person")
-        .header("X-Qits-Roles", "qits:admin")
+        .header(TestTokenMechanism.HEADER, TestTokenMechanism.claims("a-person", "qits:admin"))
         .contentType(ContentType.JSON)
         .body(request("refs/heads/release/8", "refs/heads/main"))
         .when()

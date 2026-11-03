@@ -79,17 +79,18 @@ public class GitHostStorageClientTest {
   }
 
   /**
-   * The identity, asserted the way the deployment asserts it: {@code ForwardAuthMechanism} reads
-   * the {@code X-Qits-User}/{@code X-Qits-Roles} pair, and a present header outranks the
-   * {@code %test} dev-user. NOT {@code @TestSecurity}, and that is a measured decision
-   * (2026-08-28): the guard reads the identity off the raw {@code RoutingContext}
+   * The identity, as a JWT with exactly these roles: {@link TestTokenMechanism}'s test token, the
+   * deterministic stand-in for the bearer a caller presents (forward-auth's {@code X-Qits-*} pair,
+   * which this used to send, goes with qits-1338). NOT {@code @TestSecurity}, and that is a
+   * measured decision (2026-08-28): the guard reads the identity off the raw {@code RoutingContext}
    * ({@code rc.user()}), and whether the harness identity reaches that seam proved bimodal per
    * application instance — a run either passed at once or answered 403 for a solid ten seconds of
-   * retries. The real mechanism is deterministic, and it is also simply the truer test: the role
-   * arrives the way qits-idp delivers it.
+   * retries. A real mechanism is deterministic, and it is also simply the truer test: the role
+   * arrives as a token's groups, the way qits-idp delivers it.
    */
   private static io.restassured.specification.RequestSpecification withRoles(String roles) {
-    return given().header("X-Qits-User", "storage-client-test").header("X-Qits-Roles", roles);
+    return given()
+        .header(TestTokenMechanism.HEADER, TestTokenMechanism.claims("storage-client-test", roles));
   }
 
   /**

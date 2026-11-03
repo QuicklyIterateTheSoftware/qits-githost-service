@@ -2,6 +2,7 @@ package eu.wohlben.qits.githost.api;
 
 import static io.restassured.RestAssured.given;
 
+import eu.wohlben.qits.githost.TestTokenMechanism;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.specification.RequestSpecification;
 import java.util.UUID;
@@ -12,8 +13,8 @@ import org.junit.jupiter.api.Test;
  * githost-browse} policy and may read where a branch stands, and every Git primitive still refuses
  * it.
  *
- * <p>Each request names its identity in {@code X-Qits-User} / {@code X-Qits-Roles}, so the {@code
- * %test} dev user does not apply and the identity holds exactly the role sent. The repository does
+ * <p>Each request names its identity with {@link TestTokenMechanism}'s test token, so the identity
+ * holds exactly the role sent. The repository does
  * not exist: a 404 is the resource answering, so the door let the request through.
  */
 @QuarkusTest
@@ -22,7 +23,8 @@ public class AgentReadAccessTest {
   static final String API = "/githost/api/repositories/";
 
   private static RequestSpecification as(String role) {
-    return given().header("X-Qits-User", "dyn-workspace-agent").header("X-Qits-Roles", role);
+    return given()
+        .header(TestTokenMechanism.HEADER, TestTokenMechanism.claims("dyn-workspace-agent", role));
   }
 
   private static RequestSpecification agent() {

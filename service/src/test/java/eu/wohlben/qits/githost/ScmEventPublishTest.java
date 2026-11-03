@@ -15,6 +15,7 @@ import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
+import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -24,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -58,6 +60,18 @@ import org.junit.jupiter.api.Test;
 @QuarkusTest
 @TestProfile(ScmEventPublishTest.BusEnabled.class)
 public class ScmEventPublishTest {
+
+  /** A platform service calling the git primitives: qits:system, named by the test token (qits-1364). */
+  @BeforeEach
+  void nameTheCaller() {
+    RestAssured.requestSpecification =
+        TestTokenMechanism.defaultCaller(TestTokenMechanism.PLATFORM_SERVICE_CLAIMS);
+  }
+
+  @AfterEach
+  void forgetTheCaller() {
+    RestAssured.requestSpecification = null;
+  }
 
   public static class BusEnabled implements QuarkusTestProfile {
     @Override

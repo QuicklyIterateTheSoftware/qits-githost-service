@@ -6,6 +6,10 @@ import io.quarkus.security.identity.request.AuthenticationRequest;
 import io.quarkus.security.runtime.QuarkusSecurityIdentity;
 import io.quarkus.vertx.http.runtime.security.ChallengeData;
 import io.quarkus.vertx.http.runtime.security.HttpAuthenticationMechanism;
+import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.config.HeaderConfig;
+import io.restassured.config.RestAssuredConfig;
+import io.restassured.specification.RequestSpecification;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -23,14 +27,15 @@ import java.util.Set;
  *
  * <p>A request with {@value #HEADER}{@code : <claims as JSON>} is authenticated as a JWT principal
  * with those claims, and its {@code groups} become roles. Arrays arrive as a {@code
- * jakarta.json.JsonArray}, as quarkus-oidc hands them over. A request without the header falls
- * through to qits-auth-core: the forwarded {@code X-Qits-*} headers, else the {@code %test}
- * synthetic user. That user has no JWT, so for a push it is a person ({@link RefScopeHook} rule 3).
+ * jakarta.json.JsonArray}, as quarkus-oidc hands them over. A request without the header carries
+ * no identity: the suite runs without qits-auth-core's forward-auth and its {@code %test} dev user
+ * (qits-1364), so nothing else authenticates it. A REST-assured request names its caller with
+ * {@link #claims}.
  *
- * <p>So the suite's git client presents {@link #SERVICE_CLIENT} by default ({@code GitHostFixture}
- * and the other test helpers): a client token without a scope, with the synthetic user's roles. Its
- * pushes are therefore restricted exactly as much as they were before C3 — not at all. A test that
- * is about another credential names it.
+ * <p>The suite's git client presents {@link #SERVICE_CLIENT} by default ({@code GitHostFixture}
+ * and the other test helpers): a client token without a scope, with {@code qits:admin} and {@code
+ * qits:system}. Its pushes are therefore restricted exactly as much as they were before C3 — not at
+ * all. A test that is about another credential names it.
  *
  * <p>Test code only. The packaged process that the ITs launch never contains it, and those stories
  * present real tokens from the mock idp.
@@ -40,13 +45,48 @@ public class TestTokenMechanism implements HttpAuthenticationMechanism {
 
   public static final String HEADER = "X-Test-Token";
 
-  /** A platform service client with no scope, holding the {@code %test} synthetic user's roles. */
+  /** A platform service client with no scope, holding {@code qits:admin} and {@code qits:system}. */
   public static final String SERVICE_CLIENT_CLAIMS =
       "{\"sub\":\"qits-githost-suite\","
           + "\"groups\":[\"qits:admin\",\"qits:system\"]}";
 
+  /** A platform service's client token: {@code qits:system} and nothing else. */
+  public static final String PLATFORM_SERVICE_CLAIMS = claims("a-platform-service", "qits:system");
+
+  /** A signed-in person on the browse plane: {@code qits:admin} and nothing else. */
+  public static final String OPERATOR_CLAIMS = claims("operator", "qits:admin");
+
   /** The headers the suite's git client sends unless a test says otherwise. */
   public static final List<String> SERVICE_CLIENT = token(SERVICE_CLIENT_CLAIMS);
+
+  /**
+   * The {@value #HEADER} value of a client token for {@code sub} holding {@code roles}
+   * (comma-separated): what a REST-assured request sends to name its identity.
+   */
+  public static String claims(String sub, String roles) {
+    JsonArray groups = new JsonArray();
+    for (String role : roles.split(",")) {
+      if (!role.isBlank()) {
+        groups.add(role.trim());
+      }
+    }
+    return new JsonObject().put("sub", sub).put("groups", groups).encode();
+  }
+
+  /**
+   * A REST-assured default specification that names {@code claimsJson} as every request's caller:
+   * what a class installs as {@code RestAssured.requestSpecification} in a {@code @BeforeEach}
+   * (and clears in an {@code @AfterEach}). A request that sets {@value #HEADER} itself replaces the
+   * default rather than sending both.
+   */
+  public static RequestSpecification defaultCaller(String claimsJson) {
+    return new RequestSpecBuilder()
+        .addHeader(HEADER, claimsJson)
+        .setConfig(
+            RestAssuredConfig.config()
+                .headerConfig(HeaderConfig.headerConfig().overwriteHeadersWithName(HEADER)))
+        .build();
+  }
 
   /** The header list that presents a JWT with {@code claimsJson}. */
   public static List<String> token(String claimsJson) {

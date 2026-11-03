@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import eu.wohlben.qits.githost.TestTokenMechanism;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.Response;
 import jakarta.inject.Inject;
@@ -34,7 +35,8 @@ import org.junit.jupiter.api.Test;
  * root, the source of the published golden-master artifact consumers write their pacts against.
  *
  * <p>For each (state, operation) pair in {@link #INTERACTIONS} it runs the state ({@link
- * ProviderStates}), calls the endpoint through REST-assured as the {@code %test} dev user, keeps
+ * ProviderStates}), calls the endpoint through REST-assured as a platform service holding {@code
+ * qits:admin} and {@code qits:system} ({@link TestTokenMechanism#SERVICE_CLIENT_CLAIMS}), keeps
  * only the list entries the state created, freezes ids, instants and unique tokens ({@link
  * Freezer}) and renders {@code golden-masters/<state-slug>/<operationId>.json}; then it renders
  * {@code golden-masters/index.json} describing all of them.
@@ -765,7 +767,8 @@ class GoldenMasterRecordingTest {
     ProviderStates.Setup setup = states.setUp(interaction.state());
     Map<String, String> params = setup.params();
 
-    var request = given();
+    var request =
+        given().header(TestTokenMechanism.HEADER, TestTokenMechanism.SERVICE_CLIENT_CLAIMS);
     if (interaction.requestBody() != null) {
       request =
           request

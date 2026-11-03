@@ -9,10 +9,14 @@ import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import eu.wohlben.qits.githost.GitRepositoryProvider;
+import eu.wohlben.qits.githost.TestTokenMechanism;
 import eu.wohlben.qits.githost.contracts.ProviderStates;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
 import jakarta.inject.Inject;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -21,6 +25,18 @@ import org.junit.jupiter.api.Test;
  */
 @QuarkusTest
 public class LocListResourceTest {
+
+  /** A person reading the browse plane: qits:admin, named by the test token (qits-1364). */
+  @BeforeEach
+  void nameTheCaller() {
+    RestAssured.requestSpecification =
+        TestTokenMechanism.defaultCaller(TestTokenMechanism.OPERATOR_CLAIMS);
+  }
+
+  @AfterEach
+  void forgetTheCaller() {
+    RestAssured.requestSpecification = null;
+  }
 
   private static final String API = "/githost/api/loc";
 

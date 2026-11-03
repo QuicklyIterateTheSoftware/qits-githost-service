@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
  *
  * <p>The scope is captured on the event loop and checked on the JGit worker, so only a push through
  * the served routes proves the two halves meet. Identities come from {@link TestTokenMechanism}
- * (JWT claims) or from the forwarded headers qits-auth-core reads. No profile: protection of the
+ * (JWT claims); a push with no header at all carries no identity. No profile: protection of the
  * default branch is off here, so every refusal below is the scope's.
  */
 @QuarkusTest
@@ -49,10 +49,6 @@ public class GitHostRefScopeTest {
       TestTokenMechanism.token(
           "{\"sub\":\"alice\",\"groups\":[\"qits:git:external\",\"qits:admin\"],"
               + "\"git_ref_pattern\":\"refs/heads/external/*\"}");
-
-  /** A browser session: the forwarded headers, no JWT. */
-  static final List<String> BROWSER_SESSION =
-      List.of("X-Qits-User: alice", "X-Qits-Roles: qits:admin,qits:system");
 
   /** A static platform service: a client token with no scope. */
   static final List<String> STATIC_CLIENT =
@@ -198,14 +194,19 @@ public class GitHostRefScopeTest {
   }
 
   @Test
-  public void aPersonInABrowserSessionPushesOnlyExternalBranches() throws Exception {
-    assertPersonPushesOnlyExternalBranches(BROWSER_SESSION);
-  }
+  public void aPushWithNoCredentialPushesNothing() throws Exception {
+    // No header at all: no identity, now that forward-auth and its %test user are gone (qits-1364).
+    // The suite's git policy is permit, so the request reaches the hook, and the hook refuses it.
+    String repoId = seed();
+    String main = sha(repoId, "refs/heads/main");
+    Path clone = cloneWithACommit(repoId);
 
-  @Test
-  public void theSuitesSyntheticUserIsAPersonToo() throws Exception {
-    // No header at all: qits-auth-core's %test synthetic user (qits:admin, qits:system, no JWT).
-    assertPersonPushesOnlyExternalBranches(List.of());
+    for (String target : List.of("main", "HEAD:refs/heads/external/alice/topic")) {
+      String refusal =
+          GitHostFixture.gitExpectingFailureAs(List.of(), clone, "git", "push", "origin", target);
+      assertTrue(refusal.contains(RefScopeHook.NO_IDENTITY_REFUSAL), refusal);
+    }
+    assertEquals(main, sha(repoId, "refs/heads/main"));
   }
 
   @Test
@@ -359,7 +360,7 @@ public class GitHostRefScopeTest {
     String tip = sha(repoId, MAINTENANCE);
 
     for (List<String> other :
-        List.of(STATIC_CLIENT, EVERY_BRANCH_AGENT, CLI_PERSON, BROWSER_SESSION, WORKSTATION)) {
+        List.of(STATIC_CLIENT, EVERY_BRANCH_AGENT, CLI_PERSON, WORKSTATION)) {
       String refusal =
           GitHostFixture.gitExpectingFailureAs(other, clone, "git", "push", "origin", ":" + MAINTENANCE);
       assertTrue(refusal.contains(MAINTENANCE_REFUSAL), refusal);

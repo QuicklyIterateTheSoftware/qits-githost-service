@@ -11,12 +11,14 @@ import au.com.dius.pact.provider.junit5.PactVerificationInvocationContextProvide
 import au.com.dius.pact.provider.junitsupport.Provider;
 import au.com.dius.pact.provider.junitsupport.State;
 import au.com.dius.pact.provider.junitsupport.loader.PactSource;
+import eu.wohlben.qits.githost.TestTokenMechanism;
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.net.URL;
 import java.util.List;
 import java.util.Map;
+import org.apache.hc.core5.http.ClassicHttpRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestTemplate;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,8 +45,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
  * pinned there once its jar is published; a state its pact names that this class does not answer
  * fails {@link #target} and is added to {@link ProviderStates}, with its golden master.
  *
- * <p>Each interaction runs against this {@code @QuarkusTest} application over real HTTP, as the
- * {@code %test} synthetic user — exactly as {@link GoldenMasterRecordingTest}'s calls run. Every
+ * <p>Each interaction runs against this {@code @QuarkusTest} application over real HTTP, as a
+ * platform service holding {@code qits:admin} and {@code qits:system} ({@link
+ * TestTokenMechanism#SERVICE_CLIENT_CLAIMS}, the roles the retired {@code %test} dev user had) —
+ * exactly as {@link GoldenMasterRecordingTest}'s calls run. Every
  * {@code @State} method delegates to {@link ProviderStates}; {@link #target} fails an unknown state,
  * and an interaction without {@code comments.references.qits-call} or {@code qits-trigger}.
  */
@@ -99,7 +103,10 @@ class ConsumerPactVerificationTest {
 
   @TestTemplate
   @ExtendWith(PactVerificationInvocationContextProvider.class)
-  void consumerPactHolds(PactVerificationContext context) {
+  void consumerPactHolds(PactVerificationContext context, ClassicHttpRequest request) {
+    // The caller, named the way the rest of the suite names it (qits-1364): forward-auth's %test
+    // dev user is gone, so a header-less interaction would be anonymous.
+    request.setHeader(TestTokenMechanism.HEADER, TestTokenMechanism.SERVICE_CLIENT_CLAIMS);
     context.verifyInteraction();
   }
 

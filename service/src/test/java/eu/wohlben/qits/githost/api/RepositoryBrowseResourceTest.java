@@ -14,6 +14,7 @@ import eu.wohlben.qits.githost.GitRepositoryProvider;
 import eu.wohlben.qits.githost.persistence.RepositoryLocStore;
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
 import io.restassured.path.json.JsonPath;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
@@ -25,6 +26,8 @@ import java.util.List;
 import java.util.UUID;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectInserter;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -37,12 +40,24 @@ import org.junit.jupiter.api.Test;
  * git-route tests and this class tests another package — the same trade {@code
  * RepositoriesResourceTest} documents for its severed-pool helper.
  *
- * <p>The suite runs with qits-auth-core's synthetic {@code %test} identity ({@code qits:admin}), so
+ * <p>Every request here names a person holding {@code qits:admin} ({@code TestTokenMechanism}), so
  * the plain requests here also prove the {@code githost-browse} policy passes the roles it names;
  * {@code RepositoryBrowseAuthTest} proves it refuses a caller without them.
  */
 @QuarkusTest
 public class RepositoryBrowseResourceTest {
+
+  /** A person reading the browse plane: qits:admin, named by the test token (qits-1364). */
+  @BeforeEach
+  void nameTheCaller() {
+    RestAssured.requestSpecification =
+        TestTokenMechanism.defaultCaller(TestTokenMechanism.OPERATOR_CLAIMS);
+  }
+
+  @AfterEach
+  void forgetTheCaller() {
+    RestAssured.requestSpecification = null;
+  }
 
   static final String API = "/githost/api/repositories/";
 

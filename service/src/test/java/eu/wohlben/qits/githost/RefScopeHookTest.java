@@ -287,17 +287,21 @@ class RefScopeHookTest {
 
   @ParameterizedTest
   @MethodSource("roleSets")
-  void aForwardedIdentityIsAPersonWhateverTheRoles(List<String> roles) {
-    Scope scope = scopeOf(forwarded(roles));
+  void anIdentityWithoutAJwtMayPushNothingWhateverTheRoles(List<String> roles) {
+    // The forwarded X-Qits-User / X-Qits-Roles identity used to be a person here. Forward-auth is
+    // gone (qits-1338, qits-1364), so a principal that is not a verified JWT states no scope.
+    Scope scope = scopeOf(withoutJwt(roles));
 
-    assertEquals(Rule.PERSON, scope.rule());
+    assertEquals(Rule.NONE, scope.rule());
     assertFalse(scope.tokenBypassAllowed());
-    assertPersonScope(scope);
+    ReceiveCommand command = create("refs/heads/external/alice/topic");
+    assertTrue(rejectOutsideScope(List.of(command), scope));
+    assertEquals(RefScopeHook.NO_IDENTITY_REFUSAL, command.getMessage());
   }
 
   @Test
   void aPersonCannotPushMainTagsOrNotesOrDeleteMain() {
-    Scope scope = scopeOf(forwarded(List.of("qits:admin")));
+    Scope scope = scopeOf(cliPerson(List.of("qits:admin")));
     for (ReceiveCommand command :
         List.of(
             create("refs/heads/main"),
@@ -316,7 +320,7 @@ class RefScopeHookTest {
   void aPersonMayDeleteAnExternalBranch() {
     ReceiveCommand command = delete("refs/heads/external/alice/topic");
 
-    assertFalse(rejectOutsideScope(List.of(command), scopeOf(forwarded(List.of()))));
+    assertFalse(rejectOutsideScope(List.of(command), scopeOf(cliPerson(List.of()))));
     assertEquals(ReceiveCommand.Result.NOT_ATTEMPTED, command.getResult());
   }
 
@@ -370,7 +374,7 @@ class RefScopeHookTest {
         .tokenBypassAllowed());
     assertFalse(scopeOf(jwt(List.of("qits:system"), Map.of("credential_type", "cli")))
         .tokenBypassAllowed());
-    assertFalse(scopeOf(forwarded(List.of("qits:system"))).tokenBypassAllowed());
+    assertFalse(scopeOf(withoutJwt(List.of("qits:system"))).tokenBypassAllowed());
     assertFalse(scopeOf(jwt(List.of("qits:agent"), Map.of())).tokenBypassAllowed());
     assertFalse(scopeOf(null).tokenBypassAllowed());
   }
@@ -482,7 +486,7 @@ class RefScopeHookTest {
         List.of(
             scopeOf(bumpRun(List.of(GROUP_BRANCH))),
             scopeOf(jwt(List.of("qits:system", "qits:ci-run"), Map.of("context_kind", "ci-run"))),
-            scopeOf(forwarded(List.of("qits:admin", "qits:system"))))) {
+            scopeOf(cliPerson(List.of("qits:admin", "qits:system"))))) {
       ReceiveCommand command = create(GROUP_BRANCH);
       assertTrue(rejectOutsideScope(List.of(command), scope), scope.toString());
       assertEquals(GROUP_BRANCH_REFUSAL, command.getMessage());
@@ -573,7 +577,7 @@ class RefScopeHookTest {
   void noOtherScopeMayTouchAMaintenanceBranch() {
     for (Scope scope :
         List.of(
-            scopeOf(forwarded(List.of("qits:admin", "qits:system"))),
+            scopeOf(cliPerson(List.of("qits:admin", "qits:system"))),
             scopeOf(jwt(List.of("qits:ci-run"), Map.of("credential_type", "cli", "context_kind", "ci-run"))),
             scopeOf(jwt(List.of("qits:git:external"), Map.of("git_ref_pattern", EXTERNAL_BRANCH_PATTERN))),
             RefScopeHook.external(EXTERNAL_BRANCH_PATTERN),
@@ -609,7 +613,7 @@ class RefScopeHookTest {
       assertTrue(agent.admitsMaintenance(ref), ref);
       assertFalse(rejectOutsideScope(List.of(create(ref)), agent), ref);
     }
-    assertPersonScope(scopeOf(forwarded(List.of())));
+    assertPersonScope(scopeOf(cliPerson(List.of())));
     assertFalse(
         rejectOutsideScope(
             List.of(create("refs/tags/maintenance/v1")), scopeOf(jwt(List.of("qits:system"), Map.of()))));
@@ -713,8 +717,13 @@ class RefScopeHookTest {
     return identity.build();
   }
 
-  /** An identity from the forwarded X-Qits-User / X-Qits-Roles headers: no JWT. */
-  private static SecurityIdentity forwarded(List<String> roles) {
+  /** A person's {@code qits} CLI token: a JWT with a {@code credential_type} claim. */
+  private static SecurityIdentity cliPerson(List<String> roles) {
+    return jwt(roles, Map.of("credential_type", "cli"));
+  }
+
+  /** A principal that is not a JWT, which no mechanism of this service produces any more. */
+  private static SecurityIdentity withoutJwt(List<String> roles) {
     QuarkusSecurityIdentity.Builder identity =
         QuarkusSecurityIdentity.builder().setPrincipal(new QuarkusPrincipal("alice"));
     roles.forEach(identity::addRole);
