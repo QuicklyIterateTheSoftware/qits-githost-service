@@ -147,7 +147,7 @@ now it may use everything `qits:admin` may use), `qits:system` (a platform servi
 `qits:git:external` (a workstation token), and `qits:agent` / `qits:ci-run` (a commissioned agent or
 CI run). A role only opens the door. **Which refs a push may touch comes from
 the credential's scope, never from its roles** — `RefScopeHook`, contract C3 of
-`principal-bound-git-refs-plan.md` in the superproject. The first row that fits decides:
+epic qits-543, dossier page "Plan (as of 2026-09-13)". The first row that fits decides:
 
 | # | The credential | May push |
 |---|---|---|

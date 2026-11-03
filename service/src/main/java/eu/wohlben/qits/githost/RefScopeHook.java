@@ -11,7 +11,7 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 
 /**
  * Which refs a push may touch. This is the receive-pack half of principal-bound Git refs
- * ({@code principal-bound-git-refs-plan.md}, contract C3).
+ * (epic qits-543, dossier page "Plan (as of 2026-09-13)", contract C3).
  *
  * <p>The decision is made once per push, at the HTTP boundary, from the verified identity ({@link
  * #scopeOf}). The result is an immutable {@link Scope}. The hook reads only that scope. It never
