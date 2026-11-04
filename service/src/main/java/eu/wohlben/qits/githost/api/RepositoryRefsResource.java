@@ -1,6 +1,7 @@
 package eu.wohlben.qits.githost.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import eu.wohlben.qits.githost.CommitMessageVariants;
 import eu.wohlben.qits.githost.GitIdentity;
 import eu.wohlben.qits.githost.GitRepositoryProvider;
 import eu.wohlben.qits.githost.RepositoryNameResolver;
@@ -60,6 +61,9 @@ import org.eclipse.jgit.treewalk.EmptyTreeIterator;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathFilterGroup;
 import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.jboss.logging.Logger;
 
 /**
@@ -597,6 +601,7 @@ public class RepositoryRefsResource {
    */
   @RegisterForReflection
   @JsonInclude(JsonInclude.Include.NON_NULL)
+  @Schema(name = "PrimitiveError")
   public record ErrorBody(String error, String detail) {}
 
   /** One head of the fold: the commit, and the spelling the caller (or this class) named it by. */
@@ -1209,12 +1214,28 @@ public class RepositoryRefsResource {
    * the answer is {@code unchanged} with the tip's sha and the ref does not move — so a retried
    * bump after a timeout is free rather than a second empty commit.
    *
+   * <p><b>The message is held to the same rule as a push's</b> ({@link CommitMessageVariants}, with
+   * one parent — the commit this writes always has exactly one): a message no variant accepts is a
+   * 422 {@code malformed-commit-message} whose detail lists every accepted form, and nothing is
+   * written. A release's {@code release(<version>): …} stamp is {@code RELEASE}.
+   *
    * <p>The ref moves as a compare-and-swap against the tip this request read, so a branch that moved
    * underneath a slow caller is a 409 rather than a lost commit. A caller that names {@code
    * expectedOld} and {@code parent} pins both: the branch must be at {@code expectedOld}, and the
    * commit sits on {@code parent} whatever the tip is (qits-1647).
    */
   @Operation(operationId = "commitFiles", summary = "Commit file changes onto a branch")
+  @APIResponse(
+      responseCode = "200",
+      description = "OK",
+      content = @Content(mediaType = MediaType.APPLICATION_JSON))
+  @APIResponse(
+      responseCode = "422",
+      description = "The message matches no accepted commit-message form; nothing was written",
+      content =
+          @Content(
+              mediaType = MediaType.APPLICATION_JSON,
+              schema = @Schema(implementation = ErrorBody.class)))
   @POST
   @Path("/commits")
   @Consumes(MediaType.APPLICATION_JSON)
@@ -1274,6 +1295,10 @@ public class RepositoryRefsResource {
     }
     if (request.expectedOld() != null && !GITLINK_SHA.matcher(request.expectedOld()).matches()) {
       return badRequest("expectedOld must be a full 40-hex commit sha");
+    }
+    // The commit this writes always has exactly one parent, so MERGE never applies here.
+    if (CommitMessageVariants.classify(request.message(), 1).isEmpty()) {
+      return malformedMessage(request.message());
     }
 
     try (Repository repo = repositories.open(repoId)) {
@@ -2117,6 +2142,22 @@ public class RepositoryRefsResource {
 
   static Response notFound(String code, String detail) {
     return Response.status(Response.Status.NOT_FOUND).entity(new ErrorBody(code, detail)).build();
+  }
+
+  /**
+   * The 422 a message no {@link CommitMessageVariants} accepts gets: {@code
+   * malformed-commit-message}, with the offending first line and every accepted form in the detail
+   * — the same forms a refused push is shown.
+   */
+  static Response malformedMessage(String message) {
+    int newline = message.indexOf('\n');
+    String first = newline < 0 ? message : message.substring(0, newline);
+    List<String> lines = new ArrayList<>();
+    lines.add("commit message matches no accepted form: " + first);
+    lines.addAll(CommitMessageVariants.acceptedForms());
+    return Response.status(422)
+        .entity(new ErrorBody("malformed-commit-message", String.join("\n", lines)))
+        .build();
   }
 
   /**

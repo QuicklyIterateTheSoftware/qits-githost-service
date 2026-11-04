@@ -237,7 +237,7 @@ public class ScopedPushIT {
             StoryTools.git(),
             "alice@qits.local",
             "alice",
-            "a change")
+            "feat(qits-42): a change")
         .as("change-committed");
     commands.run("{} rev-parse HEAD", StoryTools.git());
     return commands.lastOutput().strip();

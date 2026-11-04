@@ -148,7 +148,7 @@ public class RepositoryRefsResourceTest {
     String repo = seed();
     String tip = lsRemote(repo, "refs/heads/release/1", "refs/heads/release/1");
 
-    Map<String, Object> body = commitBody("refs/heads/release/1", "bump the manifests");
+    Map<String, Object> body = commitBody("refs/heads/release/1", "test(qits-1): bump the manifests");
     body.put(
         "files",
         Map.of("pom.xml", "<version>2026.903.1</version>\n", "web/package.json", "{\"v\":1}\n"));
@@ -187,7 +187,7 @@ public class RepositoryRefsResourceTest {
   public void anEditThatChangesNothingWritesNothing() throws Exception {
     String repo = seed();
     String tip = lsRemote(repo, "refs/heads/release/1", "refs/heads/release/1");
-    Map<String, Object> body = commitBody("refs/heads/release/1", "same bytes");
+    Map<String, Object> body = commitBody("refs/heads/release/1", "test(qits-1): same bytes");
     body.put("files", Map.of("pom.xml", "<version>0</version>\n"));
 
     JsonPath answer = post(repo, "/commits", body).then().statusCode(200).extract().jsonPath();
@@ -199,7 +199,7 @@ public class RepositoryRefsResourceTest {
   @Test
   public void aDeletionIsPartOfTheSameCommit() throws Exception {
     String repo = seed();
-    Map<String, Object> body = commitBody("refs/heads/release/1", "drop the readme, keep the pom");
+    Map<String, Object> body = commitBody("refs/heads/release/1", "test(qits-1): drop the readme, keep the pom");
     body.put("files", Map.of("pom.xml", "<version>1</version>\n"));
     body.put("deletePaths", List.of("README.md", "never/was/there.txt"));
 
@@ -222,11 +222,11 @@ public class RepositoryRefsResourceTest {
   @Test
   public void aCommitOntoNothingIsRefusedBeforeAnythingIsWritten() throws Exception {
     String repo = seed();
-    Map<String, Object> missing = commitBody("refs/heads/no-such-branch", "x");
+    Map<String, Object> missing = commitBody("refs/heads/no-such-branch", "test(qits-1): x");
     missing.put("files", Map.of("a.txt", "a\n"));
     post(repo, "/commits", missing).then().statusCode(404).body("error", is("no-such-ref"));
 
-    Map<String, Object> escaping = commitBody("refs/heads/release/1", "x");
+    Map<String, Object> escaping = commitBody("refs/heads/release/1", "test(qits-1): x");
     escaping.put("files", Map.of("../etc/passwd", "no\n"));
     post(repo, "/commits", escaping).then().statusCode(400);
 
@@ -234,7 +234,7 @@ public class RepositoryRefsResourceTest {
     silent.put("files", Map.of("a.txt", "a\n"));
     post(repo, "/commits", silent).then().statusCode(400);
 
-    post(repo, "/commits", commitBody("refs/heads/release/1", "nothing to do"))
+    post(repo, "/commits", commitBody("refs/heads/release/1", "test(qits-1): nothing to do"))
         .then()
         .statusCode(400);
   }
@@ -249,13 +249,13 @@ public class RepositoryRefsResourceTest {
     String fold = lsRemote(repo, "refs/heads/release/1", "refs/heads/release/1");
 
     // The fold moves on: a newer commit lands on the branch.
-    Map<String, Object> refold = commitBody("refs/heads/release/1", "a newer fold");
+    Map<String, Object> refold = commitBody("refs/heads/release/1", "test(qits-1): a newer fold");
     refold.put("files", Map.of("late.txt", "late\n"));
     String newer =
         post(repo, "/commits", refold).then().statusCode(200).extract().jsonPath().getString("sha");
 
     // Pinned to the old fold: refused, and nothing moves.
-    Map<String, Object> pinned = commitBody("refs/heads/release/1", "release(1): stamp");
+    Map<String, Object> pinned = commitBody("refs/heads/release/1", "release(2026.1001.1): stamp");
     pinned.put("files", Map.of("pom.xml", "<version>1</version>\n"));
     pinned.put("parent", fold);
     pinned.put("expectedOld", fold);
@@ -283,7 +283,7 @@ public class RepositoryRefsResourceTest {
             .getList("paths", String.class),
         not(hasItem("late.txt")));
 
-    Map<String, Object> malformed = commitBody("refs/heads/release/1", "x");
+    Map<String, Object> malformed = commitBody("refs/heads/release/1", "test(qits-1): x");
     malformed.put("files", Map.of("a.txt", "a\n"));
     malformed.put("parent", "main");
     post(repo, "/commits", malformed).then().statusCode(400);
@@ -313,7 +313,7 @@ public class RepositoryRefsResourceTest {
   public void aDeleteExpectingAnOldShaKeepsAMovedBranch() throws Exception {
     String repo = seed();
     String checked = lsRemote(repo, "refs/heads/release/1", "refs/heads/release/1");
-    Map<String, Object> push = commitBody("refs/heads/release/1", "a late push");
+    Map<String, Object> push = commitBody("refs/heads/release/1", "test(qits-1): a late push");
     push.put("files", Map.of("late.txt", "late\n"));
     String moved =
         post(repo, "/commits", push).then().statusCode(200).extract().jsonPath().getString("sha");
@@ -359,7 +359,7 @@ public class RepositoryRefsResourceTest {
   public void aGitlinkPinIsWrittenAsASubmoduleEntry() throws Exception {
     String repo = seed();
     String pinned = "1234567890abcdef1234567890abcdef12345678";
-    Map<String, Object> body = commitBody("refs/heads/release/1", "bank the estate");
+    Map<String, Object> body = commitBody("refs/heads/release/1", "test(qits-1): bank the estate");
     body.put("files", Map.of(".gitmodules", "[submodule \"y\"]\n\tpath = components/x/y\n"));
     body.put("gitlinks", Map.of("components/x/y", pinned));
 
@@ -374,7 +374,7 @@ public class RepositoryRefsResourceTest {
         is("160000 commit " + pinned + "\tcomponents/x/y"));
 
     // The same pin again is the tree that is already there: no commit, no ref move.
-    Map<String, Object> again = commitBody("refs/heads/release/1", "bank the same estate");
+    Map<String, Object> again = commitBody("refs/heads/release/1", "test(qits-1): bank the same estate");
     again.put("gitlinks", Map.of("components/x/y", pinned));
     post(repo, "/commits", again).then().statusCode(200).body("outcome", is("unchanged"));
   }
@@ -382,11 +382,11 @@ public class RepositoryRefsResourceTest {
   @Test
   public void aGitlinkPinsAFullShaAndAPathIsOneKindOnly() throws Exception {
     String repo = seed();
-    Map<String, Object> shortSha = commitBody("refs/heads/release/1", "x");
+    Map<String, Object> shortSha = commitBody("refs/heads/release/1", "test(qits-1): x");
     shortSha.put("gitlinks", Map.of("components/x/y", "123abc"));
     post(repo, "/commits", shortSha).then().statusCode(400);
 
-    Map<String, Object> bothKinds = commitBody("refs/heads/release/1", "x");
+    Map<String, Object> bothKinds = commitBody("refs/heads/release/1", "test(qits-1): x");
     bothKinds.put("files", Map.of("components/x/y", "content"));
     bothKinds.put("gitlinks", Map.of("components/x/y", "1234567890abcdef1234567890abcdef12345678"));
     post(repo, "/commits", bothKinds).then().statusCode(400);
@@ -408,7 +408,7 @@ public class RepositoryRefsResourceTest {
     given().when().get(API + repo + "/branches/never-was-there").then().statusCode(404);
 
     // A commit's parents and message come back too (qits-1647).
-    Map<String, Object> bump = commitBody("refs/heads/release/1", "release(1): stamp");
+    Map<String, Object> bump = commitBody("refs/heads/release/1", "release(2026.1001.1): stamp");
     bump.put("files", Map.of("pom.xml", "<version>1</version>\n"));
     String bumped =
         post(repo, "/commits", bump).then().statusCode(200).extract().jsonPath().getString("sha");
@@ -419,7 +419,7 @@ public class RepositoryRefsResourceTest {
         .statusCode(200)
         .body("sha", is(bumped))
         .body("parents", is(List.of(tip)))
-        .body("message", is("release(1): stamp\n"));
+        .body("message", is("release(2026.1001.1): stamp\n"));
   }
 
   @Test

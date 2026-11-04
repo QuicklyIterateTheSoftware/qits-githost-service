@@ -106,7 +106,7 @@ public class GitHostTest {
 
     String branch = GitHostFixture.git(clone, "git", "rev-parse", "--abbrev-ref", "HEAD").trim();
 
-    GitHostFixture.commitFile(clone, "pushed.txt", "from a container\n", "push");
+    GitHostFixture.commitFile(clone, "pushed.txt", "from a container\n", "test(qits-1): push");
     String pushedSha = GitHostFixture.head(clone);
     GitHostFixture.git(clone, "git", "push", "origin", branch);
 
@@ -136,7 +136,7 @@ public class GitHostTest {
 
     String branch = GitHostFixture.git(clone, "git", "rev-parse", "--abbrev-ref", "HEAD").trim();
     GitHostFixture.git(clone, "git", "add", "big.bin");
-    GitHostFixture.commitFile(clone, "big.txt", "beside the blob\n", "big");
+    GitHostFixture.commitFile(clone, "big.txt", "beside the blob\n", "test(qits-1): big");
     String pushedSha = GitHostFixture.head(clone);
     GitHostFixture.git(clone, "git", "push", "origin", branch);
 
@@ -266,7 +266,7 @@ public class GitHostTest {
     Files.createDirectories(clone.resolve("docs"));
     Files.writeString(clone.resolve("docs/guide.md"), "guide\n");
     GitHostFixture.git(clone, "git", "add", "docs/guide.md");
-    GitHostFixture.commitFile(clone, "pipeline.yml", "steps: []\n", "content");
+    GitHostFixture.commitFile(clone, "pipeline.yml", "steps: []\n", "test(qits-1): content");
     GitHostFixture.git(clone, "git", "push", "origin", "main");
     return repoId;
   }
@@ -314,7 +314,7 @@ public class GitHostTest {
     String repoId = contentOrigin();
     String parent = refSha(repoId, "refs/heads/main");
     Path clone = GitHostFixture.clone(gitBase, repoId);
-    GitHostFixture.commitFile(clone, "later.txt", "after\n", "later");
+    GitHostFixture.commitFile(clone, "later.txt", "after\n", "test(qits-1): later");
     GitHostFixture.git(clone, "git", "push", "origin", "main");
     assertEquals(GitHostFixture.head(clone), refSha(repoId, "refs/heads/main"));
 
@@ -363,7 +363,7 @@ public class GitHostTest {
     // Any sha will do — a submodule's commits live in the submodule, not here — but the seeded
     // repository's own tip is one this host can be seen not to be resolving.
     String pinned = GitHostFixture.head(clone);
-    GitHostFixture.commitGitlink(clone, "pinned-module", pinned, "pin a submodule");
+    GitHostFixture.commitGitlink(clone, "pinned-module", pinned, "test(qits-1): pin a submodule");
     GitHostFixture.git(clone, "git", "push", "origin", "main");
 
     given()
@@ -403,7 +403,7 @@ public class GitHostTest {
     String repoId = contentOrigin();
     Path clone = GitHostFixture.clone(gitBase, repoId);
     String pinned = GitHostFixture.head(clone);
-    GitHostFixture.commitGitlink(clone, "docs/nested-module", pinned, "pin a nested submodule");
+    GitHostFixture.commitGitlink(clone, "docs/nested-module", pinned, "test(qits-1): pin a nested submodule");
     GitHostFixture.git(clone, "git", "push", "origin", "main");
     String head = refSha(repoId, "refs/heads/main");
 
@@ -464,7 +464,7 @@ public class GitHostTest {
     String repoId = contentOrigin();
     Path clone = GitHostFixture.clone(gitBase, repoId);
     GitHostFixture.git(clone, "git", "switch", "-q", "-c", "feature/reads");
-    GitHostFixture.commitFile(clone, "branchy.txt", "on a slashy branch\n", "branchy");
+    GitHostFixture.commitFile(clone, "branchy.txt", "on a slashy branch\n", "test(qits-1): branchy");
     GitHostFixture.git(clone, "git", "push", "origin", "feature/reads");
 
     byte[] body =
@@ -568,7 +568,7 @@ public class GitHostTest {
     new Random(20260806L).nextBytes(incompressible);
     Files.write(clone.resolve("big.bin"), incompressible);
     GitHostFixture.git(clone, "git", "add", "big.bin");
-    GitHostFixture.commitFile(clone, "small.txt", "beside it\n", "big");
+    GitHostFixture.commitFile(clone, "small.txt", "beside it\n", "test(qits-1): big");
     GitHostFixture.git(clone, "git", "push", "origin", "main");
 
     given()
@@ -656,7 +656,7 @@ public class GitHostTest {
     String projectId = UUID.randomUUID().toString();
     String named = seedOrigin();
     Path clone = GitHostFixture.clone(gitBase, named);
-    GitHostFixture.commitFile(clone, "in-blob.txt", "inside the repo called blob\n", "blob repo");
+    GitHostFixture.commitFile(clone, "in-blob.txt", "inside the repo called blob\n", "test(qits-1): blob repo");
     GitHostFixture.git(clone, "git", "push", "origin", "main");
     repositoryNames.register(projectId, "blob", named);
     repositoryNames.register(projectId, "tree", named);
@@ -684,7 +684,7 @@ public class GitHostTest {
     String byId = contentOrigin();
     Path other = GitHostFixture.clone(gitBase, byId);
     GitHostFixture.git(other, "git", "switch", "-q", "-c", "blob");
-    GitHostFixture.commitFile(other, "on-blob.txt", "on a branch called blob\n", "blob branch");
+    GitHostFixture.commitFile(other, "on-blob.txt", "on a branch called blob\n", "test(qits-1): blob branch");
     GitHostFixture.git(other, "git", "push", "origin", "blob");
 
     byte[] atRevBlob =
@@ -804,7 +804,7 @@ public class GitHostTest {
     String repoId = seedOrigin();
     Path clone = GitHostFixture.clone(gitBase, repoId);
 
-    GitHostFixture.rewriteTip(clone, "rewritten with no option at all");
+    GitHostFixture.rewriteTip(clone, "test(qits-1): rewritten with no option at all");
     String rewritten = GitHostFixture.head(clone);
     GitHostFixture.git(clone, "git", "push", "--force", "origin", "main");
 
@@ -821,7 +821,7 @@ public class GitHostTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     String before = refSha(repoId, "refs/heads/main");
 
-    GitHostFixture.commitFile(clone, "direct.txt", "by hand\n", "direct");
+    GitHostFixture.commitFile(clone, "direct.txt", "by hand\n", "test(qits-1): direct");
     String refusal = GitHostFixture.gitExpectingFailure(clone, "git", "push", "origin", "main");
 
     assertTrue(refusal.contains("protected ref refs/heads/main"), refusal);
@@ -842,7 +842,7 @@ public class GitHostTest {
     protect(repoId);
     Path clone = GitHostFixture.clone(gitBase, repoId);
 
-    GitHostFixture.commitFile(clone, "release.txt", "2026.731.193059\n", "release");
+    GitHostFixture.commitFile(clone, "release.txt", "2026.731.193059\n", "test(qits-1): release");
     String released = GitHostFixture.head(clone);
     GitHostFixture.git(clone, "git", "push", "-o", "qits.release", "origin", "main");
 
@@ -859,7 +859,7 @@ public class GitHostTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     String before = refSha(repoId, "refs/heads/main");
 
-    GitHostFixture.rewriteTip(clone, "rewritten history");
+    GitHostFixture.rewriteTip(clone, "test(qits-1): rewritten history");
     String refusal =
         GitHostFixture.gitExpectingFailure(
             clone, "git", "push", "--force", "-o", "qits.release", "origin", "main");
@@ -910,9 +910,9 @@ public class GitHostTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
 
     GitHostFixture.git(clone, "git", "switch", "-q", "-c", "workspace-branch");
-    GitHostFixture.commitFile(clone, "work.txt", "in progress\n", "work");
+    GitHostFixture.commitFile(clone, "work.txt", "in progress\n", "test(qits-1): work");
     GitHostFixture.git(clone, "git", "push", "origin", "workspace-branch");
-    GitHostFixture.rewriteTip(clone, "reworked");
+    GitHostFixture.rewriteTip(clone, "test(qits-1): reworked");
     GitHostFixture.git(clone, "git", "push", "--force", "origin", "workspace-branch");
     assertEquals(GitHostFixture.head(clone), refSha(repoId, "refs/heads/workspace-branch"));
 
@@ -932,7 +932,7 @@ public class GitHostTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     String before = refSha(repoId, "refs/heads/main");
 
-    GitHostFixture.commitFile(clone, "guessed.txt", "let me in\n", "guess");
+    GitHostFixture.commitFile(clone, "guessed.txt", "let me in\n", "test(qits-1): guess");
     String refusal =
         GitHostFixture.gitExpectingFailure(
             clone, "git", "push", "-o", "qits.token=anything-at-all", "origin", "main");
@@ -979,7 +979,7 @@ public class GitHostTest {
     protect(repoId);
     Path clone = GitHostFixture.clone(gitBase, repoId);
 
-    GitHostFixture.commitFile(clone, "release.txt", "2026.801.63140\n", "release");
+    GitHostFixture.commitFile(clone, "release.txt", "2026.801.63140\n", "test(qits-1): release");
     String released = GitHostFixture.head(clone);
     String tagObject = GitHostFixture.tagObject(clone, "v2026.801.63140", "release");
 
@@ -1025,7 +1025,7 @@ public class GitHostTest {
     // git refuses a non-fast-forward locally and never sends anything, so the server's atomic
     // handling is never reached. Forced, both commands go out and ProtectedRefHook refuses the
     // branch — the release door is fast-forward only.
-    GitHostFixture.rewriteTip(clone, "rewritten history");
+    GitHostFixture.rewriteTip(clone, "test(qits-1): rewritten history");
     String tagObject = GitHostFixture.tagObject(clone, "v1", "atomic probe");
 
     String atomic =
@@ -1081,7 +1081,7 @@ public class GitHostTest {
     String first = GitHostFixture.tagObject(clone, "v1", "first release");
     GitHostFixture.git(clone, "git", "push", "origin", first + ":refs/tags/v1");
 
-    GitHostFixture.commitFile(clone, "second.txt", "again\n", "second");
+    GitHostFixture.commitFile(clone, "second.txt", "again\n", "test(qits-1): second");
     String second = GitHostFixture.tagObject(clone, "v1", "second release, same version");
     String refusal =
         GitHostFixture.gitExpectingFailure(
@@ -1113,7 +1113,7 @@ public class GitHostTest {
     String first = GitHostFixture.tagObject(clone, "v1", "first release");
     GitHostFixture.git(clone, "git", "push", "origin", first + ":refs/tags/v1");
 
-    GitHostFixture.commitFile(clone, "again.txt", "same version\n", "second release");
+    GitHostFixture.commitFile(clone, "again.txt", "same version\n", "test(qits-1): second release");
     String released = GitHostFixture.head(clone);
     String second = GitHostFixture.tagObject(clone, "v1", "second release, same version");
 

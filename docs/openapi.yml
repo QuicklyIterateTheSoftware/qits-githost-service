@@ -183,34 +183,6 @@ components:
           type: string
         email:
           type: string
-    BypassRecord:
-      type: object
-      properties:
-        id:
-          $ref: "#/components/schemas/UUID"
-        repositoryId:
-          type: string
-        pusher:
-          type: string
-        reason:
-          type: string
-        refs:
-          type: array
-          items:
-            type: string
-        commits:
-          type: array
-          items:
-            type: string
-        usedAt:
-          $ref: "#/components/schemas/Instant"
-    BypassesResponse:
-      type: object
-      properties:
-        bypasses:
-          type: array
-          items:
-            $ref: "#/components/schemas/BypassRecord"
     Category:
       type: string
       enum:
@@ -251,11 +223,6 @@ components:
       properties:
         error:
           type: string
-    Instant:
-      type: string
-      format: date-time
-      examples:
-      - 2022-03-10T16:15:50Z
     LanguageLoc:
       type: object
       properties:
@@ -332,6 +299,13 @@ components:
           type: boolean
         gitlinkPins:
           type: boolean
+    PrimitiveError:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
     RepositoriesResponse:
       type: object
       properties:
@@ -376,10 +350,6 @@ components:
         size:
           type: integer
           format: int64
-    UUID:
-      type: string
-      format: uuid
-      pattern: "[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
   securitySchemes:
     SecurityScheme:
       type: openIdConnect
@@ -686,35 +656,6 @@ paths:
       - SecurityScheme:
         - qits:system
         - qits:agent
-  /githost/api/repositories/{repoId}/commit-subject-bypasses:
-    get:
-      parameters:
-      - name: repoId
-        in: path
-        required: true
-        schema:
-          type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BypassesResponse"
-        "401":
-          description: Not Authorized
-        "403":
-          description: Not Allowed
-      summary: List
-      tags:
-      - Commit Subject Bypass Resource
-      security:
-      - SecurityScheme:
-        - qits:admin
-        - qits:admin-agent
-        - qits:system
-        - qits:agent
-        - qits:desk-admin
   /githost/api/repositories/{repoId}/commits:
     post:
       summary: Commit file changes onto a branch
@@ -735,8 +676,14 @@ paths:
         "200":
           description: OK
           content:
+            application/json: {}
+        "422":
+          description: The message matches no accepted commit-message form; nothing
+            was written
+          content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/PrimitiveError"
         "401":
           description: Not Authorized
         "403":

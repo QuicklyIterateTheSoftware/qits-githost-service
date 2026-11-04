@@ -1,0 +1,44 @@
+# Shared test vectors for qits-706. Columns: expected<TAB>parents<TAB>message (first line; \n written literally means a newline).
+# expected is the variant the message classifies as, or NONE. Classification order: MERGE, BUMP, RELEASE, PLATFORM, SUBJECT (first match wins).
+SUBJECT	1	feat(qits-1337): refuse malformed commit subjects
+SUBJECT	0	feat(qits-1): a root commit
+SUBJECT	1	feat(qits-1)!: a breaking change
+SUBJECT	1	fix(qits-platform-access-1): a hyphenated project key
+SUBJECT	1	chore(qits-9, qits-10): bump(targeted): 3 dependencies
+SUBJECT	1	chore(qits-9,qits-10): two ids without a space
+SUBJECT	1	ci/build.x_y-z(qits-2): an unusual term
+SUBJECT	1	feat(qits-1): subject\n\nwith a body that says anything
+BUMP	1	bump(targeted): 3 dependencies
+BUMP	1	bump(qits-112): 1 dependencies
+BUMP	1	bump(dependencies): 12 dependencies
+RELEASE	1	release(2026.1104.22323): qits-428 All platform communication goes through the edge
+RELEASE	1	release(2026.1001.1): x
+PLATFORM	1	chore(platform): add workspace development flow
+PLATFORM	1	chore(platform): initialize the repository template skeleton
+MERGE	2	Release request qits-ci-service-rr-12: something
+MERGE	2	integrate(ticket/qits-1): into main
+MERGE	3	anything at all
+MERGE	2	
+NONE	1	Release request qits-ci-service-rr-12: something
+NONE	1	docs: add workspace development flow
+NONE	1	Initialize the repository template skeleton
+NONE	1	Add components/qits-x/qits-x-service to the project
+NONE	1	Revert "feat(qits-1): x"
+NONE	1	feat: no scope
+NONE	1	feat(qits): no number
+NONE	1	feat(qits-1):no space after the colon
+NONE	1	feat(qits-1): 
+NONE	1	feat(qits-1234567890123456789): nineteen digits
+NONE	1	feat(qits-1, ): an empty second id
+NONE	1	(qits-1): no term
+NONE	1	1feat(qits-1): term starts with a digit
+NONE	1	chore(platform):
+NONE	1	chore(platform):  
+NONE	1	Chore(platform): wrong case
+NONE	1	bump(targeted): 3 dependency
+NONE	1	bump(targeted): 3 dependencies and more
+NONE	1	bump(): 3 dependencies
+NONE	1	release(2026.1104): two parts
+NONE	1	release(2026.1104.1):
+NONE	1	
+NONE	0	

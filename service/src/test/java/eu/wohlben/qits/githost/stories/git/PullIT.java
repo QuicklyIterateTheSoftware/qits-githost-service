@@ -152,7 +152,7 @@ public class PullIT {
         StoryTools.git(),
         "teammate@qits.local",
         "a teammate",
-        "write up the meeting");
+        "docs(qits-42): write up the meeting");
     commands.run("{} rev-parse HEAD", StoryTools.git());
     String teammateSha = commands.lastOutput().strip();
     commands

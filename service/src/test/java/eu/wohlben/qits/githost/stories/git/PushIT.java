@@ -131,7 +131,7 @@ public class PushIT {
             StoryTools.git(),
             "developer@qits.local",
             "a developer",
-            "note what this release changes")
+            "docs(qits-42): note what this release changes")
         .as("change-committed");
 
     commands.run("{} rev-parse HEAD", StoryTools.git());

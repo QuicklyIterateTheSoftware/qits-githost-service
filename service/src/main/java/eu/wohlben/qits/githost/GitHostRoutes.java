@@ -92,10 +92,9 @@ import org.jboss.logging.Logger;
  *       — it guards exactly one ref per repo (the bare's {@code HEAD}) against a reflex {@code git
  *       push … main}, and it ships inert. See that class for the mechanism, the two push-option
  *       bypasses and why they are options rather than headers.
- *   <li>{@link CommitSubjectHook}: every commit new to the repository must have a subject of the
- *       form {@code term(<project>-<n>): message}, on a repository whose default branch opts in
- *       with {@code .config/qits/commit-subjects.yml}. Platform services, CI runs and the bootstrap
- *       ingress are exempt; {@code -o qits.subject-bypass=<reason>} is the recorded break-glass.
+ *   <li>{@link CommitMessageHook}: every commit new to the repository must have a message one of
+ *       {@link CommitMessageVariants} accepts, on every repository and for every pusher. Only the
+ *       first push into a repository with no ref at all is not checked — it adopts its history.
  * </ul>
  *
  * <p>Two addressing schemes, and they are not two ways of saying the same thing:
@@ -231,9 +230,6 @@ public class GitHostRoutes {
 
   /** Where {@link #snapshotPushScope} leaves the push's {@link RefScopeHook.Scope} for the worker. */
   private static final String PUSH_SCOPE_KEY = GitHostRoutes.class.getName() + ".pushScope";
-
-  /** Where the receive routes leave the push's {@link CommitSubjectHook.Pusher} for the worker. */
-  private static final String PUSHER_KEY = GitHostRoutes.class.getName() + ".pusher";
 
   /**
    * The namespace qits-idp mints a client's SELF-ROLE into: every bearer it issues carries {@code
@@ -406,7 +402,7 @@ public class GitHostRoutes {
 
   @Inject ProtectedRefHook protectedRefs;
 
-  @Inject CommitSubjectHook commitSubjects;
+  @Inject CommitMessageHook commitMessages;
 
   /**
    * Where repositories live: packs, pack indexes and refs as blobs in this service's own store. The
@@ -686,7 +682,6 @@ public class GitHostRoutes {
    */
   private void snapshotBootstrapPushScope(RoutingContext rc, BootstrapIngressCredential credential) {
     rc.put(PUSH_SCOPE_KEY, RefScopeHook.external(credential.refPattern()));
-    rc.put(PUSHER_KEY, CommitSubjectHook.Pusher.bootstrapIngress());
     rc.next();
   }
 
@@ -788,7 +783,7 @@ public class GitHostRoutes {
         // (or this repository's own protection row) says otherwise — see ProtectedRefHook. Bound to
         // the repo id rather than handed the ReceivePack alone, because the override is a row keyed
         // on that id and a DFS repository has no directory to derive it from.
-        rp.setPreReceiveHook(preReceiveHook(opened.repoId(), pushScope(rc), pusher(rc)));
+        rp.setPreReceiveHook(preReceiveHook(opened.repoId(), pushScope(rc)));
         // The post-receive announcement: fires after the ref updates land, still inside receive(),
         // so the repository is readable and the pack's objects are there to be measured. The
         // announcer must not block the push and must not throw — see ScmAnnouncer.
@@ -820,41 +815,21 @@ public class GitHostRoutes {
   private void snapshotPushScope(RoutingContext rc) {
     SecurityIdentity identity =
         rc.user() instanceof QuarkusHttpUser user ? user.getSecurityIdentity() : null;
-    RefScopeHook.Scope scope = RefScopeHook.scopeOf(identity);
-    rc.put(PUSH_SCOPE_KEY, scope);
-    rc.put(PUSHER_KEY, pusherOf(identity, scope));
+    rc.put(PUSH_SCOPE_KEY, RefScopeHook.scopeOf(identity));
     rc.next();
   }
 
   /**
-   * Who is pushing, for {@link CommitSubjectHook}'s exemptions — read here, on the event loop, for
-   * the same reason the scope is.
-   */
-  private static CommitSubjectHook.Pusher pusherOf(
-      SecurityIdentity identity, RefScopeHook.Scope scope) {
-    if (identity == null || identity.isAnonymous()) {
-      return CommitSubjectHook.Pusher.nobody();
-    }
-    String name = identity.getPrincipal() == null ? null : identity.getPrincipal().getName();
-    return new CommitSubjectHook.Pusher(
-        name == null || name.isBlank() ? "(unnamed)" : name,
-        identity.getRoles(),
-        scope.rule() == RefScopeHook.Rule.SERVICE_CLIENT,
-        false);
-  }
-
-  /**
-   * Three checks, in order: the scope, the default-branch hook, the commit subjects. The scope check
+   * Three checks, in order: the scope, the default-branch hook, the commit messages. The scope check
    * rejects every command of a push that touches one ref outside the scope, so the protected-ref
    * check never sees a partly allowed push. The scope also decides whether the protected-ref hook
-   * accepts {@code -o qits.token=}. The commit-subject check runs only when the two before it
+   * accepts {@code -o qits.token=}. The commit-message check runs only when the two before it
    * rejected nothing, so a push is never walked just to be refused for a reason it already has.
    */
-  private PreReceiveHook preReceiveHook(
-      String repoId, RefScopeHook.Scope scope, CommitSubjectHook.Pusher pusher) {
+  private PreReceiveHook preReceiveHook(String repoId, RefScopeHook.Scope scope) {
     PreReceiveHook protectedHook =
         protectedRefs.forRepository(repoId, scope.tokenBypassAllowed());
-    PreReceiveHook subjectHook = commitSubjects.forRepository(repoId, pusher);
+    PreReceiveHook messageHook = commitMessages.forRepository(repoId);
     return (pack, commands) -> {
       if (RefScopeHook.rejectOutsideScope(commands, scope)) {
         LOG.infof(
@@ -866,14 +841,9 @@ public class GitHostRoutes {
       }
       protectedHook.onPreReceive(pack, commands);
       if (commands.stream().allMatch(c -> c.getResult() == ReceiveCommand.Result.NOT_ATTEMPTED)) {
-        subjectHook.onPreReceive(pack, commands);
+        messageHook.onPreReceive(pack, commands);
       }
     };
-  }
-
-  private static CommitSubjectHook.Pusher pusher(RoutingContext rc) {
-    CommitSubjectHook.Pusher pusher = rc.get(PUSHER_KEY);
-    return pusher == null ? CommitSubjectHook.Pusher.nobody() : pusher;
   }
 
   private static RefScopeHook.Scope pushScope(RoutingContext rc) {

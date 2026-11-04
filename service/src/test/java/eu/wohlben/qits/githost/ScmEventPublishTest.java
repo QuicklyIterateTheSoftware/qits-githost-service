@@ -120,7 +120,7 @@ public class ScmEventPublishTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     forgetPreviousPublishes(); // seedOrigin's own push already published
 
-    GitHostFixture.commitFile(clone, "ordinary.txt", "an ordinary push\n", "ordinary");
+    GitHostFixture.commitFile(clone, "ordinary.txt", "an ordinary push\n", "test(qits-1): ordinary");
     String head = GitHostFixture.head(clone);
     GitHostFixture.git(clone, "git", "push", "origin", "main");
 
@@ -146,7 +146,7 @@ public class ScmEventPublishTest {
     Path clone = GitHostFixture.clone(gitBase, address);
     forgetPreviousPublishes();
 
-    GitHostFixture.commitFile(clone, "named.txt", "pushed by name\n", "named");
+    GitHostFixture.commitFile(clone, "named.txt", "pushed by name\n", "test(qits-1): named");
     String tagObject = GitHostFixture.tagObject(clone, "v2026.821.1", "release");
     GitHostFixture.git(
         clone,
@@ -176,7 +176,7 @@ public class ScmEventPublishTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     forgetPreviousPublishes();
 
-    GitHostFixture.commitFile(clone, "mirrored.txt", "pushed by id\n", "mirrored");
+    GitHostFixture.commitFile(clone, "mirrored.txt", "pushed by id\n", "test(qits-1): mirrored");
     GitHostFixture.git(clone, "git", "push", "origin", "main");
 
     OutboxEvent published = only("SCMPublishCommit");
@@ -189,7 +189,7 @@ public class ScmEventPublishTest {
   public void oneReleasePushOfABranchAndAnAnnotatedTagPublishesBoth() throws Exception {
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     Path clone = GitHostFixture.clone(gitBase, repoId);
-    GitHostFixture.commitFile(clone, "VERSION", "2026.810.1\n", "release");
+    GitHostFixture.commitFile(clone, "VERSION", "2026.810.1\n", "test(qits-1): release");
     String released = GitHostFixture.head(clone);
     String tagObject = GitHostFixture.tagObject(clone, "v2026.810.1", "release");
     forgetPreviousPublishes();
@@ -218,7 +218,7 @@ public class ScmEventPublishTest {
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     Path clone = GitHostFixture.clone(gitBase, repoId);
     GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "feature/x");
-    GitHostFixture.commitFile(clone, "feature.txt", "work\n", "work");
+    GitHostFixture.commitFile(clone, "feature.txt", "work\n", "test(qits-1): work");
     String tip = GitHostFixture.head(clone);
     GitHostFixture.git(clone, "git", "push", "-q", "origin", "feature/x");
     forgetPreviousPublishes();
@@ -244,7 +244,7 @@ public class ScmEventPublishTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     forgetPreviousPublishes();
 
-    GitHostFixture.commitFile(clone, "caused.txt", "because of something\n", "caused");
+    GitHostFixture.commitFile(clone, "caused.txt", "because of something\n", "test(qits-1): caused");
     GitHostFixture.git(
         clone, "git", "-c", "http.extraHeader=X-Qits-Causation-Id: " + cause, "push", "origin",
         "main");
@@ -258,7 +258,7 @@ public class ScmEventPublishTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     forgetPreviousPublishes();
 
-    GitHostFixture.commitFile(clone, "uncaused.txt", "nobody asked\n", "uncaused");
+    GitHostFixture.commitFile(clone, "uncaused.txt", "nobody asked\n", "test(qits-1): uncaused");
     GitHostFixture.git(clone, "git", "push", "origin", "main");
 
     assertNull(only("SCMPublishCommit").parentId, "an ordinary push is a chain root");
@@ -272,7 +272,7 @@ public class ScmEventPublishTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     forgetPreviousPublishes();
 
-    GitHostFixture.commitFile(clone, "malformed.txt", "not a uuid\n", "malformed");
+    GitHostFixture.commitFile(clone, "malformed.txt", "not a uuid\n", "test(qits-1): malformed");
     GitHostFixture.git(
         clone, "git", "-c", "http.extraHeader=X-Qits-Causation-Id: not-a-uuid", "push", "origin",
         "main");
@@ -292,7 +292,7 @@ public class ScmEventPublishTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     String before = GitHostFixture.head(clone);
     GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "feature/x");
-    GitHostFixture.commitFile(clone, "feature.txt", "work\n", "work");
+    GitHostFixture.commitFile(clone, "feature.txt", "work\n", "test(qits-1): work");
     String feature = GitHostFixture.head(clone);
     GitHostFixture.git(clone, "git", "push", "-q", "origin", "feature/x");
     forgetPreviousPublishes();
@@ -320,10 +320,10 @@ public class ScmEventPublishTest {
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     Path clone = GitHostFixture.clone(gitBase, repoId);
     GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "a");
-    GitHostFixture.commitFile(clone, "a.txt", "a\n", "a");
+    GitHostFixture.commitFile(clone, "a.txt", "a\n", "test(qits-1): a");
     GitHostFixture.git(clone, "git", "checkout", "-q", "main");
     GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "b");
-    GitHostFixture.commitFile(clone, "b.txt", "b\n", "b");
+    GitHostFixture.commitFile(clone, "b.txt", "b\n", "test(qits-1): b");
     GitHostFixture.git(clone, "git", "push", "-q", "origin", "a", "b");
     forgetPreviousPublishes();
 
@@ -373,7 +373,7 @@ public class ScmEventPublishTest {
 
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("ref", "refs/heads/main");
-    body.put("message", "stamp the version");
+    body.put("message", "release(2026.1004.1): stamp the version");
     body.put("files", Map.of("VERSION", "2026.1004.1\n"));
     body.put("projectId", "p");
     body.put("repoName", "n");
@@ -388,7 +388,7 @@ public class ScmEventPublishTest {
     assertTrue(published.payload.contains("\"branch\":\"main\""), published.payload);
     assertTrue(published.payload.contains("\"oldSha\":\"" + before + "\""), published.payload);
     assertTrue(published.payload.contains("\"sha\":\"" + committed + "\""), published.payload);
-    assertTrue(published.payload.contains("\"message\":\"stamp the version\\n\""), published.payload);
+    assertTrue(published.payload.contains("\"message\":\"release(2026.1004.1): stamp the version\\n\""), published.payload);
     assertTrue(published.payload.contains("\"projectId\":\"p\""), published.payload);
     assertTrue(published.payload.contains("\"repoName\":\"n\""), published.payload);
 
@@ -441,7 +441,7 @@ public class ScmEventPublishTest {
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     Path clone = GitHostFixture.clone(gitBase, repoId);
     GitHostFixture.git(clone, "git", "checkout", "-q", "-b", branch);
-    GitHostFixture.commitFile(clone, "bump.txt", "bumped\n", "bump");
+    GitHostFixture.commitFile(clone, "bump.txt", "bumped\n", "test(qits-1): bump");
     String tip = GitHostFixture.head(clone);
     // Only a bump run may push a maintenance branch (RefScopeHook); the REST delete is not a push.
     GitHostFixture.gitAs(
@@ -479,7 +479,7 @@ public class ScmEventPublishTest {
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     Path clone = GitHostFixture.clone(gitBase, repoId);
     GitHostFixture.git(clone, "git", "checkout", "-q", "-b", "old/caller");
-    GitHostFixture.commitFile(clone, "old.txt", "old\n", "old");
+    GitHostFixture.commitFile(clone, "old.txt", "old\n", "test(qits-1): old");
     GitHostFixture.git(clone, "git", "push", "-q", "origin", "old/caller");
     forgetPreviousPublishes();
 
@@ -507,7 +507,7 @@ public class ScmEventPublishTest {
 
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("ref", "refs/heads/main");
-    body.put("message", "despite a broken announcer");
+    body.put("message", "test(qits-1): despite a broken announcer");
     body.put("files", Map.of("broken.txt", "still lands\n"));
     String committed;
     failingAnnouncer.arm();

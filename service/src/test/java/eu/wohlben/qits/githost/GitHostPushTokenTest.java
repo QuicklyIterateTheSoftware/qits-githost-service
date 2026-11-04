@@ -64,7 +64,7 @@ public class GitHostPushTokenTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     String before = refSha(repoId, "refs/heads/main");
 
-    GitHostFixture.commitFile(clone, "reflex.txt", "muscle memory\n", "reflex");
+    GitHostFixture.commitFile(clone, "reflex.txt", "muscle memory\n", "test(qits-1): reflex");
     String refusal = GitHostFixture.gitExpectingFailure(clone, "git", "push", "origin", "main");
 
     assertTrue(refusal.contains("protected ref refs/heads/main"), refusal);
@@ -79,7 +79,7 @@ public class GitHostPushTokenTest {
     String repoId = seedOrigin();
     Path clone = GitHostFixture.clone(gitBase, repoId);
 
-    GitHostFixture.rewriteTip(clone, "rewritten by a token holder");
+    GitHostFixture.rewriteTip(clone, "test(qits-1): rewritten by a token holder");
     String rewritten = GitHostFixture.head(clone);
     GitHostFixture.git(
         clone, "git", "push", "--force", "-o", "qits.token=" + TOKEN, "origin", "main");
@@ -103,7 +103,7 @@ public class GitHostPushTokenTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     String before = refSha(repoId, "refs/heads/main");
 
-    GitHostFixture.commitFile(clone, "wrong.txt", "not the token\n", "wrong");
+    GitHostFixture.commitFile(clone, "wrong.txt", "not the token\n", "test(qits-1): wrong");
     String refusal =
         GitHostFixture.gitExpectingFailure(
             clone, "git", "push", "-o", "qits.token=not-the-token", "origin", "main");
@@ -125,7 +125,7 @@ public class GitHostPushTokenTest {
     protections.setProtectionOverride(repoId, false);
     Path clone = GitHostFixture.clone(gitBase, repoId);
 
-    GitHostFixture.commitFile(clone, "exempt.txt", "not guarded here\n", "exempt");
+    GitHostFixture.commitFile(clone, "exempt.txt", "not guarded here\n", "test(qits-1): exempt");
     String pushed = GitHostFixture.head(clone);
     GitHostFixture.git(clone, "git", "push", "origin", "main");
 
@@ -150,7 +150,7 @@ public class GitHostPushTokenTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     String before = refSha(repoId, "refs/heads/main");
 
-    GitHostFixture.rewriteTip(clone, "rewritten by a scoped agent");
+    GitHostFixture.rewriteTip(clone, "test(qits-1): rewritten by a scoped agent");
     String refusal =
         GitHostFixture.gitExpectingFailureAs(
             AGENT_ON_MAIN, clone, "git", "push", "--force", "-o", "qits.token=" + TOKEN,
@@ -167,7 +167,7 @@ public class GitHostPushTokenTest {
     Path clone = GitHostFixture.clone(gitBase, repoId);
     String before = refSha(repoId, "refs/heads/main");
 
-    GitHostFixture.commitFile(clone, "person.txt", "a person's change\n", "person");
+    GitHostFixture.commitFile(clone, "person.txt", "a person's change\n", "test(qits-1): person");
     String refusal =
         GitHostFixture.gitExpectingFailureAs(
             CLI_PERSON, clone, "git", "push", "-o", "qits.token=" + TOKEN, "origin", "main");
@@ -182,7 +182,7 @@ public class GitHostPushTokenTest {
     String repoId = seedOrigin();
     Path clone = GitHostFixture.clone(gitBase, repoId);
 
-    GitHostFixture.commitFile(clone, "release.txt", "2026.912.120000\n", "release");
+    GitHostFixture.commitFile(clone, "release.txt", "2026.912.120000\n", "test(qits-1): release");
     String released = GitHostFixture.head(clone);
     GitHostFixture.gitAs(
         AGENT_ON_MAIN, clone, "git", "push", "-o", "qits.release", "origin", "main");
@@ -197,7 +197,7 @@ public class GitHostPushTokenTest {
     String repoId = seedOrigin();
     Path clone = GitHostFixture.clone(gitBase, repoId);
 
-    GitHostFixture.commitFile(clone, "release.txt", "2026.731.193059\n", "release");
+    GitHostFixture.commitFile(clone, "release.txt", "2026.731.193059\n", "test(qits-1): release");
     String released = GitHostFixture.head(clone);
     GitHostFixture.git(clone, "git", "push", "-o", "qits.release", "origin", "main");
 

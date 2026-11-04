@@ -194,52 +194,55 @@ branch delete (below) is not a push and is not affected.
 - **The git primitives are not part of this.** `/githost/api/repositories/{repoId}/merges`, `/tags`,
   `/commits` and the branch delete stay `qits:system` only.
 
-### Commit subjects
+### Commit messages
 
-A repository can require every commit it receives to name the work it belongs to. The guard is
-`CommitSubjectHook`, the third pre-receive check after the scope and the default branch's seatbelt,
-and it runs only when those two refused nothing. It covers every receive route — `/git/:repoId`,
-`/git/:projectId/:repoName` and `/bootstrap-git` — and none of the REST primitives, which never pass
-through receive-pack. It checks **syntax only**: the id is never looked up, and nothing here calls
-qits-projects.
+Every commit this host accepts has a message in one of a closed list of forms, defined in code as
+`CommitMessageVariants`. The rule holds on every repository, for every pusher and on both write
+paths: receive-pack (`CommitMessageHook`, the third pre-receive check after the scope and the
+default branch's seatbelt, which runs only when those two refused nothing — on `/git/:repoId`,
+`/git/:projectId/:repoName` and `/bootstrap-git` alike) and the REST commit primitive (`POST
+…/commits`, see "The git primitives"). Nothing lets a non-matching commit through: there is no
+per-repository file, no server switch, no exemption by identity (`qits:system`, `qits:ci-run`,
+service clients and the bootstrap ingress included) and no push option. It checks **syntax only**:
+an id is never looked up, and nothing here calls qits-projects.
 
-- **Opting in is a file on the default branch.** `.config/qits/commit-subjects.yml`, read at the tip
-  of the branch `HEAD` names, as it stands before the push:
+A commit is accepted when the first line of its message — and, for `MERGE`, its parent count —
+matches a variant. They are tried in this order and the first match wins:
 
-  ```yaml
-  enforce: true
-  ```
+| Variant | Accepts | Example |
+|---|---|---|
+| `MERGE` | any commit with two or more parents, whatever its message | `Merge branch 'feature' into main` |
+| `BUMP` | `^bump\([0-9A-Za-z._-]+\): [0-9]+ dependencies$` — a qits-maintenance bump step | `bump(targeted): 3 dependencies` |
+| `RELEASE` | `^release\([0-9]+\.[0-9]+\.[0-9]+\): .+$` — a release's version stamp through `POST …/commits` | `release(2026.1104.22323): stamp the version` |
+| `PLATFORM` | `^chore\(platform\): \S.*$` — platform housekeeping | `chore(platform): initialize the repository template skeleton` |
+| `SUBJECT` | `^[A-Za-z][A-Za-z0-9_/.-]*\((ID(?:, *ID)*)\)!?: \S.*$`, `ID` = `[A-Za-z0-9][A-Za-z0-9-]*-[0-9]{1,18}` | `feat(qits-1337): refuse malformed commit subjects` |
 
-  Only a top-level `enforce: true` turns it on. No file, no key, any other value, an unreadable file
-  or an unborn `HEAD` is off — so every repository ships off, and a repository turns the guard on
-  (or off) with an ordinary commit, which is itself checked by the state before it.
-- **The grammar** is the first line of the message:
-  `^[A-Za-z][A-Za-z0-9_/.-]*\((ID(?:, *ID)*)\)!?: \S.*$`, where `ID` is
-  `[A-Za-z0-9][A-Za-z0-9-]*-[0-9]{1,18}` — that is `term(<project>-<n>): message`, for example
-  `feat(qits-1337): refuse malformed commit subjects`, or several ids separated by a comma and an
-  optional space, for example `chore(qits-731, qits-882): bump(dependencies): 2 dependencies`.
-  `<project>-<n>` is the qualified id of the ticket, epic or task. It is a strict subset of what
-  qits-projects' `CommitSubjectEntities` reads — the reader splits the parenthesised group on `,`
-  and strips each part, and every accepted subject's parts each name an entity there.
+In `SUBJECT`, `<project>-<n>` is the qualified id of the ticket, epic or task the work belongs to,
+and several ids may be given, separated by a comma and an optional space — `chore(qits-9, qits-10):
+bump(targeted): 3 dependencies` is what maintenance writes. It is a strict subset of what
+qits-projects' `CommitSubjectEntities` reads: the reader splits the parenthesised group on `,` and
+strips each part, and every accepted subject's parts each name an entity there.
+`commit-message-vectors.tsv` in the test resources is the shared table of cases, identical in
+qits-projects-service.
+
 - **Which commits**: every commit reachable from a pushed (non-delete) ref, branch or tag, and from
-  no ref the repository already has. Annotated tags are peeled to their commit. A merge commit's own
-  subject is not checked; the commits it brings in are. More than 10 000 new commits in one push is
+  no ref the repository already has. Annotated tags are peeled to their commit. A merge is accepted
+  as `MERGE`; the commits it brings in are each checked. More than 10 000 new commits in one push is
   refused rather than waved through unchecked.
-- **Who is exempt, by identity, never by message shape**: a platform service client (row 4 above,
-  with `qits:system`), the bootstrap ingress, and any pusher holding a role in
-  `qits.githost.commit-subjects.exempt-roles` (ships `qits:system,qits:ci-run` — `qits:ci-run` is
-  what maintenance bumps run as). The first two stay exempt whatever the list says. `qits:agent`
-  and people are not exempt.
-- **A refusal is whole**, like the scope's: every ref is rejected with
-  `commit subject must be term(<project>-<n>): message, or term(<project>-<n>, <project>-<n>):
-  message`, and the pusher gets `remote:` lines naming each offending commit (short sha and
-  subject, up to ten), the required form, an example, how to rewrite (`git commit --amend`,
-  `git rebase -i`) and the break-glass.
-- **The break-glass is `git push -o qits.subject-bypass="<why>"`.** A non-blank reason lets a refused
-  push through; a blank one does not count and the refusal says so. A use is recorded only when the
-  guard would actually have refused — in `commit_subject_bypass` (pusher, reason, refs, the
-  offending shas, when) and as a WARN log line. If the record cannot be written the push still lands
-  and the failure is logged at ERROR: a break-glass that needs a healthy database is not one.
+- **Adopting history**: a push into a repository that has **no ref at all** before it lands is not
+  checked — an import, a cold bootstrap, the `/bootstrap-git` ingress — because there is nothing to
+  rewrite that history onto. A freshly provisioned repository's `HEAD`, a symbolic ref to a branch
+  that does not exist yet, is not a ref for this purpose. Once any ref exists, every new commit is
+  checked.
+- **A refusal is whole**, like the scope's: every ref is rejected with `commit message matches no
+  accepted form; see the remote: lines for the forms`, and the pusher gets `remote:` lines naming
+  each offending commit (short sha and first line, up to ten, then "and N more"), every accepted form
+  with its example (generated from `CommitMessageVariants`, so it cannot drift), what the
+  `SUBJECT` id is, and how to rewrite (`git commit --amend`, `git rebase -i`). `POST …/commits`
+  answers the same forms in a 422.
+- **A storage fault fails open**: if the walk cannot read the repository the push is let through and
+  the fault is logged at ERROR. Receive-pack has already checked connectivity by then, so it is the
+  host that is broken, not the push — and the push that fixes the host must not be stranded.
 
 ### The API
 
@@ -247,7 +250,6 @@ qits-projects.
 |---|---|
 | `GET /githost/api/repositories` | `{"repositories":[{"id", "protectDefaultBranch"}, …]}` — every repository this host serves, sorted, as records. |
 | `GET /githost/api/loc[?repositoryId=…]` | `{"entries":[{"repositoryId", "commitSha", "status", "languages":[{"language", "mainLines", "testLines"}]}, …]}` — the lines of code of every repository's default branch, in one request, sorted by id. `repositoryId` (repeatable) narrows it; a named id this host does not hold is left out, an invalid one is a 400. Answered from the stored counts only: `COUNTED` carries the numbers, `PENDING` means the tip is not counted yet and this call queued its count, `EMPTY` means no commit yet. Same roles as the per-repository `/loc`. |
-| `GET /githost/api/repositories/{repoId}/commit-subject-bypasses` | `{"bypasses":[{"id", "repositoryId", "pusher", "reason", "refs", "commits", "usedAt"}, …]}` — every recorded use of the commit-subject break-glass on one repository, newest first. `qits:admin`, `qits:admin-agent`, `qits:system`, `qits:agent` or `qits:desk-admin`; an unknown repository answers an empty list. |
 
 It answers the same question as `GET /git` and is not a duplicate of it: that one is a wire the
 platform's machines read and its shape is fixed by them, this one is the browser's and may grow a
@@ -459,7 +461,7 @@ and one refusal. Tags are always annotated.
 ```
 POST /githost/api/repositories/<repoId>/commits
 {"ref": "refs/heads/release/17",
- "message": "bump the manifests",
+ "message": "release(2026.1104.22323): stamp the version",
  "files": {"pom.xml": "…", "web/package.json": "…"},   // path -> UTF-8 content
  "deletePaths": ["old/thing.txt"],                     // optional
  "author": {"name": "…", "email": "…"},                // optional
@@ -467,7 +469,13 @@ POST /githost/api/repositories/<repoId>/commits
 
 200 {"ref": "…", "sha": "<commit>", "parent": "<old tip>", "outcome": "committed" | "unchanged"}
 409 {"error": "ref-moved", …}     // the branch moved under the caller
+422 {"error": "malformed-commit-message", "detail": "…"}   // no accepted form; nothing written
 ```
+
+**The message is held to the push's rule** ("Commit messages"), with one parent — the commit this
+writes always has exactly one, so `MERGE` never applies — and a message no variant accepts is a 422
+whose detail lists every accepted form. `POST …/merges` always writes a merge (or fast-forwards onto
+commits the repository already holds), so its message is `MERGE` by construction and stays free.
 
 The content is the caller's — this host writes it and reads none of it, which is why the primitive is
 a map of paths and not an operation on manifests. **An edit that produces the tip's own tree writes
@@ -587,13 +595,12 @@ lineage, the retry budget). What this service owns is in
 
 | Key / variable | Meaning |
 |---|---|
-| `QITS_RESOURCE_DB_URL` / `_USERNAME` / `_PASSWORD` | This service's PostgreSQL database (pack catalog, protection overrides, commit-subject bypass records). No defaults — an unset variable fails the boot. |
+| `QITS_RESOURCE_DB_URL` / `_USERNAME` / `_PASSWORD` | This service's PostgreSQL database (pack catalog, protection overrides, name index, line counts). No defaults — an unset variable fails the boot. |
 | `QITS_RESOURCE_EVENTSTREAM_URL` / `_USERNAME` / `_PASSWORD` | The outbox's own database, from the qits-eventstream jar. |
 | `QITS_RESOURCE_IDP_URL` / `_CLIENT_ID` / `_CLIENT_SECRET` | This service's own qits-idp service client, from the `idp:client` resource: the `qits` oidc client (`quarkus.oidc-client.qits`) mints its `qits:system` bearer from them by client credentials. Without the variable the address falls back to the idp through the edge, `https://idp.qits.${QITS_DOMAIN}/idp` — never the `<env>-qits-idp` wire alias (qits-1330). The id defaults to `dev-qits-githost`, the secret to empty — a token request is then refused. Off under `%dev` and `%test`. |
 | `QITS_EVENTS_URL` | Where qits-events answers. Scheme, host and port, no path. |
 | `QITS_GITHOST_STORAGE_CLIENT` | The client id whose self-role (`clients/<value>`) opens the id-addressed scheme. Set it to qits-projects' service client and nothing else opens those routes — not `qits:admin`, not `qits:system`. Unset (shipped) leaves the scheme exactly as it was. |
 | `QITS_REPOSITORIES_GIT_PROTECT_DEFAULT_BRANCH` | The default branch's seatbelt. Ships `false`. |
-| `QITS_GITHOST_COMMIT_SUBJECTS_EXEMPT_ROLES` | Roles whose pushes skip the commit-subject guard. Ships `qits:system,qits:ci-run`. A platform service client and the bootstrap ingress are exempt regardless. |
 | `QITS_REPOSITORIES_GIT_PUSH_TOKEN` | What `-o qits.token=<value>` must match. No default: unset means no token matches. Only a platform service client may present it (see "Who may push what"). |
 | `QITS_REPOSITORIES_GIT_MAX_PACK_SIZE` | The largest push this host accepts. Ships `64M`. |
 | `QITS_GIT_AUTHOR_NAME` / `QITS_GIT_AUTHOR_EMAIL` | Who a commit the git primitives manufacture belongs to. The platform's key pair — qits-workspaces reads the same one — defaulting to `qits <qits@local>`. |
@@ -607,8 +614,6 @@ whole `X-Qits-` prefix, so a header would behave differently through the front d
 - `-o qits.release` — an integrate-produced release. Fast-forward only.
 - `-o qits.token=<value>` — push the protected branch anyway, if the value matches and the pusher is
   a platform service client.
-- `-o qits.subject-bypass=<reason>` — push past the commit-subject guard. Needs a non-blank reason;
-  each use that mattered is recorded (see "Commit subjects").
 
 ## Deployment
 

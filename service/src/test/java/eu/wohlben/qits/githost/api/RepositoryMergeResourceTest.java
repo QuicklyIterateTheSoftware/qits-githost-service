@@ -132,7 +132,7 @@ public class RepositoryMergeResourceTest {
     for (String branch : List.of("a", "b", "c")) {
       git(work, "checkout", "-q", "-B", "feature/" + branch, "origin/feature/" + branch);
       write(work, branch + "-more.txt", branch + "\n");
-      commit(work, branch + " again");
+      commit(work, "test(qits-1): " + branch + " again");
     }
     push(work, repo, "feature/a", "feature/b", "feature/c");
 
@@ -1119,7 +1119,7 @@ public class RepositoryMergeResourceTest {
     git(work, "clone", "-q", gitBase + "/" + repo, ".");
     git(work, "checkout", "-q", "-B", "feature/b", "origin/feature/b");
     write(work, "b-more.txt", "b\n");
-    commit(work, "b again");
+    commit(work, "test(qits-1): b again");
     push(work, repo, "feature/b");
 
     JsonPath second =

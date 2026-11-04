@@ -271,13 +271,13 @@ public class GitHostRefScopeTest {
     GitHostFixture.gitAs(BUMP_RUN, clone, "git", "push", "origin", "HEAD:" + MAINTENANCE);
     assertEquals(GitHostFixture.head(clone), sha(repoId, MAINTENANCE));
 
-    GitHostFixture.commitFile(clone, "more.txt", "more\n", "more");
+    GitHostFixture.commitFile(clone, "more.txt", "more\n", "test(qits-1): more");
     GitHostFixture.gitAs(BUMP_RUN, clone, "git", "push", "origin", "HEAD:" + MAINTENANCE);
     String fastForwarded = GitHostFixture.head(clone);
     assertEquals(fastForwarded, sha(repoId, MAINTENANCE));
 
     // A rebuild: the tip is rewritten and pushed with a lease, as the bump runs do.
-    GitHostFixture.rewriteTip(clone, "rebuilt");
+    GitHostFixture.rewriteTip(clone, "test(qits-1): rebuilt");
     String rebuilt = GitHostFixture.head(clone);
     GitHostFixture.gitAs(
         BUMP_RUN,
@@ -390,7 +390,7 @@ public class GitHostRefScopeTest {
 
   private Path cloneWithACommit(String repoId) throws Exception {
     Path clone = GitHostFixture.clone(gitBase, repoId);
-    GitHostFixture.commitFile(clone, "work.txt", "work\n", "work");
+    GitHostFixture.commitFile(clone, "work.txt", "work\n", "test(qits-1): work");
     return clone;
   }
 

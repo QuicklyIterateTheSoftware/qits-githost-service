@@ -76,7 +76,7 @@ public class GitHostPushPolicyTest {
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     String main = sha(repoId, "refs/heads/main");
     Path clone = cloneAs(AGENT, repoId);
-    GitHostFixture.commitFile(clone, "ticket.txt", "ticket work\n", "ticket");
+    GitHostFixture.commitFile(clone, "ticket.txt", "ticket work\n", "test(qits-1): ticket");
 
     GitHostFixture.gitAs(AGENT, clone, "git", "push", "origin", "HEAD:refs/heads/ticket/t-1");
     assertEquals(GitHostFixture.head(clone), sha(repoId, "refs/heads/ticket/t-1"));
@@ -91,7 +91,7 @@ public class GitHostPushPolicyTest {
   public void aCiRunRoleOpensTheDoorToo() throws Exception {
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     Path clone = cloneAs(CI_RUN, repoId);
-    GitHostFixture.commitFile(clone, "pom.xml", "<bumped/>\n", "bump");
+    GitHostFixture.commitFile(clone, "pom.xml", "<bumped/>\n", "test(qits-1): bump");
 
     GitHostFixture.gitAs(
         CI_RUN,
@@ -110,7 +110,7 @@ public class GitHostPushPolicyTest {
   public void anAgentWithoutAListMayCloneButPushesNothing() throws Exception {
     String repoId = GitHostFixture.seedOrigin(repositories, gitBase);
     Path clone = cloneAs(AGENT_WITHOUT_LIST, repoId);
-    GitHostFixture.commitFile(clone, "notes.txt", "read only\n", "notes");
+    GitHostFixture.commitFile(clone, "notes.txt", "read only\n", "test(qits-1): notes");
 
     String refusal =
         GitHostFixture.gitExpectingFailureAs(
