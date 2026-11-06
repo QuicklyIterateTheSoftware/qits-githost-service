@@ -83,13 +83,13 @@ components:
           type: string
     RepositoryNamesStatement:
       type: object
+      description: "One repository's whole name set, as qits-projects states it. Applied\
+        \ only when revision is newer than the one held."
       required:
       - projectId
       - projectSlug
       - names
       - revision
-      description: "One repository's whole name set, as qits-projects states it. Applied\
-        \ only when revision is newer than the one held."
       properties:
         projectId:
           type: string
@@ -99,10 +99,10 @@ components:
           maxLength: 255
         names:
           type: array
-          items:
-            type: string
           description: "Each non-blank, at most 255 characters, no '/', no whitespace,\
             \ no .git suffix"
+          items:
+            type: string
         revision:
           type: integer
           format: int64
