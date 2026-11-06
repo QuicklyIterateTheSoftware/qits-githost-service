@@ -142,7 +142,7 @@
         <qits.bootstrap-cli-pacts-qits-githost-service.version>2026.1021.223102</qits.bootstrap-cli-pacts-qits-githost-service.version>
         <qits.deployments-service-pacts-qits-githost-service.version>2026.1031.45509</qits.deployments-service-pacts-qits-githost-service.version>
         <qits.maintenance-service-pacts-qits-githost-service.version>2026.1021.154504</qits.maintenance-service-pacts-qits-githost-service.version>
-        <qits.ci-frontend-pacts-qits-githost-service.version>2026.1103.145359</qits.ci-frontend-pacts-qits-githost-service.version>
+        <qits.ci-frontend-pacts-qits-githost-service.version>2026.1106.155345</qits.ci-frontend-pacts-qits-githost-service.version>
         <qits.projects-frontend-pacts-qits-githost-service.version>2026.1106.154702</qits.projects-frontend-pacts-qits-githost-service.version>
 
         <!-- Quinoa is a Quarkiverse extension: not in quarkus-bom either, and its version does NOT
