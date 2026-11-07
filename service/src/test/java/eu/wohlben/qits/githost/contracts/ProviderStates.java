@@ -184,7 +184,16 @@ public class ProviderStates {
           "qits contract", "contract@qits.test", Instant.parse("2026-01-01T00:00:00Z"),
           ZoneOffset.UTC);
 
-  /** What a state hands back: its parameters, keys sorted, and no unique tokens (none needed). */
+  /**
+   * What a state hands back: its parameters, keys sorted, and no unique tokens (none needed).
+   *
+   * @param params the state's parameters, keys sorted — what a pact {@code @State} method returns.
+   *     A UUID's frozen number in a param — the whole value or embedded in it — is sticky to the
+   *     committed {@code golden-masters/index.json} ({@link Freezer#seed(Map, Map)}): adding or
+   *     removing a param never renumbers the others
+   * @param uniqueTokens random tokens the state had to put into names to keep them unique (none in
+   *     this provider)
+   */
   public record Setup(Map<String, String> params, List<String> uniqueTokens) {}
 
   @Inject GitRepositoryProvider repositories;
