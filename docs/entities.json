@@ -86,13 +86,6 @@
           "path" : "/loc",
           "dto" : "eu.wohlben.qits.githost.api.LocListResource$LocEntry",
           "kind" : "returns"
-        },
-        {
-          "operationId" : "listLoc",
-          "method" : "GET",
-          "path" : "/loc",
-          "dto" : "eu.wohlben.qits.githost.api.LocListResource$LocListResponse",
-          "kind" : "returns"
         }
       ]
     },
@@ -143,13 +136,6 @@
           "method" : "GET",
           "path" : "/repositories",
           "dto" : "eu.wohlben.qits.githost.api.RepositoriesResource$RepositoriesResponse",
-          "kind" : "returns"
-        },
-        {
-          "operationId" : "RepositoriesResource.list",
-          "method" : "GET",
-          "path" : "/repositories",
-          "dto" : "eu.wohlben.qits.githost.api.RepositoriesResource$RepositoryRecord",
           "kind" : "returns"
         }
       ]
