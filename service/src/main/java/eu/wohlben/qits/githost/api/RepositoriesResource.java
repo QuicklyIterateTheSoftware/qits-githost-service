@@ -1,6 +1,8 @@
 package eu.wohlben.qits.githost.api;
 
+import eu.wohlben.qits.db.exposure.Exposes;
 import eu.wohlben.qits.githost.GitRepositoryProvider;
+import eu.wohlben.qits.githost.persistence.GitRepositoryProtection;
 import eu.wohlben.qits.githost.persistence.RepositoryProtectionStore;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
@@ -76,7 +78,12 @@ public class RepositoriesResource {
    * resolving its {@code HEAD}, which is one storage round trip per row, and this list is drawn for
    * a human. {@code GET /git/:repoId} answers it for one repository, which is where a caller that
    * needs it should ask.
+   *
+   * <p>{@code @Exposes}: {@code protectDefaultBranch} is {@link GitRepositoryProtection}'s override,
+   * but {@link RepositoryProtectionStore#protectionOverrides} flattens the rows to a {@code Map} of
+   * booleans before this record is built, so no read of the entity sits next to the build.
    */
+  @Exposes(GitRepositoryProtection.class)
   public record RepositoryRecord(String id, boolean protectDefaultBranch) {}
 
   /** The envelope. The field name is the contract; the client reads {@code repositories}. */

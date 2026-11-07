@@ -1,5 +1,6 @@
 package eu.wohlben.qits.githost.persistence;
 
+import eu.wohlben.qits.db.exposure.Technical;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,6 +16,10 @@ import java.time.Instant;
  * is the row {@link RepositoryNameStore#apply} locks, so two PUTs for one repository serialise on it.
  * No row means no set was ever stated, which the door answers as revision {@code -1}.
  */
+@Technical(
+    reason =
+        "Revision and lock row ordering qits-projects' name-set writes so a stale or "
+            + "duplicated PUT changes nothing; sync bookkeeping, not product data")
 @Entity
 @Table(name = "git_repository_names_revision")
 public class GitRepositoryNamesRevision extends PanacheEntityBase {

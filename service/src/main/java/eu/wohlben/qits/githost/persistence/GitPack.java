@@ -1,5 +1,6 @@
 package eu.wohlben.qits.githost.persistence;
 
+import eu.wohlben.qits.db.exposure.Technical;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -32,6 +33,10 @@ import jakarta.persistence.Table;
  * exactly. They are sorting keys — for object lookup and for the reftable stack — so losing one is
  * invisible in a single run and reads refs wrong after a restart.
  */
+@Technical(
+    reason =
+        "JGit DFS pack description row backing git storage; packs are served only through the"
+            + " git protocol, never as data an API hands out")
 @Entity
 @Table(name = "git_pack")
 @IdClass(GitPackId.class)

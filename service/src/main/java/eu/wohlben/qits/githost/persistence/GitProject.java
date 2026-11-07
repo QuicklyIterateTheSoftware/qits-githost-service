@@ -1,5 +1,6 @@
 package eu.wohlben.qits.githost.persistence;
 
+import eu.wohlben.qits.db.exposure.Projection;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -14,6 +15,7 @@ import jakarta.persistence.Table;
  * one project at a time (the unique constraint), and stating it for another project moves it. Rows
  * outlive the repositories that stated them: the slug describes the project.
  */
+@Projection(of = "qits-projects:Project")
 @Entity
 @Table(name = "git_project")
 public class GitProject extends PanacheEntityBase {

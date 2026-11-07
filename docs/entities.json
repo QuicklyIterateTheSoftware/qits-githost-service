@@ -1,0 +1,391 @@
+{
+  "formatVersion" : 1,
+  "application" : "qits-githost",
+  "entities" : [
+    {
+      "entity" : "eu.wohlben.qits.githost.persistence.GitPack",
+      "table" : "git_pack",
+      "marking" : "technical",
+      "reason" : "JGit DFS pack description row backing git storage; packs are served only through the git protocol, never as data an API hands out",
+      "projectionOf" : null,
+      "knownGap" : null,
+      "dtos" : [
+        {
+          "type" : "eu.wohlben.qits.githost.storage.PackDescription",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "CatalogRepository.read(String)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.storage.PackDescription",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.storage.PackFile",
+          "site" : "PackDescription.<init>(String, String, long, long, long, long, long, int, List)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.storage.PackFile",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "CatalogRepository.read(String)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.storage.PackFile",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.storage.PackDescription",
+          "site" : "PackDescription.files()"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.storage.QitsPackDescription",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.storage.PackDescription",
+          "site" : "QitsPackDescription.fromRecord(DfsRepositoryDescription, PackDescription)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.storage.QitsPackDescription",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.storage.PackFile",
+          "site" : "QitsPackDescription.fromRecord(DfsRepositoryDescription, PackDescription)"
+        }
+      ],
+      "operations" : [ ]
+    },
+    {
+      "entity" : "eu.wohlben.qits.githost.persistence.GitPackFile",
+      "table" : "git_pack_file",
+      "marking" : "technical",
+      "reason" : "Maps one JGit pack file extension to its blob in the blob store; storage plumbing read only by the DFS repository, which no API exposes",
+      "projectionOf" : null,
+      "knownGap" : null,
+      "dtos" : [
+        {
+          "type" : "eu.wohlben.qits.githost.storage.PackDescription",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "CatalogRepository.read(String)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.storage.PackDescription",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.storage.PackFile",
+          "site" : "PackDescription.<init>(String, String, long, long, long, long, long, int, List)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.storage.PackFile",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "CatalogRepository.read(String)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.storage.PackFile",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.storage.PackDescription",
+          "site" : "PackDescription.files()"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.storage.QitsPackDescription",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.storage.PackDescription",
+          "site" : "QitsPackDescription.fromRecord(DfsRepositoryDescription, PackDescription)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.storage.QitsPackDescription",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.storage.PackFile",
+          "site" : "QitsPackDescription.fromRecord(DfsRepositoryDescription, PackDescription)"
+        }
+      ],
+      "operations" : [ ]
+    },
+    {
+      "entity" : "eu.wohlben.qits.githost.persistence.GitProject",
+      "table" : "git_project",
+      "marking" : "projection",
+      "reason" : null,
+      "projectionOf" : "qits-projects:Project",
+      "knownGap" : null,
+      "dtos" : [
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryNameStore.write(String, String, String, Collection, long)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "site" : "Applied.<init>(NamesState, boolean)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "site" : "RepositoryNameStore.write(String, String, String, Collection, long)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryNameStore.read(GitRepositoryNamesRevision)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryNameStore.write(String, String, String, Collection, long)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "site" : "Applied.state()"
+        }
+      ],
+      "operations" : [ ]
+    },
+    {
+      "entity" : "eu.wohlben.qits.githost.persistence.GitRepositoryLoc",
+      "table" : "git_repository_loc",
+      "marking" : "domain",
+      "reason" : null,
+      "projectionOf" : null,
+      "knownGap" : null,
+      "dtos" : [
+        {
+          "type" : "eu.wohlben.qits.githost.api.LocListResource$LocEntry",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.GitRepositoryLocId",
+          "site" : "LocListResource.list(List)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.api.LocListResource$LocEntry",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryLocStore$StoredSummary",
+          "site" : "LocListResource.list(List)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.api.LocListResource$LocListResponse",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.GitRepositoryLocId",
+          "site" : "LocListResource.list(List)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.api.LocListResource$LocListResponse",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryLocStore$StoredSummary",
+          "site" : "LocListResource.list(List)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.api.RepositoryBrowseResource$ErrorBody",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.GitRepositoryLocId",
+          "site" : "LocListResource.list(List)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.api.RepositoryBrowseResource$ErrorBody",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryLocStore$StoredSummary",
+          "site" : "LocListResource.list(List)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.GitRepositoryLocId",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryLocStore.find(String, String)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.GitRepositoryLocId",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryLocStore.findAll(Collection)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.GitRepositoryLocId",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryLocStore.saveQuietly(String, String, String)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.GitRepositoryLocId",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryLocStore$StoredSummary",
+          "site" : "LocListResource.list(List)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryLocStore$StoredSummary",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryLocStore.newest(Collection)"
+        }
+      ],
+      "operations" : [
+        {
+          "operationId" : "getLoc",
+          "method" : "GET",
+          "path" : "/repositories/{repoId}/loc",
+          "dto" : "eu.wohlben.qits.githost.api.RepositoryBrowseResource$ErrorBody",
+          "kind" : "schema"
+        },
+        {
+          "operationId" : "getRaw",
+          "method" : "GET",
+          "path" : "/repositories/{repoId}/raw",
+          "dto" : "eu.wohlben.qits.githost.api.RepositoryBrowseResource$ErrorBody",
+          "kind" : "schema"
+        },
+        {
+          "operationId" : "listLoc",
+          "method" : "GET",
+          "path" : "/loc",
+          "dto" : "eu.wohlben.qits.githost.api.LocListResource$LocEntry",
+          "kind" : "returns"
+        },
+        {
+          "operationId" : "listLoc",
+          "method" : "GET",
+          "path" : "/loc",
+          "dto" : "eu.wohlben.qits.githost.api.LocListResource$LocListResponse",
+          "kind" : "returns"
+        }
+      ]
+    },
+    {
+      "entity" : "eu.wohlben.qits.githost.persistence.GitRepositoryName",
+      "table" : "git_repository_name",
+      "marking" : "projection",
+      "reason" : null,
+      "projectionOf" : "qits-projects:RepositoryName",
+      "knownGap" : null,
+      "dtos" : [
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryNameStore.write(String, String, String, Collection, long)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "site" : "Applied.<init>(NamesState, boolean)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "site" : "RepositoryNameStore.write(String, String, String, Collection, long)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryNameStore.read(GitRepositoryNamesRevision)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryNameStore.write(String, String, String, Collection, long)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "site" : "Applied.state()"
+        }
+      ],
+      "operations" : [ ]
+    },
+    {
+      "entity" : "eu.wohlben.qits.githost.persistence.GitRepositoryNamesRevision",
+      "table" : "git_repository_names_revision",
+      "marking" : "technical",
+      "reason" : "Revision and lock row ordering qits-projects' name-set writes so a stale or duplicated PUT changes nothing; sync bookkeeping, not product data",
+      "projectionOf" : null,
+      "knownGap" : null,
+      "dtos" : [
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryNameStore.write(String, String, String, Collection, long)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "site" : "Applied.<init>(NamesState, boolean)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "site" : "RepositoryNameStore.write(String, String, String, Collection, long)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryNameStore.namesOf(String)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "kind" : "assembler",
+          "via" : null,
+          "site" : "RepositoryNameStore.write(String, String, String, Collection, long)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "kind" : "mapper",
+          "via" : null,
+          "site" : "RepositoryNameStore.read(GitRepositoryNamesRevision)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$NamesState",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.persistence.RepositoryNameStore$Applied",
+          "site" : "Applied.state()"
+        }
+      ],
+      "operations" : [ ]
+    },
+    {
+      "entity" : "eu.wohlben.qits.githost.persistence.GitRepositoryProtection",
+      "table" : "git_repository_protection",
+      "marking" : "domain",
+      "reason" : null,
+      "projectionOf" : null,
+      "knownGap" : null,
+      "dtos" : [
+        {
+          "type" : "eu.wohlben.qits.githost.api.RepositoriesResource$RepositoriesResponse",
+          "kind" : "via",
+          "via" : "eu.wohlben.qits.githost.api.RepositoriesResource$RepositoryRecord",
+          "site" : "RepositoriesResponse.<init>(List)"
+        },
+        {
+          "type" : "eu.wohlben.qits.githost.api.RepositoriesResource$RepositoryRecord",
+          "kind" : "annotation",
+          "via" : null,
+          "site" : "@Exposes on RepositoryRecord"
+        }
+      ],
+      "operations" : [
+        {
+          "operationId" : "RepositoriesResource.list",
+          "method" : "GET",
+          "path" : "/repositories",
+          "dto" : "eu.wohlben.qits.githost.api.RepositoriesResource$RepositoriesResponse",
+          "kind" : "returns"
+        },
+        {
+          "operationId" : "RepositoriesResource.list",
+          "method" : "GET",
+          "path" : "/repositories",
+          "dto" : "eu.wohlben.qits.githost.api.RepositoriesResource$RepositoryRecord",
+          "kind" : "returns"
+        }
+      ]
+    }
+  ]
+}

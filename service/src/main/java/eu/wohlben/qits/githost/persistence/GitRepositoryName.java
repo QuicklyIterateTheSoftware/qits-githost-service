@@ -1,5 +1,6 @@
 package eu.wohlben.qits.githost.persistence;
 
+import eu.wohlben.qits.db.exposure.Projection;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -16,6 +17,7 @@ import jakarta.persistence.Table;
  * (projectId, name)}, so a name belongs to exactly one repository of a project at a time, and a set
  * that states a name another repository holds moves it. Case-sensitive, as the url segment is.
  */
+@Projection(of = "qits-projects:RepositoryName")
 @Entity
 @Table(name = "git_repository_name")
 @IdClass(GitRepositoryNameId.class)

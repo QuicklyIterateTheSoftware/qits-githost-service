@@ -1,5 +1,6 @@
 package eu.wohlben.qits.githost.persistence;
 
+import eu.wohlben.qits.db.exposure.Technical;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -19,6 +20,10 @@ import jakarta.persistence.Table;
  * service lives in. Deleting this row frees none of them — see {@link GitPack} on why that is the
  * recorded posture rather than an omission.
  */
+@Technical(
+    reason =
+        "Maps one JGit pack file extension to its blob in the blob store; storage plumbing "
+            + "read only by the DFS repository, which no API exposes")
 @Entity
 @Table(name = "git_pack_file")
 @IdClass(GitPackFileId.class)
