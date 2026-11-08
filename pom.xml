@@ -127,7 +127,7 @@
         <pact.version>4.6.21</pact.version>
         <!-- qits-idp's recorded answers (test scope), read through qits-pact-consumer by
              IdpConsumerPactTest: the quarkus-oidc tenant's JWKS read (ticket qits-1149). -->
-        <qits.idp-golden-masters.version>2026.1107.220215</qits.idp-golden-masters.version>
+        <qits.idp-golden-masters.version>2026.1108.62139</qits.idp-golden-masters.version>
         <!-- The shared consumer-pact helper (golden-master reader, row builder), released out of
              libs/qits-integrations-quarkus with its own string. -->
         <qits.pact-consumer.version>2026.1106.507</qits.pact-consumer.version>
@@ -144,6 +144,7 @@
         <qits.maintenance-service-pacts-qits-githost-service.version>2026.1021.154504</qits.maintenance-service-pacts-qits-githost-service.version>
         <qits.ci-frontend-pacts-qits-githost-service.version>2026.1107.25251</qits.ci-frontend-pacts-qits-githost-service.version>
         <qits.projects-frontend-pacts-qits-githost-service.version>2026.1107.140028</qits.projects-frontend-pacts-qits-githost-service.version>
+        <qits.landing-app-pacts-qits-githost-service.version>2026.1031.174516</qits.landing-app-pacts-qits-githost-service.version>
 
         <!-- Quinoa is a Quarkiverse extension: not in quarkus-bom either, and its version does NOT
              track the platform's. 2.8.2 is built against Quarkus 3.27.3 LTS — older than the 3.34.6
@@ -256,6 +257,11 @@
                 <groupId>${project.groupId}</groupId>
                 <artifactId>qits-projects-frontend-pacts-qits-githost-service</artifactId>
                 <version>${qits.projects-frontend-pacts-qits-githost-service.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>qits-landing-app-pacts-qits-githost-service</artifactId>
+                <version>${qits.landing-app-pacts-qits-githost-service.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.quarkiverse.quinoa</groupId>
