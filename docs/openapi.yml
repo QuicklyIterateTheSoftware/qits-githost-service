@@ -555,6 +555,8 @@ paths:
       - Loc List Resource
   /githost/api/repositories:
     get:
+      summary: "Every repository, with its protection"
+      operationId: listRepositories
       responses:
         "200":
           description: OK
@@ -562,7 +564,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RepositoriesResponse"
-      summary: List
       tags:
       - Repositories Resource
   /githost/api/repositories/{repoId}:
@@ -627,6 +628,8 @@ paths:
       - SecurityScheme:
         - qits:system
     get:
+      summary: Where one branch stands
+      operationId: getBranch
       parameters:
       - name: name
         in: path
@@ -649,7 +652,6 @@ paths:
           description: Not Authorized
         "403":
           description: Not Allowed
-      summary: Branch
       tags:
       - Repository Refs Resource
       security:
@@ -867,6 +869,8 @@ paths:
       - Repository Browse Resource
   /githost/api/repositories/{repoId}/tags:
     get:
+      summary: "The tags, newest first"
+      operationId: listTags
       parameters:
       - name: repoId
         in: path
@@ -884,7 +888,6 @@ paths:
           content:
             application/json:
               schema: {}
-      summary: Tags
       tags:
       - Repository Browse Resource
     post:

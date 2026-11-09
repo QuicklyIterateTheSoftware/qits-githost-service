@@ -711,6 +711,22 @@
           }
         },
         {
+          "operationId": "getBranch",
+          "method": "GET",
+          "path": "/githost/api/repositories/{repositoryId}/branches/{branch}",
+          "status": 200,
+          "file": "a-repository-with-a-side-branch/getBranch.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "shas": [
+              "$.sha"
+            ],
+            "listFilteredTo": null
+          }
+        },
+        {
           "operationId": "getRepository",
           "method": "GET",
           "path": "/githost/api/repositories/{repositoryId}",
@@ -1096,6 +1112,26 @@
             ],
             "listFilteredTo": null
           }
+        },
+        {
+          "operationId": "listTags",
+          "method": "GET",
+          "path": "/githost/api/repositories/{repositoryId}/tags",
+          "status": 200,
+          "file": "a-repository-with-the-release-tag/listTags.json",
+          "frozen": {
+            "ids": [
+              "$.id"
+            ],
+            "instants": [
+              "$.tags[*].taggedAt"
+            ],
+            "strings": [],
+            "shas": [
+              "$.tags[*].commitSha"
+            ],
+            "listFilteredTo": null
+          }
         }
       ]
     },
@@ -1209,6 +1245,19 @@
           },
           "status": 404,
           "file": "a-repository-without-the-given-branch/deleteBranch.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
+          "operationId": "getBranch",
+          "method": "GET",
+          "path": "/githost/api/repositories/{repositoryId}/branches/{branch}",
+          "status": 404,
+          "file": "a-repository-without-the-given-branch/getBranch.json",
           "frozen": {
             "ids": [],
             "instants": [],
@@ -1424,6 +1473,19 @@
           }
         },
         {
+          "operationId": "listTags",
+          "method": "GET",
+          "path": "/githost/api/repositories/{repositoryId}/tags",
+          "status": 404,
+          "file": "no-repository-with-the-given-id/listTags.json",
+          "frozen": {
+            "ids": [],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": null
+          }
+        },
+        {
           "operationId": "putRepositoryNames",
           "method": "PUT",
           "path": "/git/{repositoryId}/names",
@@ -1464,6 +1526,21 @@
           "frozen": {
             "ids": [
               "$.repositories[*]"
+            ],
+            "instants": [],
+            "strings": [],
+            "listFilteredTo": "$.repositories"
+          }
+        },
+        {
+          "operationId": "listRepositories",
+          "method": "GET",
+          "path": "/githost/api/repositories",
+          "status": 200,
+          "file": "two-repositories/listRepositories.json",
+          "frozen": {
+            "ids": [
+              "$.repositories[*].id"
             ],
             "instants": [],
             "strings": [],

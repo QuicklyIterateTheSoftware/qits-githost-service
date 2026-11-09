@@ -1374,6 +1374,7 @@ public class RepositoryRefsResource {
    * encoding dance, and {@code branches/main} and {@code branches/refs/heads/main} name the same
    * ref.
    */
+  @Operation(operationId = "getBranch", summary = "Where one branch stands")
   @GET
   @Path("/branches/{name:.+}")
   @RolesAllowed({MACHINE_ROLE, AGENT_ROLE})

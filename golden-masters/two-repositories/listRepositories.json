@@ -1,0 +1,12 @@
+{
+  "repositories": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "protectDefaultBranch": false
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "protectDefaultBranch": false
+    }
+  ]
+}

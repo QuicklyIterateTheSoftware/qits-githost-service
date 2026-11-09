@@ -240,6 +240,7 @@ public class RepositoryBrowseResource {
    * one the ref database listed first. There is no default cap: the client asking for all of them
    * is the dropdown, and a repository's tag list is small enough to answer whole.
    */
+  @Operation(operationId = "listTags", summary = "The tags, newest first")
   @GET
   @Path("/tags")
   public Response tags(@PathParam("repoId") String repoId, @QueryParam("limit") Integer limit) {

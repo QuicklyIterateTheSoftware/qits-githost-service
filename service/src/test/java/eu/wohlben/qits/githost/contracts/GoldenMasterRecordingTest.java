@@ -280,6 +280,15 @@ class GoldenMasterRecordingTest {
               200,
               "$.repositories",
               null),
+          // --- the browser plane's own catalogue (qits-githost-frontend) ------------------------
+          new Interaction(
+              ProviderStates.TWO_REPOSITORIES,
+              "listRepositories",
+              "GET",
+              "/githost/api/repositories",
+              200,
+              "$.repositories",
+              null),
           // --- the raw content reads, name-addressed (qits-ci, qits-maintenance, qits-projects,
           // qits-deployments): status and Git-Commit-Sha, plus the entries where the answer is JSON
           raw(
@@ -558,6 +567,40 @@ class GoldenMasterRecordingTest {
               BY_ID + "/tags",
               409,
               TAG_BODY),
+          // the read half of the tags door (qits-githost-frontend's tag dropdown)
+          new Interaction(
+              ProviderStates.A_REPOSITORY_WITH_THE_RELEASE_TAG,
+              "listTags",
+              "GET",
+              BY_ID + "/tags",
+              200,
+              null,
+              null),
+          new Interaction(
+              ProviderStates.NO_REPOSITORY_WITH_THE_GIVEN_ID,
+              "listTags",
+              "GET",
+              BY_ID + "/tags",
+              404,
+              null,
+              null),
+          // where a branch stands (qits-projects, banking a wrapper's gitlink pins)
+          new Interaction(
+              ProviderStates.A_REPOSITORY_WITH_A_SIDE_BRANCH,
+              "getBranch",
+              "GET",
+              BY_ID + "/branches/{branch}",
+              200,
+              null,
+              null),
+          new Interaction(
+              ProviderStates.A_REPOSITORY_WITHOUT_THE_GIVEN_BRANCH,
+              "getBranch",
+              "GET",
+              BY_ID + "/branches/{branch}",
+              404,
+              null,
+              null),
           write(
               ProviderStates.A_REPOSITORY_WITH_A_SIDE_BRANCH,
               "deleteBranch",

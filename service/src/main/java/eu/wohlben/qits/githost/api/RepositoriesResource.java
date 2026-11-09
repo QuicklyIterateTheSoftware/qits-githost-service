@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.jboss.logging.Logger;
 
 /**
@@ -96,6 +97,7 @@ public class RepositoriesResource {
    * every protection override. Sorting and filtering happen here rather than in a store, so the
    * order and the slug rule are properties of this response.
    */
+  @Operation(operationId = "listRepositories", summary = "Every repository, with its protection")
   @GET
   public RepositoriesResponse list() {
     List<String> ids;
