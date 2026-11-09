@@ -132,7 +132,7 @@
       ],
       "operations" : [
         {
-          "operationId" : "RepositoriesResource.list",
+          "operationId" : "listRepositories",
           "method" : "GET",
           "path" : "/repositories",
           "dto" : "eu.wohlben.qits.githost.api.RepositoriesResource$RepositoriesResponse",
