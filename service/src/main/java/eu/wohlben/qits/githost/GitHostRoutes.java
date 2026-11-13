@@ -43,6 +43,7 @@ import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.storage.pack.PackConfig;
 import org.eclipse.jgit.transport.PacketLineOut;
 import org.eclipse.jgit.transport.PreReceiveHook;
 import org.eclipse.jgit.transport.ReceiveCommand;
@@ -753,6 +754,23 @@ public class GitHostRoutes {
     }
   }
 
+  /**
+   * The pack config every upload-pack serves with: JGit's own, with the delta SEARCH turned off
+   * (qits-2207). Stored deltas still go out as deltas — {@code reuseDeltas} and {@code
+   * reuseObjects} stay on — so only the re-search stops.
+   *
+   * <p>JGit skips the search only for objects in a GC/GC_REST pack ({@code wasDeltaAttempted}), and
+   * this host never garbage-collects (see {@code GitPack}): every object a push stored whole is
+   * searched again on every clone, and nothing ever remembers the answer. For qits-landing-app that
+   * was ~22 s of single-threaded CPU per clone to save 2.7 MB of a 125 MB pack — +2 % on the wire
+   * now, for the 22 s back.
+   */
+  static PackConfig uploadPackConfig(Repository repo) {
+    PackConfig config = new PackConfig(repo);
+    config.setDeltaCompress(false);
+    return config;
+  }
+
   /** {@code POST …/git-(upload|receive)-pack} — the actual fetch/push exchange. */
   private void service(RoutingContext rc, String service, OpenedRepo opened) {
     if (opened == null) {
@@ -767,6 +785,7 @@ public class GitHostRoutes {
       if (UPLOAD.equals(service)) {
         UploadPack up = new UploadPack(repo);
         up.setBiDirectionalPipe(false);
+        up.setPackConfig(uploadPackConfig(repo));
         // The want policy stays JGit's default ADVERTISED. Relaxing it to REACHABLE_COMMIT would
         // make every want for a non-tip object run a reachability walk on this shared worker
         // thread — a DoS lever even on an authenticated route. ci therefore

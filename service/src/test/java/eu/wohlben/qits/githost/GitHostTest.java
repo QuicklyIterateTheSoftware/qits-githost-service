@@ -184,6 +184,38 @@ public class GitHostTest {
     assertTrue(text.endsWith("0000"), "the result closes with a flush-pkt");
   }
 
+  @Test
+  public void uploadPackServesWithoutADeltaSearch() throws Exception {
+    // qits-2207: nothing here is ever garbage-collected, so JGit never counts an object as
+    // delta-attempted and searched every whole object again on every clone. The search is off
+    // (GitHostRoutes.uploadPackConfig); its progress phase is "Compressing objects", which a
+    // `--progress` clone relays as `remote: Compressing objects`. Two versions of one file over two
+    // pushes plus a second file, so there are whole objects a search would have taken up.
+    String repoId = seedOrigin();
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    String body = "a line long enough to be worth a delta, repeated\n".repeat(64);
+    GitHostFixture.commitFile(clone, "notes.txt", body, "test(qits-1): notes");
+    GitHostFixture.git(clone, "git", "push", "origin", "main");
+    GitHostFixture.commitFile(
+        clone, "notes.txt", body + "and one more line\n", "test(qits-1): more");
+    GitHostFixture.commitFile(
+        clone, "other.txt", "another file, well past sixteen bytes\n", "test(qits-1): other");
+    GitHostFixture.git(clone, "git", "push", "origin", "main");
+    String tip = refSha(repoId, "refs/heads/main");
+
+    Path again = Files.createTempDirectory("qits-githost-progress");
+    Files.delete(again);
+    String progress =
+        GitHostFixture.git(
+            null, "git", "clone", "--progress", gitBase + "/" + repoId, again.toString());
+
+    assertFalse(
+        progress.contains("Compressing objects"),
+        "upload-pack must not run a delta search:\n" + progress);
+    assertTrue(progress.contains("remote:"), "the clone relayed the remote's progress:\n" + progress);
+    assertEquals(tip, GitHostFixture.head(again), "the clone round-trips");
+  }
+
   private static String pktLine(String payload) {
     return String.format("%04x", payload.length() + 4) + payload;
   }
