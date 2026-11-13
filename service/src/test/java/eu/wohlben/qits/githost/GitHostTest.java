@@ -147,6 +147,48 @@ public class GitHostTest {
   }
 
   @Test
+  public void uploadPackStreamsThePackChunked() throws Exception {
+    // qits-2172: the pack used to be produced whole into memory and sent in one end(), so a large
+    // clone saw nothing for as long as JGit took to write it and tripped git's low-speed bound. A
+    // streamed answer is chunked (no Content-Length could be known up front) and still a complete,
+    // well-formed upload-pack result. ResponseOutputStreamTest proves the bytes leave before the end.
+    String repoId = seedOrigin();
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    Random random = new Random(20261113L);
+    for (int i = 0; i < 4; i++) {
+      byte[] incompressible = new byte[1024 * 1024];
+      random.nextBytes(incompressible);
+      Files.write(clone.resolve("random-" + i + ".bin"), incompressible);
+      GitHostFixture.git(clone, "git", "add", "random-" + i + ".bin");
+      GitHostFixture.commitFile(clone, "step.txt", "step " + i + "\n", "test(qits-1): random " + i);
+    }
+    GitHostFixture.git(clone, "git", "push", "origin", "main");
+    String tip = refSha(repoId, "refs/heads/main");
+
+    String request = pktLine("want " + tip + " side-band-64k ofs-delta\n") + "0000" + pktLine("done\n");
+    java.net.HttpURLConnection http =
+        (java.net.HttpURLConnection) new URL(gitBase + "/" + repoId + "/git-upload-pack").openConnection();
+    http.setRequestMethod("POST");
+    http.setDoOutput(true);
+    http.setRequestProperty("Content-Type", "application/x-git-upload-pack-request");
+    http.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));
+    assertEquals(200, http.getResponseCode());
+    assertEquals("chunked", http.getHeaderField("Transfer-Encoding"));
+    assertNull(http.getHeaderField("Content-Length"));
+    assertEquals("application/x-git-upload-pack-result", http.getContentType());
+    byte[] body = http.getInputStream().readAllBytes();
+    String text = new String(body, StandardCharsets.ISO_8859_1);
+    assertTrue(text.startsWith("0008NAK\n"), "the result opens with the NAK pkt-line");
+    assertTrue(text.contains("PACK"), "the pack rides the sideband");
+    assertTrue(body.length > 4 * 1024 * 1024, "all four incompressible MiB arrived: " + body.length);
+    assertTrue(text.endsWith("0000"), "the result closes with a flush-pkt");
+  }
+
+  private static String pktLine(String payload) {
+    return String.format("%04x", payload.length() + 4) + payload;
+  }
+
+  @Test
   public void infoRefsAdvertisesUploadPackForAKnownRepo() throws Exception {
     String repoId = seedOrigin();
     given()

@@ -7,6 +7,7 @@ import eu.wohlben.qits.eventstream.CausationScope;
 import eu.wohlben.qits.githost.persistence.RepositoryNameStore;
 import io.quarkus.runtime.configuration.MemorySize;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
@@ -22,6 +23,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -762,7 +764,6 @@ public class GitHostRoutes {
       if ("gzip".equals(rc.request().getHeader("Content-Encoding"))) {
         in = new GZIPInputStream(in);
       }
-      ByteArrayOutputStream out = new ByteArrayOutputStream();
       if (UPLOAD.equals(service)) {
         UploadPack up = new UploadPack(repo);
         up.setBiDirectionalPipe(false);
@@ -770,8 +771,27 @@ public class GitHostRoutes {
         // make every want for a non-tip object run a reachability walk on this shared worker
         // thread — a DoS lever even on an authenticated route. ci therefore
         // fetches the BRANCH REF and verifies reachability itself (see GitConfigFetcher).
+        //
+        // STREAMED, not buffered (qits-2172). The pack used to go into a ByteArrayOutputStream and
+        // out in one end() once JGit had finished it: for a 128 MB repository the client then got
+        // zero bytes for a minute, which trips git's own low-speed bound
+        // (GIT_HTTP_LOW_SPEED_LIMIT/TIME, curl 28) — and every clone held its whole pack in heap.
+        // Now the head goes out first and each flush reaches the client as JGit writes. A failure
+        // after that point cannot become a 500 any more; fail() breaks the connection instead, so
+        // a cut-off pack never reads as a short 200.
+        rc.response()
+            .setStatusCode(200)
+            .putHeader("Content-Type", "application/x-" + service + "-result")
+            .putHeader("Cache-Control", "no-cache")
+            .setChunked(true);
+        ResponseOutputStream raw = new ResponseOutputStream(rc.response());
+        OutputStream out = ResponseOutputStream.buffered(raw);
         up.upload(in, out, null);
+        out.flush();
+        raw.end();
       } else {
+        // receive-pack stays buffered: its result is a short report-status, never a pack.
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
         ReceivePack rp = new ReceivePack(repo);
         rp.setBiDirectionalPipe(false);
         // The RECEIVING half of push options — the advertisement in infoRefs() is the other, and
@@ -798,11 +818,11 @@ public class GitHostRoutes {
                 CausationScope.with(
                     cause, () -> announce(opened, repo, commands)));
         rp.receive(in, out, null);
+        rc.response()
+            .putHeader("Content-Type", "application/x-" + service + "-result")
+            .putHeader("Cache-Control", "no-cache")
+            .end(Buffer.buffer(out.toByteArray()));
       }
-      rc.response()
-          .putHeader("Content-Type", "application/x-" + service + "-result")
-          .putHeader("Cache-Control", "no-cache")
-          .end(Buffer.buffer(out.toByteArray()));
     } catch (Exception e) {
       fail(rc, service, e);
     }
@@ -1831,10 +1851,24 @@ public class GitHostRoutes {
 
   private void fail(RoutingContext rc, String service, Exception e) {
     LOG.errorf(e, "git %s failed", service);
-    if (!rc.response().headWritten()) {
-      rc.response().setStatusCode(500).end();
-    } else {
-      rc.response().end();
+    failResponse(rc.response());
+  }
+
+  /**
+   * A 500 while nothing has been sent; once a head has gone out, a broken connection (qits-2172).
+   *
+   * <p>Every route but upload-pack builds its body in memory and writes it in one {@code end()}, so
+   * it reaches this method with no head written and answers 500 as it always has. Upload-pack streams
+   * the pack, so its head — a 200 — is already on the wire when JGit fails part-way. Ending that
+   * response would terminate the chunked body cleanly and hand the client a short 200 that looks
+   * complete; resetting it closes the connection mid-body, which the client sees as the broken
+   * transfer it is. A response that already ended has nothing left to fix.
+   */
+  static void failResponse(HttpServerResponse response) {
+    if (!response.headWritten()) {
+      response.setStatusCode(500).end();
+    } else if (!response.ended() && !response.closed()) {
+      response.reset();
     }
   }
 }
