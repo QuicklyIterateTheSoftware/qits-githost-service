@@ -1,5 +1,5 @@
 {
-  "formatVersion" : 1,
+  "formatVersion" : 2,
   "application" : "qits-githost",
   "entities" : [
     {
@@ -71,21 +71,24 @@
           "method" : "GET",
           "path" : "/repositories/{repoId}/loc",
           "dto" : "eu.wohlben.qits.githost.api.RepositoryBrowseResource$ErrorBody",
-          "kind" : "schema"
+          "kind" : "schema",
+          "cardinality" : "single"
         },
         {
           "operationId" : "getRaw",
           "method" : "GET",
           "path" : "/repositories/{repoId}/raw",
           "dto" : "eu.wohlben.qits.githost.api.RepositoryBrowseResource$ErrorBody",
-          "kind" : "schema"
+          "kind" : "schema",
+          "cardinality" : "single"
         },
         {
           "operationId" : "listLoc",
           "method" : "GET",
           "path" : "/loc",
           "dto" : "eu.wohlben.qits.githost.api.LocListResource$LocEntry",
-          "kind" : "returns"
+          "kind" : "returns",
+          "cardinality" : "collection"
         }
       ]
     },
@@ -136,7 +139,8 @@
           "method" : "GET",
           "path" : "/repositories",
           "dto" : "eu.wohlben.qits.githost.api.RepositoriesResource$RepositoriesResponse",
-          "kind" : "returns"
+          "kind" : "returns",
+          "cardinality" : "collection"
         }
       ]
     }
