@@ -6,7 +6,9 @@ import eu.wohlben.qits.eventstream.CausationHeader;
 import eu.wohlben.qits.eventstream.CausationScope;
 import eu.wohlben.qits.githost.persistence.RepositoryNameStore;
 import io.quarkus.runtime.configuration.MemorySize;
+import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -261,7 +263,7 @@ public class GitHostRoutes {
    * <p>Stated as a constant rather than a config key on purpose: it is a property of what this route
    * is for, not a deployment's choice, and a knob would invite raising it until the read is a
    * memory allocation on an authenticated route. The whole blob is held in memory —
-   * the same reason {@link #maxPackSize} sits far below the wire ceiling.
+   * the same reason {@link #maxNegotiationSize} sits far below the wire ceiling.
    */
   private static final int MAX_BLOB_BYTES = 8 * 1024 * 1024;
 
@@ -283,8 +285,8 @@ public class GitHostRoutes {
 
   /**
    * The JSON body limit for the lifecycle {@code PUT} — a {@code {"defaultBranch": "…"}} document,
-   * nowhere near what a pack needs. Stated explicitly rather than inherited, for the same reason
-   * {@link #maxPackSize} is: {@code BodyHandler.create()} defaults to 10 MiB, and a bound this far
+   * nowhere near what a negotiation needs. Stated explicitly rather than inherited, for the same
+   * reason {@link #maxNegotiationSize} is: {@code BodyHandler.create()} defaults to 10 MiB, and a bound this far
    * under that is what keeps a stray large body a 413 instead of a memory allocation.
    */
   private static final long LIFECYCLE_BODY_LIMIT = 4096;
@@ -303,20 +305,34 @@ public class GitHostRoutes {
   private static final int MAX_NAME_LENGTH = 255;
 
   /**
-   * The largest pack this host accepts, and the reason it is spelled out rather than inherited.
+   * The largest {@code git-upload-pack} REQUEST this host buffers — a fetch's negotiation, its
+   * {@code want}/{@code have} lines — and the reason it is spelled out rather than inherited.
    *
-   * <p>{@code BodyHandler.create()} is <em>not</em> unlimited: vertx-web's {@code BodyHandlerImpl}
-   * defaults its {@code bodyLimit} to 10 MiB. So until this existed every push over 10 MB was
-   * silently 413'd — not at the 64M this service's config comment claimed, and not at the global
-   * ceiling the README described either. Both were wrong about which number bound.
+   * <p><b>It bounds no push, and no pack.</b> It was {@code qits.repositories.git.max-pack-size}
+   * until qits-2512, when receive-pack stopped buffering: a push is now streamed into JGit through a
+   * {@link RequestInputStream} with no size limit at all, because the 64M that used to bind every
+   * push was a property of holding the pack in heap, not of anything a push should be refused for
+   * (the screenshot-baselines automation's ~6400-file commit was its first casualty). The
+   * negotiation is the one body still buffered, and it is small: a want line per ref fetched and a
+   * have line per commit the client offers. 64M — the old pack number, kept — leaves a fetch of a
+   * very large repository's history every margin it could need.
    *
-   * <p>It must also stay well below {@code quarkus.http.limits.max-body-size}, which the OCI
-   * registry raised to 1088M. That ceiling is sized for a layer that streams to disk; a pack goes
-   * through a {@link BodyHandler} into memory, so inheriting it would turn a large push into a
-   * gigabyte-sized heap allocation on an authenticated route.
+   * <p>Stated, because {@code BodyHandler.create()} is <em>not</em> unlimited: vertx-web's {@code
+   * BodyHandlerImpl} defaults its {@code bodyLimit} to 10 MiB, and before the limit was explicit
+   * every push over 10 MB was silently 413'd. It must also stay well below {@code
+   * quarkus.http.limits.max-body-size}: a body behind a {@link BodyHandler} lands in heap, so
+   * inheriting a ceiling sized for streaming would turn a large request into a large allocation on
+   * an authenticated route.
    */
-  @ConfigProperty(name = "qits.repositories.git.max-pack-size", defaultValue = "64M")
-  MemorySize maxPackSize;
+  @ConfigProperty(name = "qits.repositories.git.max-negotiation-size", defaultValue = "64M")
+  MemorySize maxNegotiationSize;
+
+  /**
+   * Where {@link #holdRequestBody} leaves the request's event-loop {@link io.vertx.core.Context},
+   * for the worker to hand {@link RequestInputStream} — every call on the request has to go back to
+   * that context, and the worker cannot be relied on to name it.
+   */
+  private static final String REQUEST_CONTEXT_KEY = "qits.githost.request-context";
 
   /**
    * The client id whose SELF-ROLE opens the id-addressed scheme — qits-projects' service client, the
@@ -433,11 +449,14 @@ public class GitHostRoutes {
   /**
    * Register the routes on the main Vert.x router (root path — NOT under {@code
    * quarkus.rest.path}). Blocking: JGit's UploadPack/ReceivePack do synchronous stream I/O against
-   * whatever storage backs the repository, so they run on a worker thread. The POST bodies
-   * (packfiles) are buffered by a
-   * {@link BodyHandler} first — fine at qits' single-node scale, and bounded by {@link
-   * #maxPackSize} rather than by the global wire ceiling, which the OCI registry raised past
-   * anything that should be held in memory.
+   * whatever storage backs the repository, so they run on a worker thread.
+   *
+   * <p><b>The two POST bodies are read differently</b> (qits-2512). An upload-pack request — a
+   * fetch's negotiation, small — is buffered by a {@link BodyHandler} bounded by {@link
+   * #maxNegotiationSize}. A receive-pack request is the pack itself, of any size, and is never
+   * buffered: its chain opens with {@link #holdRequestBody}, which keeps the request paused through
+   * the auth and scope handlers and the hop to the worker, and the worker then streams it into
+   * JGit through a {@link RequestInputStream} with backpressure. There is no pack-size limit.
    *
    * <p>{@link #BASE} is spelled out here as a literal because these are raw Vert.x routes: no
    * config key moves them, and there is nothing else in this process for them to be relative to.
@@ -474,12 +493,12 @@ public class GitHostRoutes {
         .blockingHandler(rc -> infoRefs(rc, open(rc, "repoId")));
     router
         .post(BASE + "/:repoId/git-upload-pack")
-        .handler(packBodyHandler())
+        .handler(negotiationBodyHandler())
         .handler(this::requireStorageClient)
         .blockingHandler(rc -> service(rc, UPLOAD, open(rc, "repoId")));
     router
         .post(BASE + "/:repoId/git-receive-pack")
-        .handler(packBodyHandler())
+        .handler(this::holdRequestBody)
         .handler(this::requireStorageClient)
         .handler(this::snapshotPushScope)
         .blockingHandler(rc -> service(rc, RECEIVE, open(rc, "repoId")));
@@ -542,11 +561,11 @@ public class GitHostRoutes {
         .blockingHandler(rc -> byName(rc, opened -> infoRefs(rc, opened)));
     router
         .post(BASE + "/:projectId/:repoName/git-upload-pack")
-        .handler(packBodyHandler())
+        .handler(negotiationBodyHandler())
         .blockingHandler(rc -> byName(rc, opened -> service(rc, UPLOAD, opened)));
     router
         .post(BASE + "/:projectId/:repoName/git-receive-pack")
-        .handler(packBodyHandler())
+        .handler(this::holdRequestBody)
         .handler(this::snapshotPushScope)
         .blockingHandler(rc -> byName(rc, opened -> service(rc, RECEIVE, opened)));
 
@@ -561,11 +580,11 @@ public class GitHostRoutes {
           .handler(rc -> bootstrapPermit(rc, credential))
           .blockingHandler(rc -> infoRefs(rc, open(rc, "repoId")));
       router.post(BOOTSTRAP_BASE + "/:repoId/git-upload-pack")
-          .handler(packBodyHandler())
+          .handler(negotiationBodyHandler())
           .handler(rc -> bootstrapPermit(rc, credential))
           .blockingHandler(rc -> service(rc, UPLOAD, open(rc, "repoId")));
       router.post(BOOTSTRAP_BASE + "/:repoId/git-receive-pack")
-          .handler(packBodyHandler())
+          .handler(this::holdRequestBody)
           .handler(rc -> bootstrapPermit(rc, credential))
           .handler(rc -> snapshotBootstrapPushScope(rc, credential))
           .blockingHandler(rc -> service(rc, RECEIVE, open(rc, "repoId")));
@@ -689,13 +708,47 @@ public class GitHostRoutes {
   }
 
   /**
-   * The pack body handler, with its limit stated. See {@link #maxPackSize} for why leaving it at
-   * {@code BodyHandler.create()}'s default was a bug rather than a choice. File uploads are off:
-   * these routes carry a single binary pack, never a multipart form, and the default would have the
-   * handler spooling into a {@code file-uploads} directory nothing ever reads.
+   * The upload-pack body handler, with its limit stated. See {@link #maxNegotiationSize} for the
+   * number and for why leaving it at {@code BodyHandler.create()}'s default was a bug rather than a
+   * choice. File uploads are off: these routes carry one binary negotiation, never a multipart form,
+   * and the default would have the handler spooling into a {@code file-uploads} directory nothing
+   * ever reads. Receive-pack has no body handler at all — see {@link #holdRequestBody}.
    */
-  private BodyHandler packBodyHandler() {
-    return BodyHandler.create(false).setBodyLimit(maxPackSize.asLongValue());
+  private BodyHandler negotiationBodyHandler() {
+    return BodyHandler.create(false).setBodyLimit(maxNegotiationSize.asLongValue());
+  }
+
+  /**
+   * The FIRST handler of every receive-pack chain (qits-2512): keeps the pack where it is until the
+   * worker is ready to stream it.
+   *
+   * <p>Without a {@link BodyHandler} nothing reads the body on the event loop, and a Vert.x request
+   * that flows with no data handler <em>drops</em> what arrives. Quarkus pauses every request at its
+   * root handler, and nothing in front of these routes resumes it — its auth layer does only to send
+   * a challenge, which ends the exchange anyway — so the body is already held when this runs. The
+   * pause here is that guarantee restated where the route relies on it: everything after this —
+   * the storage-scheme guard, the scope snapshot, the hop to a worker, the name lookup there — can
+   * take as long as it likes, and the bytes wait in Vert.x's inbound buffer with the socket's reads
+   * stopped behind them. {@link RequestInputStream} resumes the request on the worker's first read.
+   *
+   * <p>It also records the request's context for the worker, and makes sure an exchange that ends
+   * <b>without reading the body to its end</b> — a 403, a 404, a 503, a failed receive — does not
+   * leave its connection behind: a paused request whose response is complete wedges a keep-alive
+   * connection, since Vert.x hands the next request on it nothing until this one's body has been
+   * consumed. Such a connection is closed once the response is out, as Quarkus' own 413 does; the
+   * client has its answer, and the rest of an unread pack is not worth reading.
+   */
+  private void holdRequestBody(RoutingContext rc) {
+    HttpServerRequest request = rc.request();
+    request.pause();
+    rc.put(REQUEST_CONTEXT_KEY, Vertx.currentContext());
+    rc.addEndHandler(
+        ignored -> {
+          if (!request.isEnded()) {
+            request.connection().close();
+          }
+        });
+    rc.next();
   }
 
   /** The lifecycle {@code PUT}'s body handler. See {@link #LIFECYCLE_BODY_LIMIT} for the number. */
@@ -777,8 +830,18 @@ public class GitHostRoutes {
       rc.response().setStatusCode(404).end();
       return;
     }
+    RequestInputStream streamed = null;
     try (Repository repo = opened.repo()) {
-      InputStream in = new ByteArrayInputStream(rc.body().buffer().getBytes());
+      InputStream in;
+      if (UPLOAD.equals(service)) {
+        in = new ByteArrayInputStream(rc.body().buffer().getBytes());
+      } else {
+        // qits-2512: the pack is streamed, never held — see holdRequestBody and RequestInputStream.
+        streamed =
+            new RequestInputStream(
+                rc.request(), rc.get(REQUEST_CONTEXT_KEY), RequestInputStream.DEFAULT_CAPACITY);
+        in = streamed;
+      }
       if ("gzip".equals(rc.request().getHeader("Content-Encoding"))) {
         in = new GZIPInputStream(in);
       }
@@ -809,7 +872,8 @@ public class GitHostRoutes {
         out.flush();
         raw.end();
       } else {
-        // receive-pack stays buffered: its result is a short report-status, never a pack.
+        // The REQUEST is streamed (qits-2512); the RESPONSE stays buffered, because it is a short
+        // report-status, never a pack.
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ReceivePack rp = new ReceivePack(repo);
         rp.setBiDirectionalPipe(false);
@@ -837,6 +901,10 @@ public class GitHostRoutes {
                 CausationScope.with(
                     cause, () -> announce(opened, repo, commands)));
         rp.receive(in, out, null);
+        // JGit stops reading where the pack ends; the request's own end — the last chunk's
+        // terminator — may still be on its way. Read up to it, so a push that worked leaves its
+        // keep-alive connection reusable instead of being closed by holdRequestBody's end handler.
+        drainTrailer(streamed);
         rc.response()
             .putHeader("Content-Type", "application/x-" + service + "-result")
             .putHeader("Cache-Control", "no-cache")
@@ -844,6 +912,32 @@ public class GitHostRoutes {
       }
     } catch (Exception e) {
       fail(rc, service, e);
+    } finally {
+      if (streamed != null) {
+        streamed.close();
+      }
+    }
+  }
+
+  /**
+   * The most {@link #drainTrailer} reads past the end of a pack. A git client sends nothing after
+   * its pack, so in practice this is zero bytes and an end; anything beyond it is not a push this
+   * worker owes its time to, and the connection is closed instead.
+   */
+  private static final int MAX_TRAILER_BYTES = 64 * 1024;
+
+  /** Reads {@code in} to its end, or gives up after {@link #MAX_TRAILER_BYTES}. */
+  private static void drainTrailer(InputStream in) {
+    byte[] scratch = new byte[8192];
+    long read = 0;
+    try {
+      int n;
+      while (read <= MAX_TRAILER_BYTES && (n = in.read(scratch)) >= 0) {
+        read += n;
+      }
+    } catch (IOException e) {
+      // The push is already decided and reported; what follows its pack changes nothing about it.
+      LOG.debugf(e, "could not read past the end of a pack");
     }
   }
 

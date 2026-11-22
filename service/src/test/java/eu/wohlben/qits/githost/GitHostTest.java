@@ -120,13 +120,14 @@ public class GitHostTest {
   public void aPushLargerThanTheBodyHandlerDefaultSucceeds() throws Exception {
     // Regression guard for a silent 10 MiB cap. BodyHandler.create() is not unlimited: vertx-web's
     // BodyHandlerImpl defaults bodyLimit to 10485760, so every push above that was 413'd — while
-    // this service's config comment and the README both said the binding number was 64M. The routes
-    // now set the limit explicitly (qits.repositories.git.max-pack-size).
+    // this service's config comment and the README both said the binding number was 64M. Since
+    // qits-2512 receive-pack has no BodyHandler at all — the pack is streamed — and the case below
+    // this one proves there is no limit left; this one stays as the guard on the old number.
     //
     // 12 MB of incompressible bytes: git deflates the pack, so a compressible file would ride under
     // the old cap and prove nothing. It also puts the push past http.postBuffer (1 MB by default),
     // which is what makes git send it chunked — the encoding where the global wire ceiling does not
-    // apply and only the BodyHandler's own limit does.
+    // apply.
     String repoId = seedOrigin();
     Path clone = GitHostFixture.clone(gitBase, repoId);
 
@@ -144,6 +145,75 @@ public class GitHostTest {
         pushedSha,
         refSha(repoId, "refs/heads/" + branch),
         "a pack larger than BodyHandler's 10 MiB default must reach the repository");
+  }
+
+  @Test
+  public void aPushOfHundredsOfMegabytesIsStreamedAndLands() throws Exception {
+    // qits-2512: receive-pack used to buffer the whole pack through a BodyHandler capped at 64M
+    // (qits.repositories.git.max-pack-size), so the screenshot-baselines automation's ~6400-file
+    // commit was a 413 — and every push sat in heap twice. Now the body is streamed into JGit with
+    // backpressure, and there is no pack-size limit at all. 208 MiB of incompressible bytes (four
+    // 52 MiB files, so no single blob dominates and git deflates nothing away) is more than three
+    // times the old cap and more than the test JVM could have held twice over in its heap; chunked
+    // past http.postBuffer, so the global Content-Length ceiling does not apply either.
+    String repoId = seedOrigin();
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    try {
+      Random random = new Random(20261122L);
+      byte[] incompressible = new byte[52 * 1024 * 1024];
+      for (int i = 0; i < 4; i++) {
+        random.nextBytes(incompressible);
+        Files.write(clone.resolve("huge-" + i + ".bin"), incompressible);
+        GitHostFixture.git(clone, "git", "add", "huge-" + i + ".bin");
+      }
+      incompressible = null;
+      GitHostFixture.commitFile(clone, "huge.txt", "beside the blobs\n", "test(qits-2512): huge");
+      String pushedSha = GitHostFixture.head(clone);
+      // bigFileThreshold keeps git from delta-searching 52 MiB of noise against itself: the pack
+      // goes out as it is, which is all this case is about, in seconds rather than minutes.
+      GitHostFixture.git(
+          clone, "git", "-c", "core.bigFileThreshold=1m", "push", "-q", "origin", "main");
+
+      assertEquals(
+          pushedSha,
+          refSha(repoId, "refs/heads/main"),
+          "a pack far past the old 64M limit must stream through and reach the repository");
+    } finally {
+      deleteRecursively(clone);
+    }
+  }
+
+  @Test
+  public void aRefusedStreamedPushIsStillReportedAndMovesNothing() throws Exception {
+    // qits-2512: with the pack streamed, the pre-receive hooks still run only once JGit has parsed it
+    // whole, and their refusal still comes back as report-status — not as a broken connection, and
+    // not as a push that half landed. 4 MiB of incompressible bytes is hundreds of request chunks,
+    // so the refusal is decided after the stream has paused and resumed many times.
+    String repoId = seedOrigin();
+    protect(repoId);
+    Path clone = GitHostFixture.clone(gitBase, repoId);
+    String before = refSha(repoId, "refs/heads/main");
+
+    byte[] incompressible = new byte[4 * 1024 * 1024];
+    new Random(20261123L).nextBytes(incompressible);
+    Files.write(clone.resolve("refused.bin"), incompressible);
+    GitHostFixture.git(clone, "git", "add", "refused.bin");
+    GitHostFixture.commitFile(clone, "refused.txt", "by hand\n", "test(qits-2512): refused");
+    String refusal = GitHostFixture.gitExpectingFailure(clone, "git", "push", "origin", "main");
+
+    assertTrue(refusal.contains("protected ref refs/heads/main"), refusal);
+    assertEquals(
+        before,
+        refSha(repoId, "refs/heads/main"),
+        "a refused streamed push must leave the ref exactly where it was");
+  }
+
+  private static void deleteRecursively(Path root) throws java.io.IOException {
+    try (java.util.stream.Stream<Path> paths = Files.walk(root)) {
+      for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+        Files.deleteIfExists(path);
+      }
+    }
   }
 
   @Test
