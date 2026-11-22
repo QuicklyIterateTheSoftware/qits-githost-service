@@ -12,7 +12,10 @@ import java.util.regex.Pattern;
  *
  * <p>The rules are ordered and the first match wins; they encode the platform's own conventions
  * (Maven's {@code src/test}, Angular's {@code *.spec.ts}, JUnit's {@code *Test.java}) rather than
- * any general theory of test layout.
+ * any general theory of test layout. A directory segment can itself look like a spec file — a
+ * screenshot harness writes freezes and baselines beneath a path segment named after the spec that
+ * produced them, e.g. {@code .../page-layout.browser.spec.ts/inputs-dark.html} — and everything
+ * under such a segment is test output too.
  */
 public final class TestPath {
 
@@ -39,7 +42,7 @@ public final class TestPath {
     int lastSlash = path.lastIndexOf('/');
     if (lastSlash >= 0) {
       for (String segment : path.substring(0, lastSlash).toLowerCase(Locale.ROOT).split("/")) {
-        if (TEST_SEGMENTS.contains(segment)) {
+        if (TEST_SEGMENTS.contains(segment) || SPEC_SUFFIX.matcher(segment).matches()) {
           return true;
         }
       }
