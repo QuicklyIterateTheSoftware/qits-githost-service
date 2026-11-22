@@ -602,7 +602,7 @@ lineage, the retry budget). What this service owns is in
 | `QITS_GITHOST_STORAGE_CLIENT` | The client id whose self-role (`clients/<value>`) opens the id-addressed scheme. Set it to qits-projects' service client and nothing else opens those routes — not `qits:admin`, not `qits:system`. Unset (shipped) leaves the scheme exactly as it was. |
 | `QITS_REPOSITORIES_GIT_PROTECT_DEFAULT_BRANCH` | The default branch's seatbelt. Ships `false`. |
 | `QITS_REPOSITORIES_GIT_PUSH_TOKEN` | What `-o qits.token=<value>` must match. No default: unset means no token matches. Only a platform service client may present it (see "Who may push what"). |
-| `QITS_REPOSITORIES_GIT_MAX_PACK_SIZE` | The largest push this host accepts. Ships `64M`. |
+| `QITS_REPOSITORIES_GIT_MAX_PACK_SIZE` | The largest push this host accepts. Ships `256M` (qits-2514: a large screenshot-baselines push). |
 | `QITS_GIT_AUTHOR_NAME` / `QITS_GIT_AUTHOR_EMAIL` | Who a commit the git primitives manufacture belongs to. The platform's key pair — qits-workspaces reads the same one — defaulting to `qits <qits@local>`. |
 
 There is no variable for where the bytes go any more. `qits.artifacts.blobs-datasource=githost`

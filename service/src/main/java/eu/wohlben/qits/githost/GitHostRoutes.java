@@ -315,7 +315,7 @@ public class GitHostRoutes {
    * through a {@link BodyHandler} into memory, so inheriting it would turn a large push into a
    * gigabyte-sized heap allocation on an authenticated route.
    */
-  @ConfigProperty(name = "qits.repositories.git.max-pack-size", defaultValue = "64M")
+  @ConfigProperty(name = "qits.repositories.git.max-pack-size", defaultValue = "256M")
   MemorySize maxPackSize;
 
   /**
