@@ -38,6 +38,26 @@ public class TestPathTest {
   }
 
   @Test
+  public void aSpecNamedDirectoryClaimsEverythingBeneathIt() {
+    assertTrue(
+        TestPath.isTest(
+            "src/testing/browser/freezes/src/app/layout/page-layout/page-layout.browser.spec.ts/inputs-dark.html"));
+    assertTrue(
+        TestPath.isTest(
+            "src/app/layout/page-layout/__screenshots__/page-layout.browser.spec.ts/inputs-dark-chromium-linux.png"));
+  }
+
+  @Test
+  public void aPlainTestingSegmentStaysMainCode() {
+    assertFalse(TestPath.isTest("src/app/spec-viewer/page.ts"));
+    assertFalse(
+        TestPath.isTest("projects/qits-integrations-angular/testing/browser/src/freeze-shot.ts"));
+    assertFalse(
+        TestPath.isTest(
+            "runner-toolkit/src/main/java/eu/wohlben/qits/runner/toolkit/testing/FakeDocker.java"));
+  }
+
+  @Test
   public void everythingElseIsMainCode() {
     assertFalse(TestPath.isTest("src/main/java/App.java"));
     assertFalse(TestPath.isTest("web/thing.ts"));
