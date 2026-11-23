@@ -142,9 +142,9 @@
         <qits.bootstrap-cli-pacts-qits-githost-service.version>2026.1021.223102</qits.bootstrap-cli-pacts-qits-githost-service.version>
         <qits.deployments-service-pacts-qits-githost-service.version>2026.1031.45509</qits.deployments-service-pacts-qits-githost-service.version>
         <qits.maintenance-service-pacts-qits-githost-service.version>2026.1021.154504</qits.maintenance-service-pacts-qits-githost-service.version>
-        <qits.ci-frontend-pacts-qits-githost-service.version>2026.1122.222826</qits.ci-frontend-pacts-qits-githost-service.version>
-        <qits.projects-frontend-pacts-qits-githost-service.version>2026.1122.221247</qits.projects-frontend-pacts-qits-githost-service.version>
-        <qits.landing-app-pacts-qits-githost-service.version>2026.1122.110520</qits.landing-app-pacts-qits-githost-service.version>
+        <qits.ci-frontend-pacts-qits-githost-service.version>2026.1123.84719</qits.ci-frontend-pacts-qits-githost-service.version>
+        <qits.projects-frontend-pacts-qits-githost-service.version>2026.1123.85114</qits.projects-frontend-pacts-qits-githost-service.version>
+        <qits.landing-app-pacts-qits-githost-service.version>2026.1123.90130</qits.landing-app-pacts-qits-githost-service.version>
 
         <!-- Quinoa is a Quarkiverse extension: not in quarkus-bom either, and its version does NOT
              track the platform's. 2.8.2 is built against Quarkus 3.27.3 LTS — older than the 3.34.6
