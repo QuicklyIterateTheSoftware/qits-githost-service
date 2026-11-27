@@ -52,14 +52,14 @@
              The store now builds inside the qits-registries reactor and carries that reactor's
              version. The coordinate is unchanged; its packages are eu.wohlben.qits.blobstore.*
              since this release, and the config keys stay qits.artifacts.*. -->
-        <qits.blobstore.version>2026.1125.141810</qits.blobstore.version>
+        <qits.blobstore.version>2026.1126.194145</qits.blobstore.version>
         <!-- The event bus: the outbox, the idempotent PUT, the durable listener. Published by
              libs/qits-eventstream into the platform Maven repository — the same place the blob
              store above and qits-db-core below come from, and why the <repositories> block below
              exists: none of the three is on Maven Central or built in this reactor. -->
-        <qits.eventstream.version>2026.1125.142425</qits.eventstream.version>
+        <qits.eventstream.version>2026.1126.192104</qits.eventstream.version>
         <!-- Shared OIDC and forwarded-header authentication. -->
-        <qits.integrations-quarkus.version>2026.1125.60148</qits.integrations-quarkus.version>
+        <qits.integrations-quarkus.version>2026.1126.172511</qits.integrations-quarkus.version>
         <!-- qits-http-core, pinned with its OWN property rather than riding
              qits.integrations-quarkus.version above: its CallerServerFilter and CallerRouteRecorder
              attribute every inbound request to the X-Qits-Caller that sent it. (This service makes
@@ -68,7 +68,7 @@
              repository pins each library released out of libs/qits-integrations-quarkus by its own
              string unless two of them carry an explicit same-string policy (qits-db-core and
              qits-arch-rules, above) — this one carries none. -->
-        <qits.http-core.version>2026.1125.110206</qits.http-core.version>
+        <qits.http-core.version>2026.1126.172511</qits.http-core.version>
         <!-- qits-telemetry-core (epic qits-428): the three OTLP/HTTP exporters as CDI beans whose
              header supplier carries the `qits` oidc client's current bearer, so spans, logs and
              metrics reach qits-observability at its edge host. Published by
