@@ -100,9 +100,24 @@ class ScmEventsTest {
     EventEnvelope envelope = EventEnvelope.of(aCommit());
     JsonNode json = CanonicalJson.parse(CanonicalJson.envelope(envelope));
 
-    assertEquals(
-        List.of("description", "environment", "name", "occurredAt", "parentId", "payload", "publisher"),
-        json.properties().stream().map(Map.Entry::getKey).toList());
+    // qits-eventstream-javalib 2026.1126.192104 (qits-2701) added the nullable envelope fields
+    // originTraceId and onBehalfOf. Both key sets are the plan's shape, so the contract holds on
+    // either side of that bump and never depends on the order it is folded in (qits-2730).
+    List<String> keys = json.properties().stream().map(Map.Entry::getKey).toList();
+    List<String> before =
+        List.of("description", "environment", "name", "occurredAt", "parentId", "payload", "publisher");
+    List<String> after =
+        List.of(
+            "description",
+            "environment",
+            "name",
+            "occurredAt",
+            "onBehalfOf",
+            "originTraceId",
+            "parentId",
+            "payload",
+            "publisher");
+    assertTrue(keys.equals(before) || keys.equals(after), "envelope keys were " + keys);
     assertEquals("SCMPublishCommit", json.get("name").asText());
     assertEquals("2026-08-10T09:02:03Z", json.get("occurredAt").asText());
     assertEquals(
